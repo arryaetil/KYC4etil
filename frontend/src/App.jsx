@@ -13,6 +13,7 @@ import {
   Search,
   ShieldCheck,
   Square,
+  Trash2,
   X,
 } from "lucide-react";
 import {createApi} from "./api.js";
@@ -184,7 +185,7 @@ function Dashboard({api, user, onLogout, openBatch}) {
         return batch;
       }
     }));
-    setBatches(withLabels.sort((a, b) => String(b.id).localeCompare(String(a.id))));
+    setBatches(withLabels.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")));
   }
 
   useEffect(() => {
@@ -235,6 +236,19 @@ function Dashboard({api, user, onLogout, openBatch}) {
     }
   }
 
+  async function deleteBatch(batchId, naam) {
+    if (!window.confirm(`Batch "${naam}" definitief verwijderen?`)) return;
+    setBusy(true);
+    try {
+      await api.deleteBatch(batchId);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Shell
       user={user}
@@ -254,10 +268,11 @@ function Dashboard({api, user, onLogout, openBatch}) {
           <thead className="bg-panel text-xs uppercase text-slate-500">
             <tr>
               <th className="px-4 py-3">Batch</th>
+              <th className="px-4 py-3">Aangemaakt</th>
               <th className="px-4 py-3">Voortgang</th>
               <th className="px-4 py-3">Labels</th>
               <th className="px-4 py-3">Status</th>
-              <th className="w-32 px-4 py-3"></th>
+              <th className="w-40 px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
@@ -269,6 +284,9 @@ function Dashboard({api, user, onLogout, openBatch}) {
                   </button>
                   <div className="text-xs text-slate-500">{batch.jaar}</div>
                 </td>
+                <td className="px-4 py-3 text-sm text-slate-600">
+                  <BatchTimestamp created_at={batch.created_at} completed_at={batch.completed_at} />
+                </td>
                 <td className="px-4 py-3">
                   <Progress value={batch.verwerkt || 0} total={batch.totaal || 0} />
                 </td>
@@ -277,10 +295,13 @@ function Dashboard({api, user, onLogout, openBatch}) {
                 </td>
                 <td className="px-4 py-3"><StatusPill status={batch.status} /></td>
                 <td className="px-4 py-3 text-right">
-                  {batch.status === "running"
-                    ? <IconButton icon={Square} variant="quiet" onClick={() => cancel(batch.id)} disabled={busy}>Annuleren</IconButton>
-                    : <IconButton icon={Play} onClick={() => run(batch.id)} disabled={busy}>Run</IconButton>
-                  }
+                  <div className="inline-flex items-center gap-2">
+                    {batch.status === "running"
+                      ? <IconButton icon={Square} variant="quiet" onClick={() => cancel(batch.id)} disabled={busy}>Annuleren</IconButton>
+                      : <IconButton icon={Play} onClick={() => run(batch.id)} disabled={busy}>Run</IconButton>
+                    }
+                    <IconButton icon={Trash2} variant="quiet" onClick={() => deleteBatch(batch.id, batch.naam)} disabled={busy || batch.status === "running"} title="Batch verwijderen" />
+                  </div>
                 </td>
               </tr>
             ))}
@@ -358,6 +379,18 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
     }
   }
 
+  async function deleteBatch() {
+    if (!window.confirm(`Batch "${batch?.naam}" definitief verwijderen?`)) return;
+    setBusy(true);
+    try {
+      await api.deleteBatch(batchId);
+      openDashboard();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
   const isRunning = batch?.status === "running";
 
   return (
@@ -375,6 +408,7 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
           <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Groen goedkeuren</IconButton>
           <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.csv`, "export.csv")}>Export</IconButton>
           <IconButton icon={Download} onClick={() => api.download(`/batches/${batchId}/bellijst.csv`, "bellijst.csv")}>Bellijst</IconButton>
+          <IconButton icon={Trash2} variant="quiet" onClick={deleteBatch} disabled={busy || isRunning} title="Batch verwijderen" />
         </>
       }
     >
@@ -632,6 +666,20 @@ function ScoreBreakdown({breakdown}) {
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function BatchTimestamp({created_at, completed_at}) {
+  function fmt(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return d.toLocaleString("nl-NL", {day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"});
+  }
+  return (
+    <div>
+      <div>{fmt(created_at) || "-"}</div>
+      {completed_at ? <div className="text-xs text-slate-400">klaar {fmt(completed_at)}</div> : null}
     </div>
   );
 }

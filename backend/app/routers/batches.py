@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import SessionLocal, get_db
-from ..models import AgentResult, Batch, Candidate, Company, Enrichment
+from ..models import (AgentResult, Batch, CallListItem, Candidate, ChatSession,
+                      Company, Enrichment, PipelineRun, WPRecord)
 from ..pipeline.runner import run_batch
 
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
@@ -83,10 +84,39 @@ def cancel_batch(batch_id: str, db: Session = Depends(get_db)):
     return {"batch_id": batch.id, "status": batch.status}
 
 
+@router.delete("/{batch_id}")
+def delete_batch(batch_id: str, db: Session = Depends(get_db)):
+    """Verwijdert een batch en alle gekoppelde records. Blokkeert bij status 'running'."""
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(404, "batch niet gevonden")
+    if batch.status == "running":
+        raise HTTPException(409, "batch draait nog; annuleer eerst")
+
+    company_ids = [c.id for c in db.query(Company).filter_by(batch_id=batch_id)]
+
+    if company_ids:
+        db.query(CallListItem).filter(CallListItem.company_id.in_(company_ids)).delete(synchronize_session=False)
+        db.query(WPRecord).filter(WPRecord.company_id.in_(company_ids)).delete(synchronize_session=False)
+        db.query(ChatSession).filter(ChatSession.company_id.in_(company_ids)).delete(synchronize_session=False)
+        db.query(Candidate).filter(Candidate.batch_id == batch_id).delete(synchronize_session=False)
+        db.query(AgentResult).filter(AgentResult.batch_id == batch_id).delete(synchronize_session=False)
+        db.query(Enrichment).filter(Enrichment.company_id.in_(company_ids)).delete(synchronize_session=False)
+
+    db.query(PipelineRun).filter_by(batch_id=batch_id).delete(synchronize_session=False)
+    db.query(Company).filter_by(batch_id=batch_id).delete(synchronize_session=False)
+    db.delete(batch)
+    db.commit()
+    return {"deleted": batch_id}
+
+
 @router.get("")
 def list_batches(db: Session = Depends(get_db)):
     return [{"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
-             "totaal": b.totaal, "verwerkt": b.verwerkt} for b in db.query(Batch).all()]
+             "totaal": b.totaal, "verwerkt": b.verwerkt,
+             "created_at": b.created_at.isoformat() if b.created_at else None,
+             "completed_at": b.completed_at.isoformat() if b.completed_at else None}
+            for b in db.query(Batch).order_by(Batch.created_at.desc()).all()]
 
 
 @router.get("/{batch_id}")

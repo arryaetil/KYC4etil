@@ -54,6 +54,7 @@ export function createApi(token, onUnauthorized) {
     },
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
     cancelBatch: (id) => request(`/batches/${id}/cancel`, {method: "POST"}),
+    deleteBatch: (id) => request(`/batches/${id}`, {method: "DELETE"}),
     approve: (candidateId) => request(`/candidates/${candidateId}/approve`, {method: "POST"}),
     correct: (candidateId, wp_waarde, reden) => request(`/candidates/${candidateId}/correct`, {
       method: "POST",
