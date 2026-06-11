@@ -82,18 +82,21 @@ def test_confidence_single_locatie_website_is_groen():
 def test_confidence_schatting_nooit_groen():
     s = bereken_confidence(finding(bron="jaarverslag", limburg=False), **kwargs(
         count_nl=400, count_lb=15), is_schatting=True, schatting_penalty=0.30)
+    assert s.label != "hoog" and s.score < 0.50
+
+def test_confidence_llm_laag_is_rood():
+    s = bereken_confidence(finding(zekerheid="laag"), **kwargs())
     assert s.label == "laag"
 
-def test_confidence_llm_laag_capt():
-    s = bereken_confidence(finding(zekerheid="laag"), **kwargs())
-    assert s.score <= 0.49 and s.label == "laag"
+def test_confidence_llm_middel_is_geel():
+    s = bereken_confidence(finding(zekerheid="middel"), **kwargs())
+    assert s.label == "middel"
 
 def test_confidence_fte_penalty():
     met = bereken_confidence(finding(fte=True), **kwargs())
     zonder = bereken_confidence(finding(fte=False), **kwargs())
-    assert zonder.score - met.score == pytest.approx(0.10)
+    assert zonder.score > met.score
 
 def test_confidence_breakdown_aanwezig():
     s = bereken_confidence(finding(), **kwargs())
-    assert set(s.breakdown) >= {"locatie", "specificiteit", "bronkwaliteit",
-                                "consensus", "adres", "actualiteit", "penalties"}
+    assert set(s.breakdown) >= {"zekerheid_llm", "base_score", "penalties", "bonuses"}

@@ -29,7 +29,7 @@ BELANGRIJK:
 
 Antwoord uitsluitend met JSON:
 {{"wp_gevonden": <int|null>, "context": "<letterlijke zin(nen)>",
-  "zekerheid": "hoog"|"middel"|"laag", "reden": "<uitleg>",
+  "zekerheid": "hoog" (getal staat letterlijk vermeld voor déze vestiging) | "middel" (aannemelijk maar afgeleid of niet 100% zeker) | "laag" (getal ontbreekt of is onzeker), "reden": "<uitleg>",
   "is_totaal_meerdere_vestigingen": <bool>, "is_limburg_specifiek": <bool>,
   "is_fte": <bool>, "peilmoment": "<jaar of null>"}}
 
@@ -144,7 +144,7 @@ Onderscheid headcount van FTE; reken NIET stilzwijgend om (FTE ≠ WP).
 Geef aan of het getal vestigingsspecifiek is of een nationaal/groepstotaal.
 
 Antwoord uitsluitend met JSON:
-{{"wp_gevonden": <int|null>, "context": "<letterlijke zin>", "zekerheid": "hoog|middel|laag",
+{{"wp_gevonden": <int|null>, "context": "<letterlijke zin>", "zekerheid": "hoog" (getal letterlijk vermeld voor déze vestiging) | "middel" (aannemelijk) | "laag" (onzeker),
   "reden": "<kort>", "is_limburg_specifiek": <bool>, "is_fte": <bool>,
   "peilmoment": "<jaar|null>", "bron_url": "<url|null>"}}"""
 
