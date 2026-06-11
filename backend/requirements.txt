@@ -10,3 +10,6 @@ beautifulsoup4>=4.12
 pymupdf>=1.24
 pytest>=8.2
 pytest-asyncio>=0.23
+bcrypt<4.1
+passlib[bcrypt]>=1.7
+PyJWT>=2.8

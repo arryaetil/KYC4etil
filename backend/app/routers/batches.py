@@ -5,11 +5,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from ..auth import get_current_user
 from ..database import get_db
 from ..models import AgentResult, Batch, Candidate, Company, Enrichment
 from ..pipeline.runner import run_batch
 
-router = APIRouter(prefix="/batches", tags=["batches"])
+router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
 
 CSV_VELDEN = {"naam"}  # minimaal vereist
 

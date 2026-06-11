@@ -7,10 +7,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..auth import get_current_user
 from ..database import get_db
-from ..models import AgentResult, Batch, CallListItem, Candidate, Company, WPRecord
+from ..models import AgentResult, Batch, CallListItem, Candidate, Company, User, WPRecord
 
-router = APIRouter(tags=["review"])
+router = APIRouter(tags=["review"], dependencies=[Depends(get_current_user)])
 
 
 class CorrectieBody(BaseModel):
@@ -18,52 +19,56 @@ class CorrectieBody(BaseModel):
     reden: str | None = None
 
 
-def _maak_wp_record(db: Session, cand: Candidate, wp: int, status: str) -> WPRecord:
+def _maak_wp_record(db: Session, cand: Candidate, wp: int, status: str, user: User) -> WPRecord:
     comp = db.get(Company, cand.company_id)
     batch = db.get(Batch, cand.batch_id)
     ar = db.get(AgentResult, cand.gekozen_agent_result) if cand.gekozen_agent_result else None
     rec = WPRecord(company_id=comp.id, candidate_id=cand.id, wp_waarde=wp,
                    wp_jaar=batch.jaar, bron_type=(ar.bron_type if ar else "handmatig"),
                    bron_url=(ar.bron_url if ar else None), status=status,
+                   goedgekeurd_door=user.id,
                    goedgekeurd_op=datetime.utcnow())
     db.add(rec)
     return rec
 
 
 @router.post("/candidates/{candidate_id}/approve")
-def approve(candidate_id: str, db: Session = Depends(get_db)):
+def approve(candidate_id: str, db: Session = Depends(get_db),
+            current_user: User = Depends(get_current_user)):
     cand = db.get(Candidate, candidate_id)
     if not cand:
         raise HTTPException(404, "candidate niet gevonden")
     if cand.wp_kandidaat is None:
         raise HTTPException(422, "geen kandidaat-waarde om goed te keuren")
     cand.status = "approved"
-    rec = _maak_wp_record(db, cand, cand.wp_kandidaat, "reviewed")
+    rec = _maak_wp_record(db, cand, cand.wp_kandidaat, "reviewed", current_user)
     db.commit()
     return {"wp_record_id": rec.id, "wp_waarde": rec.wp_waarde}
 
 
 @router.post("/candidates/{candidate_id}/correct")
-def correct(candidate_id: str, body: CorrectieBody, db: Session = Depends(get_db)):
+def correct(candidate_id: str, body: CorrectieBody, db: Session = Depends(get_db),
+            current_user: User = Depends(get_current_user)):
     cand = db.get(Candidate, candidate_id)
     if not cand:
         raise HTTPException(404, "candidate niet gevonden")
     cand.status = "corrected"
     cand.reconciliatie_reden = (cand.reconciliatie_reden or "") + f" | correctie: {body.reden or 'handmatig'}"
-    rec = _maak_wp_record(db, cand, body.wp_waarde, "corrected")
+    rec = _maak_wp_record(db, cand, body.wp_waarde, "corrected", current_user)
     db.commit()
     return {"wp_record_id": rec.id, "wp_waarde": rec.wp_waarde}
 
 
 @router.post("/batches/{batch_id}/approve-all-green")
-def bulk_approve(batch_id: str, db: Session = Depends(get_db)):
+def bulk_approve(batch_id: str, db: Session = Depends(get_db),
+                 current_user: User = Depends(get_current_user)):
     """Bulk-goedkeuring van alle 🟢-records (doc §11)."""
     n = 0
     for cand in db.query(Candidate).filter_by(batch_id=batch_id, confidence_label="hoog",
                                               status="pending"):
         if cand.wp_kandidaat is not None:
             cand.status = "approved"
-            _maak_wp_record(db, cand, cand.wp_kandidaat, "reviewed")
+            _maak_wp_record(db, cand, cand.wp_kandidaat, "reviewed", current_user)
             n += 1
     db.commit()
     return {"goedgekeurd": n}
