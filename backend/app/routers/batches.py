@@ -114,8 +114,8 @@ def delete_batch(batch_id: str, db: Session = Depends(get_db)):
 def list_batches(db: Session = Depends(get_db)):
     return [{"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
              "totaal": b.totaal, "verwerkt": b.verwerkt,
-             "created_at": b.created_at.isoformat() if b.created_at else None,
-             "completed_at": b.completed_at.isoformat() if b.completed_at else None}
+             "created_at": b.created_at.isoformat() + "Z" if b.created_at else None,
+             "completed_at": b.completed_at.isoformat() + "Z" if b.completed_at else None}
             for b in db.query(Batch).order_by(Batch.created_at.desc()).all()]
 
 
