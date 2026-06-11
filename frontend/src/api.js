@@ -53,6 +53,7 @@ export function createApi(token, onUnauthorized) {
       return request(`/batches/upload?${params.toString()}`, {method: "POST", body});
     },
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
+    cancelBatch: (id) => request(`/batches/${id}/cancel`, {method: "POST"}),
     approve: (candidateId) => request(`/candidates/${candidateId}/approve`, {method: "POST"}),
     correct: (candidateId, wp_waarde, reden) => request(`/candidates/${candidateId}/correct`, {
       method: "POST",
@@ -64,7 +65,10 @@ export function createApi(token, onUnauthorized) {
     }),
     approveAllGreen: (batchId) => request(`/batches/${batchId}/approve-all-green`, {method: "POST"}),
     download: async (path, filename) => {
-      const response = await request(path);
+      const headers = new Headers();
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+      const response = await fetch(`${API_URL}${path}`, {headers});
+      if (!response.ok) throw new ApiError(response.statusText, response.status);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");

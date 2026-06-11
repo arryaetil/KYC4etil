@@ -126,6 +126,9 @@ async def run_batch(db: Session, batch_id: str) -> Batch:
             await verwerk_company(db, company, batch)
             batch.verwerkt += 1
             db.commit()
+            db.refresh(batch)
+            if batch.status == "cancelled":
+                return batch
         batch.status = "done"
         batch.completed_at = datetime.utcnow()
     except Exception:

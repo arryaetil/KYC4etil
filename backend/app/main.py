@@ -14,7 +14,7 @@ app = FastAPI(title="Vestigingsregister AI Platform", version="0.1.0",
               description="AI-pipeline voor WP-dataverzameling — Etil / Provincie Limburg")
 
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"],
-                   allow_headers=["*"])
+                   allow_headers=["*"], expose_headers=["Content-Disposition"])
 
 app.include_router(auth.router)
 app.include_router(batches.router)

@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Square,
   X,
 } from "lucide-react";
 import {createApi} from "./api.js";
@@ -222,6 +223,18 @@ function Dashboard({api, user, onLogout, openBatch}) {
     }
   }
 
+  async function cancel(batchId) {
+    setBusy(true);
+    try {
+      await api.cancelBatch(batchId);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Shell
       user={user}
@@ -264,7 +277,10 @@ function Dashboard({api, user, onLogout, openBatch}) {
                 </td>
                 <td className="px-4 py-3"><StatusPill status={batch.status} /></td>
                 <td className="px-4 py-3 text-right">
-                  <IconButton icon={Play} onClick={() => run(batch.id)} disabled={busy || batch.status === "running"}>Run</IconButton>
+                  {batch.status === "running"
+                    ? <IconButton icon={Square} variant="danger" onClick={() => cancel(batch.id)} disabled={busy}>Annuleren</IconButton>
+                    : <IconButton icon={Play} onClick={() => run(batch.id)} disabled={busy}>Run</IconButton>
+                  }
                 </td>
               </tr>
             ))}
@@ -287,6 +303,7 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
   const [strategie, setStrategie] = useState("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   async function load() {
     const [batchData, companyData] = await Promise.all([api.batch(batchId), api.companies(batchId, label)]);
@@ -315,6 +332,34 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
     }
   }
 
+  async function runBatch() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.runBatch(batchId);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelBatch() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.cancelBatch(batchId);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isRunning = batch?.status === "running";
+
   return (
     <Shell
       user={user}
@@ -323,7 +368,11 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
       actions={
         <>
           <IconButton icon={ListChecks} onClick={openDashboard}>Dashboard</IconButton>
-          <IconButton icon={Check} variant="primary" onClick={approveAll}>Groen goedkeuren</IconButton>
+          {isRunning
+            ? <IconButton icon={Square} variant="danger" onClick={cancelBatch} disabled={busy}>Annuleren</IconButton>
+            : <IconButton icon={Play} variant="primary" onClick={runBatch} disabled={busy}>Run</IconButton>
+          }
+          <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Groen goedkeuren</IconButton>
           <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.csv`, "export.csv")}>Export</IconButton>
           <IconButton icon={Download} onClick={() => api.download(`/batches/${batchId}/bellijst.csv`, "bellijst.csv")}>Bellijst</IconButton>
         </>

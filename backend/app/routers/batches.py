@@ -70,6 +70,19 @@ async def start_batch(batch_id: str, background_tasks: BackgroundTasks,
             "totaal": batch.totaal}
 
 
+@router.post("/{batch_id}/cancel")
+def cancel_batch(batch_id: str, db: Session = Depends(get_db)):
+    """Annuleert een lopende batch. De achtergrondtaak stopt na de huidige vestiging."""
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(404, "batch niet gevonden")
+    if batch.status != "running":
+        raise HTTPException(409, f"batch heeft status '{batch.status}', niet 'running'")
+    batch.status = "cancelled"
+    db.commit()
+    return {"batch_id": batch.id, "status": batch.status}
+
+
 @router.get("")
 def list_batches(db: Session = Depends(get_db)):
     return [{"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
