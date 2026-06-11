@@ -38,7 +38,8 @@ class MockWebsiteAgent:
     def __init__(self):
         self.data = _load()
 
-    async def run(self, naam: str, adres: str | None, website_url: str | None) -> AgentFinding | None:
+    async def run(self, naam: str, adres: str | None, website_url: str | None,
+                  gemeente: str | None = None) -> AgentFinding | None:
         entry = self.data.get(naam, {})
         # Nieuws-fallback (bron_type 'media') als website niets oplevert
         finding = entry.get("website") or entry.get("media")

@@ -43,15 +43,15 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
 
     strategie = bepaal_strategie(enrichment.lookup_failed, loc.count_nl, loc.count_lb)
 
-    # STAP 2 — agents (bij mislukte lookup geen agents)
-    w_finding = j_finding = None
-    if not enrichment.lookup_failed:
-        t0 = time.monotonic()
-        w_finding = await website_agent.run(company.naam, company.adres, enrichment.website_url)
-        _log(db, batch.id, company.id, "website_agent", "ok" if w_finding else "skipped", t0)
-        t0 = time.monotonic()
-        j_finding = await jaarverslag_agent.run(company.naam, batch.jaar)
-        _log(db, batch.id, company.id, "jaarverslag_agent", "ok" if j_finding else "skipped", t0)
+    # STAP 2 — agents (altijd draaien; website_agent valt intern terug op web search als
+    # er geen URL is — zie live.py Fase C. Zo werkt ook lookup_failed niet als blokkade.)
+    t0 = time.monotonic()
+    w_finding = await website_agent.run(
+        company.naam, company.adres, enrichment.website_url, gemeente=company.gemeente)
+    _log(db, batch.id, company.id, "website_agent", "ok" if w_finding else "skipped", t0)
+    t0 = time.monotonic()
+    j_finding = await jaarverslag_agent.run(company.naam, batch.jaar)
+    _log(db, batch.id, company.id, "jaarverslag_agent", "ok" if j_finding else "skipped", t0)
 
     agent_result_ids = {}
     for finding in (w_finding, j_finding):

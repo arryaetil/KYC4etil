@@ -57,7 +57,7 @@ class _NoPlacesLookup:
 
 
 class _WebsiteAgent:
-    async def run(self, naam, adres, website_url):
+    async def run(self, naam, adres, website_url, gemeente=None):
         assert website_url == "https://example.test"
         return AgentFinding(
             wp_gevonden=8,
