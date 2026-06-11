@@ -1,67 +1,149 @@
 # Vestigingsregister AI Platform
 
-AI-pipeline voor het verzamelen van Werkzame Personen-data (WP) voor het Vestigingsregister — Etil Research Group / Provincie Limburg.
+AI-pipeline voor het verzamelen van Werkzame Personen-data (WP) voor het Vestigingsregister van Provincie Limburg.
 
-- **Documentatie:** [`docs/PLATFORM_DOCUMENTATIE_v2.md`](docs/PLATFORM_DOCUMENTATIE_v2.md) (v2.0, vervangt v1.0)
-- **Status:** Fase 1 (pipeline backend) — werkend in mock-modus, gevalideerd op de testset van 20 bedrijven
+- Documentatie: [docs/PLATFORM_DOCUMENTATIE_v2.md](docs/PLATFORM_DOCUMENTATIE_v2.md)
+- Status: backend pipeline + auth + React review-interface, werkend in mock-modus.
 
-## Snel starten
+## Snel Starten
+
+Backend:
 
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env                 # PROVIDER_MODE=mock werkt zonder keys
-uvicorn app.main:app --reload        # API op http://localhost:8000/docs
+cp .env.example .env
+python -m scripts.seed_users
+uvicorn app.main:app --reload
 ```
 
-## Demo-flow (via API of /docs)
+Frontend:
 
 ```bash
-# 1. Testset uploaden
+cd frontend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Lokale URLs:
+
+- API: `http://127.0.0.1:8000`
+- API-docs: `http://127.0.0.1:8000/docs`
+- Review-interface: `http://127.0.0.1:5173`
+
+Demo-accounts:
+
+- `armina@etil.nl` / `ArminaDemo2026!`
+- `anita@etil.nl` / `AnitaDemo2026!`
+- `admin@etil.nl` / `AdminDemo2026!`
+
+## Demo-flow
+
+Gebruik de review-interface voor de normale demo: login, CSV uploaden, run starten, voortgang volgen, records reviewen en exports downloaden.
+
+Via API:
+
+```bash
+# Login eerst en gebruik de Bearer token voor alle endpoints behalve /health.
+curl -X POST localhost:8000/auth/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=armina@etil.nl&password=ArminaDemo2026!"
+
+# Testset uploaden
 curl -F "file=@data/testset.csv" "localhost:8000/batches/upload?naam=demo&jaar=2026"
-# 2. Pipeline draaien (verrijking -> agents -> reconciliatie -> confidence)
+
+# Pipeline starten als achtergrondtaak
 curl -X POST localhost:8000/batches/{batch_id}/run
-# 3. Resultaten: 15x groen (auto), 2x geel (gerichte chat), 3x rood (bellijst)
+
+# Voortgang pollen: verwerkt/totaal + labels
 curl localhost:8000/batches/{batch_id}
-# 4. Bulk-goedkeuren van groene records + exports
+
+# Bulk-goedkeuren en exports
 curl -X POST localhost:8000/batches/{batch_id}/approve-all-green
 curl localhost:8000/batches/{batch_id}/export.csv
 curl localhost:8000/batches/{batch_id}/bellijst.csv
 ```
 
-## Validatie & tests
+## Validatie & Tests
 
 ```bash
 cd backend
-python -m pytest tests/ -q          # 17 unit tests (strategie, schatting, reconciliatie, confidence)
-python -m scripts.validate          # metrics tegen ground truth: coverage 100%, MAPE groen 0%, kalibratie 100%
+python -m pytest tests/ -q
+python -m scripts.validate
 ```
 
-De kalibratie doet wat hij moet: single-locatie bedrijven worden 🟢, CB-ers met alleen een nationaal totaal (NS, DSM, BAM) worden terecht 🔴 — hun proportionele schattingen zitten er 200–500% naast en gaan naar de bellijst i.p.v. het register.
+Streefwaarden in mock-modus op de testset: coverage 100%, MAPE groen 0%, kalibratie 100%.
+
+Frontend:
+
+```bash
+cd frontend
+npm run build
+```
 
 ## Structuur
 
-```
+```text
 backend/
-├── app/
-│   ├── config.py            # gewichten & drempels (kalibratie zonder code-wijziging)
-│   ├── models.py            # gecorrigeerd datamodel (doc §6)
-│   ├── providers/           # mock & live achter dezelfde interfaces (doc §5)
-│   ├── pipeline/            # confidence (§9), reconciliatie (§7), runner
-│   └── routers/             # batches, review, exports
-├── data/testset.csv         # 20 testbedrijven (LET OP: Zuyderland-waarde verifiëren)
-├── data/mock_data.json      # deterministische mock-responses
-├── scripts/validate.py      # validatiemetrics
-└── tests/
+  app/
+    config.py
+    models.py
+    providers/
+    pipeline/
+    routers/
+  data/testset.csv
+  data/mock_data.json
+  scripts/
+  tests/
+  railway.toml
+frontend/
+  src/
+  package.json
+  railway.toml
 ```
+
+## Railway Deploy
+
+Maak twee Railway services aan vanuit dezelfde repository.
+
+Backend service:
+
+- Root directory: `backend/`
+- PostgreSQL: koppel een Railway PostgreSQL database
+- Start/healthcheck: geregeld door `backend/railway.toml`
+
+Backend env-vars:
+
+```env
+PROVIDER_MODE=mock
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+JWT_SECRET=<lange-random-secret>
+FRONTEND_ORIGIN=https://<frontend-service>.up.railway.app
+REGISTER_PEILDATUM=2026-04-01
+ANTHROPIC_API_KEY=
+GOOGLE_PLACES_API_KEY=
+KVK_API_KEY=
+```
+
+Frontend service:
+
+- Root directory: `frontend/`
+- Static Vite build: geregeld door `frontend/railway.toml`
+
+Frontend env-vars:
+
+```env
+VITE_API_URL=https://<backend-service>.up.railway.app
+```
+
+Na deploy:
+
+1. Run een eenmalig backend shell command: `python -m scripts.seed_users`.
+2. Controleer `https://<backend-service>.up.railway.app/health`.
+3. Log in op de frontend met Armina of Anita.
+4. Upload `backend/data/testset.csv` en start de batch.
 
 ## Live-modus
 
-`PROVIDER_MODE=live` + `ANTHROPIC_API_KEY` en `GOOGLE_PLACES_API_KEY` in `.env`. Website agent en Places-verrijking zijn live geïmplementeerd; jaarverslag-PDF-discovery vergt nog een search-API-keuze (zie doc §7) — `run_with_pdf()` werkt al met een aangeleverde PDF-URL. KvK API inpluggen zodra toegang er is (kritieke afhankelijkheid, doc §3).
-
-## Volgende stappen
-
-1. Zuyderland ground truth + kanaalcijfers verifiëren bij Armina (doc §16, vraag 9)
-2. KvK API-toegang regelen (vraag 1) · peildatum bevestigen met Roger (vraag 2)
-3. Search-API kiezen voor jaarverslag-discovery, live-run op subset
-4. Fase 2: React review-interface · daarna Railway-deploy
+`PROVIDER_MODE=live` vereist minimaal `ANTHROPIC_API_KEY` en `GOOGLE_PLACES_API_KEY`. KvK kan worden ingeplugd zodra toegang beschikbaar is. Volgens de open punten in de documentatie moeten KvK-toegang, register-peildatum en Zuyderland ground truth nog door Arrya/Roger/Armina bevestigd worden voordat daar productie-aannames op worden gebaseerd.

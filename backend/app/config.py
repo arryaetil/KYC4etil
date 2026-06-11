@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me"
     register_peildatum: str = "2026-04-01"
     anthropic_model: str = "claude-sonnet-4-6"
+    frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173"
 
     # Confidence-gewichten (som = 1.0) — zie documentatie §9
     w_locatie: float = 0.30
@@ -36,6 +37,10 @@ class Settings(BaseSettings):
     @property
     def effective_database_url(self) -> str:
         return self.database_url or "sqlite:///./vestigingsregister.db"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.frontend_origin.split(",") if origin.strip()]
 
 
 @lru_cache
