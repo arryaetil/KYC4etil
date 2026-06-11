@@ -41,19 +41,22 @@ class LivePlacesProvider:
     async def lookup(self, naam: str, gemeente: str | None) -> PlacesResult | None:
         if not settings.google_places_api_key:
             return await _web_search_contact(naam, gemeente)
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.post(
-                PLACES_SEARCH_URL,
-                headers={
-                    "X-Goog-Api-Key": settings.google_places_api_key,
-                    "X-Goog-FieldMask": "places.websiteUri,places.nationalPhoneNumber,places.formattedAddress",
-                },
-                json={"textQuery": f"{naam} {gemeente or ''}".strip(), "languageCode": "nl"},
-            )
-            r.raise_for_status()
-            places = r.json().get("places") or []
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                r = await client.post(
+                    PLACES_SEARCH_URL,
+                    headers={
+                        "X-Goog-Api-Key": settings.google_places_api_key,
+                        "X-Goog-FieldMask": "places.websiteUri,places.nationalPhoneNumber,places.formattedAddress",
+                    },
+                    json={"textQuery": f"{naam} {gemeente or ''}".strip(), "languageCode": "nl"},
+                )
+                r.raise_for_status()
+                places = r.json().get("places") or []
+        except httpx.HTTPError:
+            return await _web_search_contact(naam, gemeente)
         if not places:
-            return None
+            return await _web_search_contact(naam, gemeente)
         p = places[0]
         return PlacesResult(website=p.get("websiteUri"), phone=p.get("nationalPhoneNumber"),
                             adres=p.get("formattedAddress"), raw=p)
@@ -63,17 +66,20 @@ class LivePlacesProvider:
             return LocationInfo(count_nl=None, count_lb=None, bron="web_search")
         # TODO: KvK API zodra toegang er is (exact, op kvk_nummer). Tot die tijd:
         # fuzzy Places-zoektocht -> confidence-penalty in scoring (penalty_places_fuzzy).
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.post(
-                PLACES_SEARCH_URL,
-                headers={
-                    "X-Goog-Api-Key": settings.google_places_api_key,
-                    "X-Goog-FieldMask": "places.formattedAddress",
-                },
-                json={"textQuery": f"{naam} Nederland", "languageCode": "nl", "pageSize": 20},
-            )
-            r.raise_for_status()
-            places = r.json().get("places") or []
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                r = await client.post(
+                    PLACES_SEARCH_URL,
+                    headers={
+                        "X-Goog-Api-Key": settings.google_places_api_key,
+                        "X-Goog-FieldMask": "places.formattedAddress",
+                    },
+                    json={"textQuery": f"{naam} Nederland", "languageCode": "nl", "pageSize": 20},
+                )
+                r.raise_for_status()
+                places = r.json().get("places") or []
+        except httpx.HTTPError:
+            return LocationInfo(count_nl=None, count_lb=None, bron="web_search")
         lb = sum(1 for p in places if "Limburg" in (p.get("formattedAddress") or ""))
         return LocationInfo(count_nl=len(places) or None, count_lb=lb, bron="places")
 
@@ -102,7 +108,6 @@ Regels:
         tool_choice="required",
         input=prompt,
         max_output_tokens=700,
-        text={"format": {"type": "json_object"}},
     )
     raw = response.output_text
     m = re.search(r"\{.*\}", raw, re.DOTALL)
