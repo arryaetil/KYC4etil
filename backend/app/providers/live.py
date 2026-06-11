@@ -39,6 +39,8 @@ Tekst:
 
 class LivePlacesProvider:
     async def lookup(self, naam: str, gemeente: str | None) -> PlacesResult | None:
+        if not settings.google_places_api_key:
+            return await _web_search_contact(naam, gemeente)
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(
                 PLACES_SEARCH_URL,
@@ -57,6 +59,8 @@ class LivePlacesProvider:
                             adres=p.get("formattedAddress"), raw=p)
 
     async def locations(self, naam: str, kvk_nummer: str | None) -> LocationInfo:
+        if not settings.google_places_api_key:
+            return LocationInfo(count_nl=None, count_lb=None, bron="web_search")
         # TODO: KvK API zodra toegang er is (exact, op kvk_nummer). Tot die tijd:
         # fuzzy Places-zoektocht -> confidence-penalty in scoring (penalty_places_fuzzy).
         async with httpx.AsyncClient(timeout=20) as client:
@@ -72,6 +76,45 @@ class LivePlacesProvider:
             places = r.json().get("places") or []
         lb = sum(1 for p in places if "Limburg" in (p.get("formattedAddress") or ""))
         return LocationInfo(count_nl=len(places) or None, count_lb=lb, bron="places")
+
+
+async def _web_search_contact(naam: str, gemeente: str | None) -> PlacesResult | None:
+    if not settings.openai_api_key:
+        return None
+
+    from openai import AsyncOpenAI
+
+    prompt = f"""Zoek de officiele website en het publieke telefoonnummer van deze vestiging.
+Bedrijf: {naam}
+Gemeente: {gemeente or "onbekend"}
+
+Regels:
+- Gebruik alleen openbare webresultaten.
+- Geef bij twijfel null.
+- Kies de officiele bedrijfswebsite, niet een directoryprofiel.
+- Antwoord uitsluitend met JSON:
+{{"website_url": "<url|null>", "telefoonnummer": "<nummer|null>", "adres": "<adres|null>", "reden": "<kort>"}}"""
+
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    response = await client.responses.create(
+        model=settings.openai_model,
+        tools=[{"type": "web_search", "search_context_size": "low"}],
+        tool_choice="required",
+        input=prompt,
+        max_output_tokens=700,
+        text={"format": {"type": "json_object"}},
+    )
+    raw = response.output_text
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not m:
+        return None
+    data = json.loads(m.group(0))
+    website = data.get("website_url")
+    phone = data.get("telefoonnummer")
+    adres = data.get("adres")
+    if not website and not phone:
+        return None
+    return PlacesResult(website=website, phone=phone, adres=adres, raw={"bron": "openai_web_search", **data})
 
 
 async def _llm_extract(naam: str, adres: str | None, tekst: str) -> dict | None:

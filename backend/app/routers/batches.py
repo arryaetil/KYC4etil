@@ -44,7 +44,8 @@ async def upload_batch(file: UploadFile, naam: str | None = None,
         db.add(Company(batch_id=batch.id, vestigingsnummer=r.get("vestigingsnummer"),
                        naam=r["naam"], gemeente=r.get("gemeente"), adres=r.get("adres"),
                        sbi_code=r.get("sbi_code"), cb_er=r.get("cb_er"),
-                       kvk_nummer=r.get("kvk_nummer")))
+                       kvk_nummer=r.get("kvk_nummer"), website_url=r.get("website_url"),
+                       telefoonnummer=r.get("telefoonnummer")))
     db.commit()
     return {"batch_id": batch.id, "aantal_companies": len(rows)}
 
@@ -117,7 +118,8 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
     return {
         "company": {"id": comp.id, "naam": comp.naam, "adres": comp.adres,
                     "gemeente": comp.gemeente, "sbi_code": comp.sbi_code,
-                    "cb_er": comp.cb_er, "kvk_nummer": comp.kvk_nummer},
+                    "cb_er": comp.cb_er, "kvk_nummer": comp.kvk_nummer,
+                    "website_url": comp.website_url, "telefoonnummer": comp.telefoonnummer},
         "enrichment": enr and {
             "website_url": enr.website_url, "telefoonnummer": enr.telefoonnummer,
             "locatie_count_nl": enr.locatie_count_nl, "locatie_count_lb": enr.locatie_count_lb,

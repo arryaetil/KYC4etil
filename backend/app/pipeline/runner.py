@@ -26,15 +26,17 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
     t0 = time.monotonic()
     place = await lookup.lookup(company.naam, company.gemeente)
     loc = await lookup.locations(company.naam, company.kvk_nummer)
+    website_url = (place.website if place else None) or company.website_url
+    telefoonnummer = (place.phone if place else None) or company.telefoonnummer
     enrichment = Enrichment(
         company_id=company.id,
-        website_url=place.website if place else None,
-        telefoonnummer=place.phone if place else None,
+        website_url=website_url,
+        telefoonnummer=telefoonnummer,
         locatie_count_nl=loc.count_nl, locatie_count_lb=loc.count_lb,
         locatie_bron=loc.bron,
         is_multi_locatie=bool(loc.count_nl and loc.count_nl > 1),
         adres_validated=bool(place and place.raw.get("adres_match", place.adres is not None)),
-        lookup_failed=place is None,
+        lookup_failed=place is None and not website_url,
     )
     db.add(enrichment)
     _log(db, batch.id, company.id, "verrijking", "ok" if place else "skipped", t0)

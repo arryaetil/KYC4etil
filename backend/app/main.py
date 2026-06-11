@@ -2,12 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .database import Base, engine
+from .database import Base, engine, ensure_lightweight_migrations
 from .routers import auth, batches, review
 
 settings = get_settings()
 
 Base.metadata.create_all(bind=engine)
+ensure_lightweight_migrations()
 
 app = FastAPI(title="Vestigingsregister AI Platform", version="0.1.0",
               description="AI-pipeline voor WP-dataverzameling — Etil / Provincie Limburg")

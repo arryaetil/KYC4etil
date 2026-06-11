@@ -147,4 +147,4 @@ Na deploy:
 
 ## Live-modus
 
-`PROVIDER_MODE=live` vereist minimaal `OPENAI_API_KEY` en `GOOGLE_PLACES_API_KEY`. KvK kan worden ingeplugd zodra toegang beschikbaar is. Volgens de open punten in de documentatie moeten KvK-toegang, register-peildatum en Zuyderland ground truth nog door Arrya/Roger/Armina bevestigd worden voordat daar productie-aannames op worden gebaseerd.
+`PROVIDER_MODE=live` vereist minimaal `OPENAI_API_KEY`. Met `GOOGLE_PLACES_API_KEY` gebruikt de backend Places voor website, telefoon en fuzzy locatiecount. Zonder Google-key gebruikt de backend tijdelijk OpenAI web search om website en telefoonnummer te vinden; locatiecount blijft dan onbekend en records krijgen daardoor lagere confidence. KvK kan worden ingeplugd zodra toegang beschikbaar is. Volgens de open punten in de documentatie moeten KvK-toegang, register-peildatum en Zuyderland ground truth nog door Arrya/Roger/Armina bevestigd worden voordat daar productie-aannames op worden gebaseerd.

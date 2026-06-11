@@ -42,7 +42,8 @@ def create_access_token(user: User) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     }
-    return jwt.encode(payload, get_settings().jwt_secret, algorithm=ALGORITHM)
+    secret = get_settings().jwt_secret or "change-me"
+    return jwt.encode(payload, secret, algorithm=ALGORITHM)
 
 
 def get_current_user(
@@ -55,7 +56,8 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, get_settings().jwt_secret, algorithms=[ALGORITHM])
+        secret = get_settings().jwt_secret or "change-me"
+        payload = jwt.decode(token, secret, algorithms=[ALGORITHM])
     except jwt.PyJWTError as exc:
         raise credentials_error from exc
 
