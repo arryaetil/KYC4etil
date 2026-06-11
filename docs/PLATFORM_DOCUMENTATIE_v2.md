@@ -138,7 +138,7 @@ OUTPUT  Verrijkt register: WP per vestiging + bron + confidence + audit trail
 | Backend | Python 3.12 + FastAPI | AI-ecosysteem, al gebruikt binnen Etil |
 | Database | PostgreSQL (Railway) / SQLite (lokaal dev) | relaties, JSONB; SQLite = geen lokale infra nodig |
 | ORM/migraties | SQLAlchemy 2 + Alembic | schema-evolutie beheersbaar |
-| AI / LLM | Claude API (`claude-sonnet-4-6`) | documentparsing & web reasoning |
+| AI / LLM | OpenAI API (`gpt-5.2`) | documentparsing & web reasoning |
 | Web scraping | Playwright + BeautifulSoup | JS-heavy sites |
 | PDF parsing | PyMuPDF + LLM-extractie | complexe jaarverslag-PDFs |
 | Verrijking | KvK API (primair) + Google Places | §3 |
@@ -525,7 +525,7 @@ Bouwvolgorde zo gekozen dat er na elke stap iets draait:
 5. Agents (mock-modus) + reconciliatie + confidence scoring.
 6. Endpoints: batches, companies, candidates, goedkeuren/corrigeren, CSV-export, bellijst-export.
 7. `scripts/validate.py` → metrics op de testset.
-8. Live-providers (Places + Claude) achter dezelfde interfaces; live-run op een subset.
+8. Live-providers (Places + OpenAI) achter dezelfde interfaces; live-run op een subset.
 
 ### Fase 2 — Review Interface (demo-scope)
 React-dashboard, batchoverzicht, detailpagina met score-uitleg, goedkeuren/corrigeren, bulk-acties, export, login.
@@ -547,7 +547,8 @@ Ongewijzigd t.o.v. v1.0 (frontend/backend/PostgreSQL services, nixpacks), met tw
 
 ```env
 DATABASE_URL=postgresql://...        # leeg = SQLite lokaal
-ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5.2
 GOOGLE_PLACES_API_KEY=...
 KVK_API_KEY=...                      # optioneel; zonder → Places-fallback
 PROVIDER_MODE=mock                   # mock | live
@@ -592,4 +593,3 @@ Provincie i.p.v. Gemeente Limburg · KvK primair voor locatiedata · reconciliat
 | Peildatum | Datum waarvoor de WP-waarde geldt in het register |
 
 *Gebaseerd op: DevOps stories #1413, #1417, #1418, Epic #6, input Armina, brainstorm Arrya Willems / Etil Solutions. v2.0 vervangt v1.0.*
-

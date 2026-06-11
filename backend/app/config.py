@@ -9,12 +9,12 @@ class Settings(BaseSettings):
 
     provider_mode: str = "mock"  # mock | live
     database_url: str = ""       # leeg -> SQLite
-    anthropic_api_key: str = ""
+    openai_api_key: str = ""
     google_places_api_key: str = ""
     kvk_api_key: str = ""
     jwt_secret: str = "change-me"
     register_peildatum: str = "2026-04-01"
-    anthropic_model: str = "claude-sonnet-4-6"
+    openai_model: str = "gpt-5.2"
     frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173"
 
     # Confidence-gewichten (som = 1.0) — zie documentatie §9

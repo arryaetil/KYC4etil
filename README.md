@@ -121,7 +121,8 @@ DATABASE_URL=${{Postgres.DATABASE_URL}}
 JWT_SECRET=<lange-random-secret>
 FRONTEND_ORIGIN=https://<frontend-service>.up.railway.app
 REGISTER_PEILDATUM=2026-04-01
-ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.2
 GOOGLE_PLACES_API_KEY=
 KVK_API_KEY=
 ```
@@ -146,4 +147,4 @@ Na deploy:
 
 ## Live-modus
 
-`PROVIDER_MODE=live` vereist minimaal `ANTHROPIC_API_KEY` en `GOOGLE_PLACES_API_KEY`. KvK kan worden ingeplugd zodra toegang beschikbaar is. Volgens de open punten in de documentatie moeten KvK-toegang, register-peildatum en Zuyderland ground truth nog door Arrya/Roger/Armina bevestigd worden voordat daar productie-aannames op worden gebaseerd.
+`PROVIDER_MODE=live` vereist minimaal `OPENAI_API_KEY` en `GOOGLE_PLACES_API_KEY`. KvK kan worden ingeplugd zodra toegang beschikbaar is. Volgens de open punten in de documentatie moeten KvK-toegang, register-peildatum en Zuyderland ground truth nog door Arrya/Roger/Armina bevestigd worden voordat daar productie-aannames op worden gebaseerd.

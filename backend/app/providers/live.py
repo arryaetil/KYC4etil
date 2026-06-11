@@ -1,4 +1,4 @@
-"""Live-providers: Google Places + Claude API. Zelfde interfaces als mock.
+"""Live-providers: Google Places + OpenAI API. Zelfde interfaces als mock.
 KvK-provider volgt zodra API-toegang er is (kritieke afhankelijkheid, doc §3).
 
 NB: web scraping respecteert robots.txt, gebruikt een identificerende
@@ -74,15 +74,17 @@ class LivePlacesProvider:
         return LocationInfo(count_nl=len(places) or None, count_lb=lb, bron="places")
 
 
-async def _claude_extract(naam: str, adres: str | None, tekst: str) -> dict | None:
-    from anthropic import AsyncAnthropic
-    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-    msg = await client.messages.create(
-        model=settings.anthropic_model, max_tokens=1024,
-        messages=[{"role": "user", "content": EXTRACT_PROMPT.format(
-            naam=naam, adres=adres or "onbekend", tekst=tekst[:60000])}],
+async def _llm_extract(naam: str, adres: str | None, tekst: str) -> dict | None:
+    from openai import AsyncOpenAI
+
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    response = await client.responses.create(
+        model=settings.openai_model,
+        input=EXTRACT_PROMPT.format(naam=naam, adres=adres or "onbekend", tekst=tekst[:60000]),
+        max_output_tokens=1024,
+        text={"format": {"type": "json_object"}},
     )
-    raw = msg.content[0].text
+    raw = response.output_text
     m = re.search(r"\{.*\}", raw, re.DOTALL)
     return json.loads(m.group(0)) if m else None
 
@@ -114,7 +116,7 @@ class LiveWebsiteAgent:
                 tekst = await _fetch_text(url)
             except Exception:
                 continue
-            data = await _claude_extract(naam, adres, tekst)
+            data = await _llm_extract(naam, adres, tekst)
             await asyncio.sleep(1.0)  # rate limit per domein
             if data and data.get("wp_gevonden"):
                 finding = AgentFinding(
@@ -152,7 +154,7 @@ class LiveJaarverslagAgent:
                     if any(k in page.get_text().lower() for k in keywords)]
         if not relevant:
             return None
-        data = await _claude_extract(naam, None, "\n\n".join(relevant))
+        data = await _llm_extract(naam, None, "\n\n".join(relevant))
         if not data or not data.get("wp_gevonden"):
             return None
         return AgentFinding(
