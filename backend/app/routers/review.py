@@ -19,6 +19,10 @@ class CorrectieBody(BaseModel):
     reden: str | None = None
 
 
+class BellijstBody(BaseModel):
+    reden: str | None = None
+
+
 def _maak_wp_record(db: Session, cand: Candidate, wp: int, status: str, user: User) -> WPRecord:
     comp = db.get(Company, cand.company_id)
     batch = db.get(Batch, cand.batch_id)
@@ -57,6 +61,24 @@ def correct(candidate_id: str, body: CorrectieBody, db: Session = Depends(get_db
     rec = _maak_wp_record(db, cand, body.wp_waarde, "corrected", current_user)
     db.commit()
     return {"wp_record_id": rec.id, "wp_waarde": rec.wp_waarde}
+
+
+@router.post("/candidates/{candidate_id}/bellijst")
+def zet_op_bellijst(candidate_id: str, body: BellijstBody | None = None,
+                    db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    cand = db.get(Candidate, candidate_id)
+    if not cand:
+        raise HTTPException(404, "candidate niet gevonden")
+    comp = db.get(Company, cand.company_id)
+    telefoonnummer = comp.enrichment.telefoonnummer if comp.enrichment else None
+    reden = (body.reden if body else None) or cand.reconciliatie_reden or "reviewer vraagt belactie"
+    cand.status = "to_call"
+    item = CallListItem(company_id=comp.id, telefoonnummer=telefoonnummer, reden=reden,
+                        toegewezen_aan=current_user.id)
+    db.add(item)
+    db.commit()
+    return {"call_list_id": item.id, "status": cand.status}
 
 
 @router.post("/batches/{batch_id}/approve-all-green")

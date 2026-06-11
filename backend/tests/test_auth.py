@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from app.auth import hash_password
 from app.database import SessionLocal
 from app.main import app
-from app.models import Batch, Candidate, Company, User, WPRecord
+from app.models import Batch, CallListItem, Candidate, Company, Enrichment, User, WPRecord
 
 
 client = TestClient(app)
@@ -86,5 +86,47 @@ def test_approve_vult_goedgekeurd_door():
     try:
         record = db.query(WPRecord).filter(WPRecord.candidate_id == candidate_id).one()
         assert record.goedgekeurd_door == user.id
+    finally:
+        db.close()
+
+
+def test_bellijst_koppelt_reviewactie_aan_user():
+    email = _unique_email("bellijst")
+    user = _create_user(email)
+    db = SessionLocal()
+    try:
+        batch = Batch(naam="bellijst-test", jaar=2026, totaal=1)
+        db.add(batch)
+        db.flush()
+        company = Company(batch_id=batch.id, vestigingsnummer="bel-1", naam="Belbedrijf")
+        db.add(company)
+        db.flush()
+        db.add(Enrichment(company_id=company.id, telefoonnummer="043-1234567",
+                          locatie_count_nl=1, locatie_count_lb=1, locatie_bron="mock",
+                          raw_data={}))
+        candidate = Candidate(company_id=company.id, batch_id=batch.id, wp_kandidaat=None,
+                              confidence_score=0.2, confidence_label="laag",
+                              score_breakdown={}, strategie="bellijst")
+        db.add(candidate)
+        db.commit()
+        candidate_id = candidate.id
+    finally:
+        db.close()
+
+    token = _token(email)
+    response = client.post(
+        f"/candidates/{candidate_id}/bellijst",
+        json={"reden": "telefonisch navragen"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    call_list_id = response.json()["call_list_id"]
+    db = SessionLocal()
+    try:
+        item = db.get(CallListItem, call_list_id)
+        assert item is not None
+        assert item.toegewezen_aan == user.id
+        assert item.telefoonnummer == "043-1234567"
     finally:
         db.close()
