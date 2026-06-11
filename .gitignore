@@ -1,0 +1,23 @@
+# Secrets — nooit committen
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# Database (lokaal)
+*.db
+*.db-journal
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+nohup.out

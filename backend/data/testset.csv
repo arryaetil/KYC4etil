@@ -1,0 +1,21 @@
+vestigingsnummer,naam,gemeente,adres,sbi_code,cb_er,kvk_nummer,wp_werkelijk,bron_verwacht
+V001,Mondriaan,Heerlen,John F. Kennedylaan 301,8622,CB001,14042230,2281,jaarverslag
+V002,Okechamp B.V.,Horst aan de Maas,Venrayseweg 122,1039,,12345601,138,jaarverslag
+V003,Jumbo Supermarkten B.V. - Filiaal,Venlo,Straelseweg 70,4711,CB002,17014800,2504,jaarverslag
+V004,Stichting Pergamijn,Echt-Susteren,Pepinusbrug 2,8720,CB003,41067201,852,jaarverslag
+V005,NS Groep,Maastricht,Stationsplein 1,4910,CB004,30124358,616,jaarverslag
+V006,Veiligheidsregio Limburg Noord,Venlo,Nijmeegseweg 42,8425,CB005,52917127,1230,jaarverslag
+V007,Zuyderland Medisch en Zorgconcern,Sittard-Geleen,Dr. H. van der Hoffplein 1,8610,CB006,14124204,10444,jaarverslag
+V008,DSM-Firmenich,Sittard-Geleen,Poststraat 1,2014,CB007,14022069,586,jaarverslag
+V009,Koninklijke BAM Groep N.V.,Maastricht,Gaetano Martinolaan 10,4120,CB008,30058019,153,jaarverslag
+V010,Hallux Podotherapie,Roermond,Bredeweg 12,8691,,12345610,3,website
+V011,Salon Handmade,Weert,Langstraat 8,9602,,12345611,3,website
+V012,Orthodontie aan de Maas B.V.,Maastricht,Avenue Ceramique 125,8623,,12345612,9,website
+V013,Huisartsenpraktijk Hoensbroek,Heerlen,Hoofdstraat 5,8621,,12345613,13,website
+V014,Verloskundigen (CB-er),Sittard-Geleen,Rijksweg Zuid 30,8691,CB009,12345614,10,website
+V015,Dreessen Advocaten,Maastricht,Wilhelminasingel 68,6910,,12345615,5,website
+V016,Fysiosittard,Sittard-Geleen,Geerweg 2,8692,,12345616,17,website
+V017,Philipse Accountancy en Advisering B.V.,Venlo,Kazernestraat 17,6920,,12345617,2,website
+V018,Maasstreek Makelaardij B.V.,Roermond,Markt 21,6831,,12345618,4,website
+V019,Poulissen Audio Video Center B.V.,Roermond,Neerstraat 40,4743,,12345619,10,website
+V020,IKEA Heerlen,Heerlen,In de Cramer 142,4759,CB010,30126095,400,media

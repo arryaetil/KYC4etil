@@ -1,0 +1,103 @@
+{
+  "_toelichting": "Deterministische mock-responses voor de 20 testbedrijven (PROVIDER_MODE=mock). Waarden gebaseerd op de ground truth; CB-ers demonstreren bewust de multi-locatie- en schattingslogica.",
+  "Mondriaan": {
+    "places": {"website": "https://www.mondriaan.eu", "phone": "088-5066262", "adres_match": true},
+    "locaties": {"nl": 25, "lb": 25},
+    "jaarverslag": {"wp": 2281, "context": "Eind 2025 telde Mondriaan 2.281 medewerkers, werkzaam op onze locaties in Limburg.", "zekerheid": "hoog", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.mondriaan.eu/jaarverslag-2025.pdf"}
+  },
+  "Okechamp B.V.": {
+    "places": {"website": "https://www.okechamp.nl", "phone": "077-3979900", "adres_match": true},
+    "locaties": {"nl": 1, "lb": 1},
+    "jaarverslag": {"wp": 138, "context": "Het gemiddeld aantal medewerkers bedroeg in het verslagjaar 138.", "zekerheid": "hoog", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.okechamp.nl/jaarverslag-2025.pdf"}
+  },
+  "Jumbo Supermarkten B.V. - Filiaal": {
+    "places": {"website": "https://www.jumbo.com", "phone": "077-3540000", "adres_match": true},
+    "locaties": {"nl": 720, "lb": 42},
+    "jaarverslag": {"wp": 2504, "context": "In de provincie Limburg zijn 2.504 medewerkers werkzaam in onze 42 winkels.", "zekerheid": "middel", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.jumbo.com/jaarverslag-2025.pdf"}
+  },
+  "Stichting Pergamijn": {
+    "places": {"website": "https://www.pergamijn.org", "phone": "0475-579579", "adres_match": true},
+    "locaties": {"nl": 20, "lb": 20},
+    "jaarverslag": {"wp": 852, "context": "Pergamijn had per 31 december 852 medewerkers in dienst.", "zekerheid": "hoog", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.pergamijn.org/jaarverslag-2025.pdf"}
+  },
+  "NS Groep": {
+    "places": {"website": "https://www.ns.nl", "phone": "030-7515155", "adres_match": true},
+    "locaties": {"nl": 400, "lb": 15},
+    "jaarverslag": {"wp": 17000, "context": "NS had in 2025 gemiddeld 17.000 fte in Nederland.", "zekerheid": "middel", "limburg_specifiek": false, "is_fte": true, "peilmoment": "2025", "url": "https://www.ns.nl/jaarverslag-2025.pdf"}
+  },
+  "Veiligheidsregio Limburg Noord": {
+    "places": {"website": "https://www.vrln.nl", "phone": "088-1190000", "adres_match": true},
+    "locaties": {"nl": 12, "lb": 12},
+    "jaarverslag": {"wp": 1230, "context": "De organisatie telt 1.230 medewerkers, allen werkzaam in Noord- en Midden-Limburg.", "zekerheid": "hoog", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.vrln.nl/jaarverslag-2025.pdf"}
+  },
+  "Zuyderland Medisch en Zorgconcern": {
+    "places": {"website": "https://www.zuyderland.nl", "phone": "088-4597777", "adres_match": true},
+    "locaties": {"nl": 28, "lb": 28},
+    "jaarverslag": {"wp": 10444, "context": "Zuyderland telde in 2025 10.444 medewerkers.", "zekerheid": "hoog", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.zuyderland.nl/jaarverslag-2025.pdf"}
+  },
+  "DSM-Firmenich": {
+    "places": {"website": "https://www.dsm-firmenich.com", "phone": "046-4761111", "adres_match": true},
+    "locaties": {"nl": 12, "lb": 4},
+    "jaarverslag": {"wp": 5600, "context": "dsm-firmenich employs approximately 5,600 people in the Netherlands.", "zekerheid": "middel", "limburg_specifiek": false, "peilmoment": "2025", "url": "https://www.dsm-firmenich.com/annual-report-2025.pdf"}
+  },
+  "Koninklijke BAM Groep N.V.": {
+    "places": {"website": "https://www.bam.com", "phone": "030-6598988", "adres_match": false},
+    "locaties": {"nl": 60, "lb": 4},
+    "jaarverslag": {"wp": 13500, "context": "BAM had in 2025 gemiddeld 13.500 medewerkers in Nederland.", "zekerheid": "middel", "limburg_specifiek": false, "peilmoment": "2025", "url": "https://www.bam.com/jaarverslag-2025.pdf"}
+  },
+  "Hallux Podotherapie": {
+    "places": {"website": "https://www.halluxpodotherapie.nl", "phone": "0475-330011", "adres_match": true},
+    "locaties": {"nl": 1, "lb": 1},
+    "website": {"wp": 3, "context": "Ons team bestaat uit 3 podotherapeuten.", "zekerheid": "hoog", "peilmoment": "2026", "url": "https://www.halluxpodotherapie.nl/over-ons"}
+  },
+  "Salon Handmade": {
+    "places": {"website": "https://www.salonhandmade.nl", "phone": "0495-540123", "adres_match": true},
+    "locaties": {"nl": 1, "lb": 1},
+    "website": {"wp": 3, "context": "Boek online bij een van onze 3 medewerkers: Kim, Lisa of Demi. (afsprakensysteem)", "zekerheid": "hoog", "peilmoment": "2026", "url": "https://www.salonhandmade.nl/afspraak"}
+  },
+  "Orthodontie aan de Maas B.V.": {
+    "places": {"website": "https://www.orthodontieaandemaas.nl", "phone": "043-3215566", "adres_match": true},
+    "website": {"wp": 9, "context": "Even voorstellen: ons team van 9 medewerkers staat voor u klaar.", "zekerheid": "hoog", "peilmoment": "2026", "url": "https://www.orthodontieaandemaas.nl/team"},
+    "locaties": {"nl": 1, "lb": 1}
+  },
+  "Huisartsenpraktijk Hoensbroek": {
+    "places": {"website": "https://www.huisartsenpraktijkhoensbroek.nl", "phone": "045-5212345", "adres_match": true},
+    "locaties": {"nl": 1, "lb": 1},
+    "website": {"wp": 13, "context": "Ons team: 3 huisartsen, 6 assistentes, 2 praktijkondersteuners en 2 POH-GGZ.", "zekerheid": "hoog", "peilmoment": "2026", "url": "https://www.huisartsenpraktijkhoensbroek.nl/over-ons"}
+  },
+  "Verloskundigen (CB-er)": {
+    "places": {"website": "https://www.verloskundigenlimburg.nl", "phone": "046-4515678", "adres_match": true},
+    "locaties": {"nl": 3, "lb": 3},
+    "website": {"wp": 10, "context": "Met 10 verloskundigen verdeeld over onze drie praktijken staan wij voor je klaar.", "zekerheid": "middel", "totaal_meerdere_vestigingen": true, "peilmoment": "2026", "url": "https://www.verloskundigenlimburg.nl/team"}
+  },
+  "Dreessen Advocaten": {
+    "places": {"website": "https://www.dreessenadvocaten.nl", "phone": "043-3256789", "adres_match": true},
+    "locaties": {"nl": 1, "lb": 1},
+    "website": {"wp": 5, "context": "Ons kantoor telt 3 advocaten en 2 juridisch medewerkers.", "zekerheid": "hoog", "peilmoment": "2026", "url": "https://www.dreessenadvocaten.nl/over-ons"}
+  },
+  "Fysiosittard": {
+    "places": {"website": "https://www.fysiosittard.nl", "phone": "046-4512233", "adres_match": true},
+    "locaties": {"nl": 2, "lb": 2},
+    "website": {"wp": 17, "context": "Maak kennis met ons team van 17 fysiotherapeuten en ondersteuners.", "zekerheid": "hoog", "peilmoment": "2026", "url": "https://www.fysiosittard.nl/team"}
+  },
+  "Philipse Accountancy en Advisering B.V.": {
+    "places": {"website": "https://www.philipse-accountancy.nl", "phone": "077-3512244", "adres_match": true},
+    "locaties": {"nl": 1, "lb": 1},
+    "website": {"wp": 2, "context": "Even voorstellen: wij zijn Jan en Marieke Philipse.", "zekerheid": "hoog", "peilmoment": "2026", "url": "https://www.philipse-accountancy.nl/over-ons"}
+  },
+  "Maasstreek Makelaardij B.V.": {
+    "places": {"website": "https://www.maasstreek.nl", "phone": "0475-318899", "adres_match": true},
+    "locaties": {"nl": 1, "lb": 1},
+    "website": {"wp": 4, "context": "Ons team bestaat uit 2 makelaars en 2 binnendienstmedewerkers.", "zekerheid": "hoog", "peilmoment": "2026", "url": "https://www.maasstreek.nl/team"}
+  },
+  "Poulissen Audio Video Center B.V.": {
+    "places": {"website": "https://www.poulissen.nl", "phone": "0475-316655", "adres_match": true},
+    "locaties": {"nl": 1, "lb": 1},
+    "website": {"wp": 10, "context": "Al 40 jaar staan onze 10 specialisten voor u klaar.", "zekerheid": "hoog", "peilmoment": "2026", "url": "https://www.poulissen.nl/over-ons"}
+  },
+  "IKEA Heerlen": {
+    "places": {"website": "https://www.ikea.com/nl", "phone": "0900-2354532", "adres_match": true},
+    "locaties": {"nl": 13, "lb": 1},
+    "media": {"wp": 400, "context": "Bij de vestiging in Heerlen werken zo'n 400 medewerkers, meldt De Limburger.", "zekerheid": "middel", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.limburger.nl/artikel/ikea-heerlen"}
+  }
+}

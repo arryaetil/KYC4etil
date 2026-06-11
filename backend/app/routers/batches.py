@@ -1,0 +1,121 @@
+import csv
+import io
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..models import AgentResult, Batch, Candidate, Company, Enrichment
+from ..pipeline.runner import run_batch
+
+router = APIRouter(prefix="/batches", tags=["batches"])
+
+CSV_VELDEN = {"naam"}  # minimaal vereist
+
+
+@router.post("/upload")
+async def upload_batch(file: UploadFile, naam: str | None = None,
+                       jaar: int | None = None, db: Session = Depends(get_db)):
+    """CSV-upload -> batch + companies. Verwachte kolommen (flexibel):
+    vestigingsnummer, naam, gemeente, adres, sbi_code, cb_er, kvk_nummer."""
+    content = (await file.read()).decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(content))
+    rows = list(reader)
+    if not rows or not CSV_VELDEN.issubset({k.strip().lower() for k in rows[0]}):
+        raise HTTPException(422, "CSV mist verplichte kolom 'naam'")
+
+    batch = Batch(naam=naam or file.filename, jaar=jaar or datetime.utcnow().year,
+                  totaal=len(rows))
+    db.add(batch)
+    db.flush()
+    for r in rows:
+        r = {k.strip().lower(): (v.strip() if v else None) for k, v in r.items()}
+        db.add(Company(batch_id=batch.id, vestigingsnummer=r.get("vestigingsnummer"),
+                       naam=r["naam"], gemeente=r.get("gemeente"), adres=r.get("adres"),
+                       sbi_code=r.get("sbi_code"), cb_er=r.get("cb_er"),
+                       kvk_nummer=r.get("kvk_nummer")))
+    db.commit()
+    return {"batch_id": batch.id, "aantal_companies": len(rows)}
+
+
+@router.post("/{batch_id}/run")
+async def start_batch(batch_id: str, db: Session = Depends(get_db)):
+    """Draait de pipeline synchroon (demo-schaal). Bij grotere batches:
+    achtergrondtaak + pollen op /batches/{id}."""
+    try:
+        batch = await run_batch(db, batch_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"batch_id": batch.id, "status": batch.status, "verwerkt": batch.verwerkt}
+
+
+@router.get("")
+def list_batches(db: Session = Depends(get_db)):
+    return [{"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
+             "totaal": b.totaal, "verwerkt": b.verwerkt} for b in db.query(Batch).all()]
+
+
+@router.get("/{batch_id}")
+def get_batch(batch_id: str, db: Session = Depends(get_db)):
+    b = db.get(Batch, batch_id)
+    if not b:
+        raise HTTPException(404, "batch niet gevonden")
+    labels = {"hoog": 0, "middel": 0, "laag": 0}
+    for c in db.query(Candidate).filter_by(batch_id=batch_id):
+        if c.confidence_label in labels:
+            labels[c.confidence_label] += 1
+    return {"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
+            "totaal": b.totaal, "verwerkt": b.verwerkt, "labels": labels}
+
+
+@router.get("/{batch_id}/companies")
+def list_companies(batch_id: str, label: str | None = None, db: Session = Depends(get_db)):
+    out = []
+    for comp in db.query(Company).filter_by(batch_id=batch_id):
+        cand = comp.candidate
+        if label and (not cand or cand.confidence_label != label):
+            continue
+        out.append({
+            "company_id": comp.id, "naam": comp.naam, "gemeente": comp.gemeente,
+            "wp_kandidaat": cand.wp_kandidaat if cand else None,
+            "is_schatting": cand.is_schatting if cand else None,
+            "confidence_score": cand.confidence_score if cand else None,
+            "confidence_label": cand.confidence_label if cand else None,
+            "strategie": cand.strategie if cand else None,
+            "status": cand.status if cand else None,
+        })
+    return out
+
+
+@router.get("/{batch_id}/companies/{company_id}")
+def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)):
+    comp = db.get(Company, company_id)
+    if not comp or comp.batch_id != batch_id:
+        raise HTTPException(404, "company niet gevonden")
+    enr: Enrichment | None = comp.enrichment
+    cand: Candidate | None = comp.candidate
+    return {
+        "company": {"id": comp.id, "naam": comp.naam, "adres": comp.adres,
+                    "gemeente": comp.gemeente, "sbi_code": comp.sbi_code,
+                    "cb_er": comp.cb_er, "kvk_nummer": comp.kvk_nummer},
+        "enrichment": enr and {
+            "website_url": enr.website_url, "telefoonnummer": enr.telefoonnummer,
+            "locatie_count_nl": enr.locatie_count_nl, "locatie_count_lb": enr.locatie_count_lb,
+            "locatie_bron": enr.locatie_bron, "adres_validated": enr.adres_validated,
+            "lookup_failed": enr.lookup_failed},
+        "agent_results": [{
+            "agent_type": ar.agent_type, "wp_gevonden": ar.wp_gevonden,
+            "context": ar.wp_context, "bron_url": ar.bron_url, "bron_type": ar.bron_type,
+            "is_limburg_specifiek": ar.is_limburg_specifiek, "is_fte": ar.is_fte,
+            "peilmoment": ar.peilmoment, "llm_zekerheid": ar.llm_zekerheid,
+        } for ar in comp.agent_results],
+        "candidate": cand and {
+            "id": cand.id, "wp_kandidaat": cand.wp_kandidaat,
+            "is_schatting": cand.is_schatting,
+            "reconciliatie_reden": cand.reconciliatie_reden,
+            "confidence_score": cand.confidence_score,
+            "confidence_label": cand.confidence_label,
+            "score_breakdown": cand.score_breakdown,
+            "strategie": cand.strategie, "status": cand.status},
+    }
