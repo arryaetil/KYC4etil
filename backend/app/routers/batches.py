@@ -1,18 +1,27 @@
 import csv
 import io
+import asyncio
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..models import AgentResult, Batch, Candidate, Company, Enrichment
 from ..pipeline.runner import run_batch
 
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
 
 CSV_VELDEN = {"naam"}  # minimaal vereist
+
+
+def run_batch_background(batch_id: str) -> None:
+    db = SessionLocal()
+    try:
+        asyncio.run(run_batch(db, batch_id))
+    finally:
+        db.close()
 
 
 @router.post("/upload")
@@ -41,14 +50,23 @@ async def upload_batch(file: UploadFile, naam: str | None = None,
 
 
 @router.post("/{batch_id}/run")
-async def start_batch(batch_id: str, db: Session = Depends(get_db)):
-    """Draait de pipeline synchroon (demo-schaal). Bij grotere batches:
-    achtergrondtaak + pollen op /batches/{id}."""
-    try:
-        batch = await run_batch(db, batch_id)
-    except ValueError as e:
-        raise HTTPException(404, str(e))
-    return {"batch_id": batch.id, "status": batch.status, "verwerkt": batch.verwerkt}
+async def start_batch(batch_id: str, background_tasks: BackgroundTasks,
+                      db: Session = Depends(get_db)):
+    """Start de pipeline als achtergrondtaak; voortgang staat op GET /batches/{id}."""
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(404, f"batch {batch_id} bestaat niet")
+    if batch.status == "running":
+        return {"batch_id": batch.id, "status": batch.status, "verwerkt": batch.verwerkt,
+                "totaal": batch.totaal}
+
+    batch.status = "running"
+    batch.verwerkt = 0
+    batch.completed_at = None
+    db.commit()
+    background_tasks.add_task(run_batch_background, batch.id)
+    return {"batch_id": batch.id, "status": batch.status, "verwerkt": batch.verwerkt,
+            "totaal": batch.totaal}
 
 
 @router.get("")
