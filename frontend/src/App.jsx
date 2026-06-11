@@ -278,7 +278,7 @@ function Dashboard({api, user, onLogout, openBatch}) {
                 <td className="px-4 py-3"><StatusPill status={batch.status} /></td>
                 <td className="px-4 py-3 text-right">
                   {batch.status === "running"
-                    ? <IconButton icon={Square} variant="danger" onClick={() => cancel(batch.id)} disabled={busy}>Annuleren</IconButton>
+                    ? <IconButton icon={Square} variant="quiet" onClick={() => cancel(batch.id)} disabled={busy}>Annuleren</IconButton>
                     : <IconButton icon={Play} onClick={() => run(batch.id)} disabled={busy}>Run</IconButton>
                   }
                 </td>
@@ -369,7 +369,7 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
         <>
           <IconButton icon={ListChecks} onClick={openDashboard}>Dashboard</IconButton>
           {isRunning
-            ? <IconButton icon={Square} variant="danger" onClick={cancelBatch} disabled={busy}>Annuleren</IconButton>
+            ? <IconButton icon={Square} variant="quiet" onClick={cancelBatch} disabled={busy}>Annuleren</IconButton>
             : <IconButton icon={Play} variant="primary" onClick={runBatch} disabled={busy}>Run</IconButton>
           }
           <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Groen goedkeuren</IconButton>
