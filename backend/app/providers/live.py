@@ -143,7 +143,7 @@ Regels:
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     response = await client.responses.create(
-        model=settings.openai_model,
+        model=_extraction_model(),
         tools=[{"type": "web_search", "search_context_size": "low"}],
         tool_choice="required",
         input=prompt,
@@ -195,7 +195,7 @@ Antwoord uitsluitend met JSON:
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     response = await client.responses.create(
-        model=settings.openai_model,
+        model=_extraction_model(),
         tools=[{"type": "web_search", "search_context_size": "medium"}],
         tool_choice="required",
         input=prompt,
@@ -248,7 +248,7 @@ Antwoord uitsluitend met JSON:
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     response = await client.responses.create(
-        model=settings.openai_model,
+        model=_extraction_model(),
         tools=[{"type": "web_search", "search_context_size": "medium"}],
         tool_choice="required",
         input=prompt,
@@ -316,12 +316,16 @@ async def _scrape_pdf_van_pagina(pagina_url: str, jaar: int) -> str | None:
     return candidates[0][1]
 
 
+def _extraction_model() -> str:
+    return settings.openai_model_extraction or settings.openai_model
+
+
 async def _llm_extract(naam: str, adres: str | None, tekst: str) -> dict | None:
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     response = await client.responses.create(
-        model=settings.openai_model,
+        model=_extraction_model(),
         input=EXTRACT_PROMPT.format(naam=naam, adres=adres or "onbekend", tekst=tekst[:60000]),
         max_output_tokens=1024,
         text={"format": {"type": "json_object"}},
@@ -377,7 +381,7 @@ class LiveWebsiteAgent:
         # Fase A+B: website scrapen als URL beschikbaar
         if website_url:
             base = website_url.rstrip("/")
-            for path in CANDIDATE_PATHS:
+            for path in CANDIDATE_PATHS[:settings.max_website_pages]:
                 url = base + path
                 try:
                     tekst = await _fetch_text(url)
@@ -440,7 +444,7 @@ Antwoord uitsluitend met JSON:
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     response = await client.responses.create(
-        model=settings.openai_model,
+        model=_extraction_model(),
         tools=[{"type": "web_search", "search_context_size": "medium"}],
         tool_choice="required",
         input=prompt,
@@ -473,7 +477,8 @@ Antwoord uitsluitend met JSON:
 class LiveJaarverslagAgent:
     async def run(self, naam: str, jaar: int) -> AgentFinding | None:
         """Fase A: zoek jaarverslag-PDF via web search; Fase B: extraheer WP uit PDF.
-        Fase C: directe WP-zoekopdracht op jaarverslagdata als PDF-pad mislukt."""
+        Fase C (optioneel): directe WP-zoekopdracht op jaarverslagdata als PDF-pad mislukt.
+        Fase C is standaard uitgeschakeld (JAARVERSLAG_WEB_FALLBACK=false) voor kostenbeheersing."""
         pdf_url = await _zoek_jaarverslag_pdf(naam, jaar)
         if pdf_url:
             try:
@@ -482,8 +487,9 @@ class LiveJaarverslagAgent:
                     return result
             except Exception:
                 pass
-        # Fase C: PDF niet gevonden of leesbaar — web search op jaarverslagdata
-        return await _web_search_jaarverslag_wp(naam, jaar)
+        if settings.jaarverslag_web_fallback:
+            return await _web_search_jaarverslag_wp(naam, jaar)
+        return None
 
     async def run_with_pdf(self, naam: str, pdf_url: str) -> AgentFinding | None:
         import fitz  # PyMuPDF

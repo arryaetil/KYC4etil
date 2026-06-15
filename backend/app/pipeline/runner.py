@@ -52,8 +52,14 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
         company.naam, company.adres, enrichment.website_url, gemeente=company.gemeente)
     _log(db, batch.id, company.id, "website_agent", "ok" if w_finding else "skipped", t0)
     t0 = time.monotonic()
-    j_finding = await jaarverslag_agent.run(company.naam, batch.jaar)
-    _log(db, batch.id, company.id, "jaarverslag_agent", "ok" if j_finding else "skipped", t0)
+    # Sla jaarverslag-agent over als website-agent al een hoog-zekerheidsbevinding heeft.
+    # Dit bespaart 1-2 extra LLM-calls per bedrijf (kostenoptimalisatie).
+    if w_finding and getattr(w_finding, "zekerheid", None) == "hoog":
+        j_finding = None
+        _log(db, batch.id, company.id, "jaarverslag_agent", "skipped", t0)
+    else:
+        j_finding = await jaarverslag_agent.run(company.naam, batch.jaar)
+        _log(db, batch.id, company.id, "jaarverslag_agent", "ok" if j_finding else "skipped", t0)
 
     agent_result_ids = {}
     for finding in (w_finding, j_finding):

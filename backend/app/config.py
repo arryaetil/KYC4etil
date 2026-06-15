@@ -14,7 +14,10 @@ class Settings(BaseSettings):
     kvk_api_key: str = ""
     jwt_secret: str = "change-me"
     register_peildatum: str = "2026-04-01"
-    openai_model: str = "gpt-5.2"
+    openai_model: str = "gpt-4o-mini"         # hoofd-model; overschrijfbaar via OPENAI_MODEL
+    openai_model_extraction: str = ""          # leeg = fallback naar openai_model
+    jaarverslag_web_fallback: bool = False     # Fase C fallback: extra OpenAI-call als PDF mislukt
+    max_website_pages: int = 3                 # max pagina's per bedrijf voor website-agent (kostenbeheersing)
     playwright_enabled: bool = False  # zet op true in Railway nadat Chromium getest is
     frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173"
     frontend_url: str = "http://localhost:5173"  # publieke URL voor chat-links in emails
