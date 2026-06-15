@@ -317,7 +317,7 @@ function Dashboard({api, user, onLogout, openBatch}) {
   );
 }
 
-function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
+function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, openBellijst}) {
   const [batch, setBatch] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [label, setLabel] = useState("");
@@ -327,7 +327,11 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const [batchData, companyData] = await Promise.all([api.batch(batchId), api.companies(batchId, label)]);
+    const labelParam = label === "fouten" ? "" : label;
+    const [batchData, companyData] = await Promise.all([
+      api.batch(batchId),
+      api.companies(batchId, labelParam),
+    ]);
     setBatch(batchData);
     setCompanies(companyData);
   }
@@ -339,10 +343,11 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
   }, [batchId, label]);
 
   const filtered = useMemo(() => companies.filter((company) => {
+    if (label === "fouten") return !!company.pipeline_error;
     const matchesStrategie = !strategie || company.strategie === strategie;
     const text = `${company.naam || ""} ${company.gemeente || ""}`.toLowerCase();
     return matchesStrategie && text.includes(search.toLowerCase());
-  }), [companies, strategie, search]);
+  }), [companies, label, strategie, search]);
 
   async function approveAll() {
     try {
@@ -407,7 +412,7 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
           }
           <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Groen goedkeuren</IconButton>
           <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.csv`, "export.csv")}>Export</IconButton>
-          <IconButton icon={Download} onClick={() => api.download(`/batches/${batchId}/bellijst.csv`, "bellijst.csv")}>Bellijst</IconButton>
+          <IconButton icon={Phone} onClick={() => openBellijst(batchId)}>Bellijst</IconButton>
           <IconButton icon={Trash2} variant="quiet" onClick={deleteBatch} disabled={busy || isRunning} title="Batch verwijderen" />
         </>
       }
@@ -423,6 +428,7 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
           <option value="hoog">Groen</option>
           <option value="middel">Geel</option>
           <option value="laag">Rood</option>
+          <option value="fouten">Fouten</option>
         </select>
         <select className="focus-ring h-11 rounded-md border border-line bg-white px-3" value={strategie} onChange={(event) => setStrategie(event.target.value)}>
           <option value="">Alle strategieen</option>
@@ -432,7 +438,16 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
       {batch ? (
         <div className="mb-4 grid gap-3 md:grid-cols-3">
           <Metric title="Voortgang" value={`${batch.verwerkt || 0}/${batch.totaal || 0}`} />
-          <Metric title="Status" value={<StatusPill status={batch.status} />} />
+          <Metric title="Status" value={
+            <div className="flex items-center gap-2">
+              <StatusPill status={batch.status} />
+              {batch.fouten > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">
+                  <AlertTriangle size={12} />{batch.fouten} {batch.fouten === 1 ? "fout" : "fouten"}
+                </span>
+              )}
+            </div>
+          } />
           <Metric title="Labels" value={<LabelCounts labels={batch.labels} />} />
         </div>
       ) : null}
@@ -451,7 +466,10 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
             {filtered.map((company) => (
               <tr key={company.company_id} className="cursor-pointer border-t border-line hover:bg-panel" onClick={() => openCompany(batchId, company.company_id)}>
                 <td className="px-4 py-3">
-                  <div className="font-semibold">{company.naam}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="font-semibold">{company.naam}</div>
+                    {company.pipeline_error && <AlertTriangle size={14} className="shrink-0 text-red-500" title={company.pipeline_error} />}
+                  </div>
                   <div className="text-xs text-slate-500">{company.gemeente}</div>
                 </td>
                 <td className="px-4 py-3 font-medium">{company.wp_kandidaat ?? "-"}</td>
@@ -468,6 +486,203 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany}) {
           </tbody>
         </table>
       </div>
+    </Shell>
+  );
+}
+
+const BELLIJST_STATUS = {
+  open: {label: "Open", cls: "bg-slate-100 text-slate-700"},
+  gebeld: {label: "Gebeld", cls: "bg-blue-100 text-blue-800"},
+  niet_bereikt: {label: "Niet bereikt", cls: "bg-amber-100 text-amber-800"},
+  afgerond: {label: "Afgerond", cls: "bg-emerald-100 text-emerald-800"},
+};
+
+function BellijstView({api, user, onLogout, batchId, openBatch}) {
+  const [items, setItems] = useState([]);
+  const [edits, setEdits] = useState({});
+  const [saving, setSaving] = useState({});
+  const [doorgevoerd, setDoorgevoerd] = useState({});
+  const [filterStatus, setFilterStatus] = useState("");
+  const [sortField, setSortField] = useState("naam");
+  const [error, setError] = useState("");
+
+  async function load() {
+    const data = await api.bellijstItems(batchId);
+    setItems(data);
+    const init = {};
+    data.forEach((item) => {
+      init[item.id] = {status: item.status, notities: item.notities || "", resultaat_wp: item.resultaat_wp ?? ""};
+    });
+    setEdits(init);
+  }
+
+  useEffect(() => {
+    load().catch((err) => setError(err.message));
+  }, [batchId]);
+
+  function patch(id, field, value) {
+    setEdits((prev) => ({...prev, [id]: {...prev[id], [field]: value}}));
+  }
+
+  async function save(id) {
+    setSaving((prev) => ({...prev, [id]: true}));
+    try {
+      const e = edits[id];
+      await api.updateBellijstItem(id, {
+        status: e.status,
+        notities: e.notities || null,
+        resultaat_wp: e.resultaat_wp !== "" ? Number(e.resultaat_wp) : null,
+      });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving((prev) => ({...prev, [id]: false}));
+    }
+  }
+
+  async function doorvoeren(id) {
+    setSaving((prev) => ({...prev, [`dv_${id}`]: true}));
+    try {
+      await api.doorvoerenBellijst(id);
+      setDoorgevoerd((prev) => ({...prev, [id]: true}));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving((prev) => ({...prev, [`dv_${id}`]: false}));
+    }
+  }
+
+  const visibleItems = useMemo(() => {
+    let list = filterStatus ? items.filter((i) => i.status === filterStatus) : items;
+    return [...list].sort((a, b) => {
+      if (sortField === "naam") return (a.naam || "").localeCompare(b.naam || "");
+      if (sortField === "status") return (a.status || "").localeCompare(b.status || "");
+      return 0;
+    });
+  }, [items, filterStatus, sortField]);
+
+  const open = items.filter((i) => i.status === "open").length;
+  const afgerond = items.filter((i) => i.status === "afgerond").length;
+
+  return (
+    <Shell
+      user={user}
+      onLogout={onLogout}
+      title="Bellijst werkscherm"
+      actions={
+        <>
+          <IconButton icon={ListChecks} onClick={() => openBatch(batchId)}>Batchoverzicht</IconButton>
+          <IconButton icon={Download} onClick={() => api.download(`/batches/${batchId}/bellijst.csv`, "bellijst.csv")}>Exporteren</IconButton>
+        </>
+      }
+    >
+      {error ? <Alert message={error} /> : null}
+      <div className="mb-4 grid gap-3 md:grid-cols-3">
+        <Metric title="Totaal" value={items.length} />
+        <Metric title="Open" value={open} />
+        <Metric title="Afgerond" value={afgerond} />
+      </div>
+      {items.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-3">
+          <select className="focus-ring h-10 rounded-md border border-line bg-white px-3 text-sm" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="">Alle statussen</option>
+            {Object.entries(BELLIJST_STATUS).map(([v, {label}]) => <option key={v} value={v}>{label}</option>)}
+          </select>
+          <select className="focus-ring h-10 rounded-md border border-line bg-white px-3 text-sm" value={sortField} onChange={(e) => setSortField(e.target.value)}>
+            <option value="naam">Sorteren: naam</option>
+            <option value="status">Sorteren: status</option>
+          </select>
+          <span className="ml-auto self-center text-sm text-slate-500">{visibleItems.length} van {items.length}</span>
+        </div>
+      )}
+      {!items.length ? (
+        <div className="rounded-lg border border-line bg-white p-8 text-center text-slate-500">Geen items op de bellijst</div>
+      ) : (
+        <div className="space-y-3">
+          {visibleItems.map((item) => {
+            const e = edits[item.id] || {};
+            const cfg = BELLIJST_STATUS[e.status] || BELLIJST_STATUS.open;
+            return (
+              <div key={item.id} className="rounded-lg border border-line bg-white p-4">
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">{item.naam}</div>
+                    <div className="text-sm text-slate-500">{item.gemeente}</div>
+                    {item.telefoonnummer ? (
+                      <a className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-etil" href={`tel:${item.telefoonnummer}`}>
+                        <Phone size={14} />{item.telefoonnummer}
+                      </a>
+                    ) : <div className="mt-1 text-sm text-slate-400">Geen telefoonnummer</div>}
+                  </div>
+                  <span className={classNames("rounded-md px-2 py-1 text-xs font-semibold", cfg.cls)}>{cfg.label}</span>
+                </div>
+                {item.reden ? (
+                  <div className="mb-3 rounded-md border-l-4 border-etil bg-panel pl-3 py-2 text-sm text-slate-700">{item.reden}</div>
+                ) : null}
+                <div className="grid gap-3 md:grid-cols-[160px_1fr_140px_100px]">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Status</label>
+                    <select
+                      className="focus-ring h-10 w-full rounded-md border border-line bg-white px-2 text-sm"
+                      value={e.status || "open"}
+                      onChange={(ev) => patch(item.id, "status", ev.target.value)}
+                    >
+                      {Object.entries(BELLIJST_STATUS).map(([value, {label}]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Notities</label>
+                    <input
+                      className="focus-ring h-10 w-full rounded-md border border-line px-3 text-sm"
+                      value={e.notities || ""}
+                      onChange={(ev) => patch(item.id, "notities", ev.target.value)}
+                      placeholder="Notitie toevoegen…"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Resultaat WP</label>
+                    <input
+                      className="focus-ring h-10 w-full rounded-md border border-line px-3 text-sm"
+                      value={e.resultaat_wp ?? ""}
+                      onChange={(ev) => patch(item.id, "resultaat_wp", ev.target.value)}
+                      placeholder="WP"
+                      inputMode="numeric"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <IconButton
+                      icon={Check}
+                      variant="primary"
+                      className="w-full justify-center"
+                      onClick={() => save(item.id)}
+                      disabled={saving[item.id]}
+                    >
+                      {saving[item.id] ? "…" : "Opslaan"}
+                    </IconButton>
+                  </div>
+                </div>
+                {item.status === "afgerond" && item.resultaat_wp != null ? (
+                  <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+                    <span className="text-sm text-slate-500">
+                      Resultaat <strong>{item.resultaat_wp} WP</strong> — doorvoeren naar register?
+                    </span>
+                    {doorgevoerd[item.id] ? (
+                      <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-700"><Check size={15} /> Doorgevoerd</span>
+                    ) : (
+                      <IconButton icon={Check} variant="primary" onClick={() => doorvoeren(item.id)} disabled={saving[`dv_${item.id}`]}>
+                        {saving[`dv_${item.id}`] ? "…" : "Doorvoeren"}
+                      </IconButton>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </Shell>
   );
 }
@@ -518,14 +733,31 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
                 <Info label="CB-er" value={detail.company.cb_er || "-"} />
                 <Info label="KvK" value={detail.company.kvk_nummer || "-"} />
               </dl>
+              {detail.enrichment ? <EnrichmentStrip enrichment={detail.enrichment} /> : null}
             </Panel>
             <Panel title="Gevonden bronnen">
               <div className="space-y-3">
                 {detail.agent_results.map((result, index) => (
                   <div key={`${result.agent_type}-${index}`} className="rounded-md border border-line bg-panel p-3">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-semibold">{result.agent_type} - WP {result.wp_gevonden ?? "-"}</div>
-                      <div className="text-xs text-slate-500">{result.bron_type} - {result.peilmoment || "geen peilmoment"}</div>
+                      <div className="font-semibold">{result.agent_type} — WP {result.wp_gevonden ?? "-"}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {result.llm_zekerheid ? (
+                          <span className={classNames("rounded px-1.5 py-0.5 text-xs font-semibold capitalize", ZEKERHEID_STYLE[result.llm_zekerheid] || ZEKERHEID_STYLE.laag)}>
+                            {result.llm_zekerheid}
+                          </span>
+                        ) : null}
+                        {result.is_limburg_specifiek === true && (
+                          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold text-emerald-800">LB-specifiek</span>
+                        )}
+                        {result.is_limburg_specifiek === false && (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800">Nationaal</span>
+                        )}
+                        {result.is_fte && (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-semibold text-red-800">FTE</span>
+                        )}
+                        <span className="text-xs text-slate-500">{result.bron_type} · {result.peilmoment || "geen peilmoment"}</span>
+                      </div>
                     </div>
                     <blockquote className="border-l-4 border-etil pl-3 text-sm text-slate-700">{result.context || "Geen citaat"}</blockquote>
                     {result.bron_url ? (
@@ -539,6 +771,20 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
             <Panel title="Score-uitleg">
               <ScoreBreakdown breakdown={candidate?.score_breakdown} />
             </Panel>
+            {detail.pipeline_fouten?.length > 0 && (
+              <Panel title="Pipeline-fouten">
+                <div className="space-y-2">
+                  {detail.pipeline_fouten.map((f, i) => (
+                    <div key={i} className="rounded-md border border-red-200 bg-red-50 p-3 text-sm">
+                      <div className="mb-1 flex items-center gap-2 font-semibold text-red-800">
+                        <AlertTriangle size={14} />{f.stap}
+                      </div>
+                      <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-xs text-red-700">{f.error}</pre>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            )}
           </section>
           <aside className="space-y-5">
             <Panel title="Kandidaat">
@@ -573,6 +819,11 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
                   </IconButton>
                   <IconButton icon={Phone} disabled={!candidate} onClick={() => action(() => api.bellijst(candidate.id, reason))}>
                     Bellijst
+                  </IconButton>
+                </div>
+                <div className="border-t border-line pt-3">
+                  <IconButton icon={RefreshCw} className="w-full justify-center" onClick={() => action(() => api.herverwerk(batchId, companyId))}>
+                    Herverwerk
                   </IconButton>
                 </div>
               </div>
@@ -639,6 +890,45 @@ function LabelCounts({labels = {}}) {
   );
 }
 
+function EnrichmentStrip({enrichment}) {
+  const website = enrichment.website_url;
+  const tel = enrichment.telefoonnummer;
+  const nlCount = enrichment.locatie_count_nl;
+  const lbCount = enrichment.locatie_count_lb;
+  const bron = enrichment.locatie_bron;
+  const bronLabel = {places: "Places", kvk: "KvK", web_search: "web search"}[bron] || bron;
+
+  const hasAny = website || tel || nlCount;
+  if (!hasAny) return null;
+
+  return (
+    <div className="mt-4 border-t border-line pt-4">
+      <div className="mb-2 text-xs font-medium uppercase text-slate-500">Gevonden door agent</div>
+      <div className="flex flex-wrap gap-4 text-sm">
+        {website ? (
+          <div>
+            <span className="text-slate-500">Website </span>
+            <a className="font-medium text-etil underline" href={website} target="_blank" rel="noreferrer">{website.replace(/^https?:\/\//, "")}</a>
+          </div>
+        ) : null}
+        {tel ? (
+          <div>
+            <span className="text-slate-500">Tel </span>
+            <span className="font-medium">{tel}</span>
+          </div>
+        ) : null}
+        {nlCount != null ? (
+          <div>
+            <span className="text-slate-500">Locaties </span>
+            <span className="font-medium">{lbCount ?? "?"} in LB / {nlCount} NL</span>
+            {bronLabel ? <span className="ml-1 text-xs text-slate-400">({bronLabel})</span> : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 const ZEKERHEID_STYLE = {
   hoog: "bg-emerald-100 text-emerald-800",
   middel: "bg-amber-100 text-amber-800",
@@ -647,6 +937,16 @@ const ZEKERHEID_STYLE = {
 
 function ScoreBreakdown({breakdown}) {
   if (!breakdown) return <div className="text-sm text-slate-500">Geen score beschikbaar</div>;
+
+  // No-data geval: pipeline vond niets, breakdown bevat alleen een reden
+  if (!breakdown.zekerheid_llm) {
+    return (
+      <div className="rounded-md border border-slate-200 bg-panel p-3 text-sm text-slate-700">
+        <div className="mb-1 text-xs font-medium uppercase text-slate-500">Geen agent-data gevonden</div>
+        {breakdown.reden || "Geen reden opgegeven"}
+      </div>
+    );
+  }
 
   const zekerheid = breakdown.zekerheid_llm;
   const base = breakdown.base_score;
@@ -754,6 +1054,19 @@ export default function App() {
         batchId={route.batchId}
         openDashboard={() => setRoute({name: "dashboard"})}
         openCompany={(batchId, companyId) => setRoute({name: "detail", batchId, companyId})}
+        openBellijst={(batchId) => setRoute({name: "bellijst", batchId})}
+      />
+    );
+  }
+
+  if (route.name === "bellijst") {
+    return (
+      <BellijstView
+        api={api}
+        user={user}
+        onLogout={logout}
+        batchId={route.batchId}
+        openBatch={(batchId) => setRoute({name: "batch", batchId})}
       />
     );
   }

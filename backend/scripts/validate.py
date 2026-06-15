@@ -8,6 +8,10 @@ import csv
 import sys
 from pathlib import Path
 
+# Windows-consoles gebruiken cp1252 standaard; forceer UTF-8 voor de ≥ en ✅ tekens
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.database import Base, SessionLocal, engine  # noqa: E402

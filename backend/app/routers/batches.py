@@ -10,7 +10,7 @@ from ..auth import get_current_user
 from ..database import SessionLocal, get_db
 from ..models import (AgentResult, Batch, CallListItem, Candidate, ChatSession,
                       Company, Enrichment, PipelineRun, WPRecord)
-from ..pipeline.runner import run_batch
+from ..pipeline.runner import run_batch, verwerk_company
 
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
 
@@ -21,6 +21,23 @@ def run_batch_background(batch_id: str) -> None:
     db = SessionLocal()
     try:
         asyncio.run(run_batch(db, batch_id))
+    finally:
+        db.close()
+
+
+def run_single_background(company_id: str, batch_id: str) -> None:
+    db = SessionLocal()
+    try:
+        company = db.get(Company, company_id)
+        batch = db.get(Batch, batch_id)
+        asyncio.run(verwerk_company(db, company, batch))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        db.add(PipelineRun(batch_id=batch_id, company_id=company_id,
+                           stap="herverwerk", status="error", duur_ms=0,
+                           error=str(exc)[:1000]))
+        db.commit()
     finally:
         db.close()
 
@@ -128,12 +145,47 @@ def get_batch(batch_id: str, db: Session = Depends(get_db)):
     for c in db.query(Candidate).filter_by(batch_id=batch_id):
         if c.confidence_label in labels:
             labels[c.confidence_label] += 1
+    fouten = db.query(PipelineRun).filter_by(batch_id=batch_id, status="error").count()
     return {"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
-            "totaal": b.totaal, "verwerkt": b.verwerkt, "labels": labels}
+            "totaal": b.totaal, "verwerkt": b.verwerkt, "labels": labels, "fouten": fouten}
+
+
+@router.post("/{batch_id}/companies/{company_id}/herverwerk")
+async def herverwerk_company(batch_id: str, company_id: str,
+                              background_tasks: BackgroundTasks,
+                              db: Session = Depends(get_db)):
+    """Verwijdert de vorige run-data voor dit bedrijf en verwerkt het opnieuw."""
+    comp = db.get(Company, company_id)
+    if not comp or comp.batch_id != batch_id:
+        raise HTTPException(404, "company niet gevonden")
+    batch = db.get(Batch, batch_id)
+    if batch.status == "running":
+        raise HTTPException(409, "batch draait al; wacht tot hij klaar is")
+
+    if comp.enrichment:
+        db.delete(comp.enrichment)
+    if comp.candidate:
+        db.delete(comp.candidate)
+    for ar in list(comp.agent_results):
+        db.delete(ar)
+    db.query(PipelineRun).filter_by(company_id=company_id, status="error").delete(
+        synchronize_session=False)
+    db.commit()
+
+    background_tasks.add_task(run_single_background, company_id, batch_id)
+    return {"status": "gestart", "company_id": company_id}
 
 
 @router.get("/{batch_id}/companies")
 def list_companies(batch_id: str, label: str | None = None, db: Session = Depends(get_db)):
+    # Één query voor alle pipeline-fouten — voorkomt N+1
+    fouten_map: dict[str, str] = {}
+    for pr in (db.query(PipelineRun)
+               .filter_by(batch_id=batch_id, status="error")
+               .order_by(PipelineRun.created_at)):
+        if pr.company_id:
+            fouten_map[pr.company_id] = pr.error or "onbekende fout"
+
     out = []
     for comp in db.query(Company).filter_by(batch_id=batch_id):
         cand = comp.candidate
@@ -147,6 +199,7 @@ def list_companies(batch_id: str, label: str | None = None, db: Session = Depend
             "confidence_label": cand.confidence_label if cand else None,
             "strategie": cand.strategie if cand else None,
             "status": cand.status if cand else None,
+            "pipeline_error": fouten_map.get(comp.id),
         })
     return out
 
@@ -174,6 +227,11 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
             "is_limburg_specifiek": ar.is_limburg_specifiek, "is_fte": ar.is_fte,
             "peilmoment": ar.peilmoment, "llm_zekerheid": ar.llm_zekerheid,
         } for ar in comp.agent_results],
+        "pipeline_fouten": [{
+            "stap": pr.stap, "error": pr.error,
+            "created_at": pr.created_at.isoformat() + "Z" if pr.created_at else None,
+        } for pr in db.query(PipelineRun).filter_by(
+            company_id=company_id, status="error").order_by(PipelineRun.created_at).all()],
         "candidate": cand and {
             "id": cand.id, "wp_kandidaat": cand.wp_kandidaat,
             "is_schatting": cand.is_schatting,

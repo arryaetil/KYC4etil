@@ -55,6 +55,7 @@ export function createApi(token, onUnauthorized) {
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
     cancelBatch: (id) => request(`/batches/${id}/cancel`, {method: "POST"}),
     deleteBatch: (id) => request(`/batches/${id}`, {method: "DELETE"}),
+    herverwerk: (batchId, companyId) => request(`/batches/${batchId}/companies/${companyId}/herverwerk`, {method: "POST"}),
     approve: (candidateId) => request(`/candidates/${candidateId}/approve`, {method: "POST"}),
     correct: (candidateId, wp_waarde, reden) => request(`/candidates/${candidateId}/correct`, {
       method: "POST",
@@ -64,6 +65,9 @@ export function createApi(token, onUnauthorized) {
       method: "POST",
       json: {reden},
     }),
+    bellijstItems: (batchId) => request(`/batches/${batchId}/bellijst`),
+    updateBellijstItem: (itemId, data) => request(`/bellijst/${itemId}`, {method: "PATCH", json: data}),
+    doorvoerenBellijst: (itemId) => request(`/bellijst/${itemId}/doorvoeren`, {method: "POST"}),
     approveAllGreen: (batchId) => request(`/batches/${batchId}/approve-all-green`, {method: "POST"}),
     download: async (path, filename) => {
       const headers = new Headers();

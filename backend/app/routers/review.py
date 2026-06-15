@@ -23,6 +23,12 @@ class BellijstBody(BaseModel):
     reden: str | None = None
 
 
+class BellijstUpdate(BaseModel):
+    status: str | None = None
+    notities: str | None = None
+    resultaat_wp: int | None = None
+
+
 def _maak_wp_record(db: Session, cand: Candidate, wp: int, status: str, user: User) -> WPRecord:
     comp = db.get(Company, cand.company_id)
     batch = db.get(Batch, cand.batch_id)
@@ -94,6 +100,69 @@ def bulk_approve(batch_id: str, db: Session = Depends(get_db),
             n += 1
     db.commit()
     return {"goedgekeurd": n}
+
+
+@router.get("/batches/{batch_id}/bellijst")
+def get_bellijst(batch_id: str, db: Session = Depends(get_db)):
+    """Alle bellijst-items voor een batch, met bedrijfsinfo."""
+    items = (db.query(CallListItem)
+             .join(Company, CallListItem.company_id == Company.id)
+             .filter(Company.batch_id == batch_id)
+             .order_by(CallListItem.created_at)
+             .all())
+    result = []
+    for item in items:
+        comp = db.get(Company, item.company_id)
+        result.append({
+            "id": item.id,
+            "company_id": item.company_id,
+            "naam": comp.naam,
+            "gemeente": comp.gemeente,
+            "telefoonnummer": item.telefoonnummer or (comp.enrichment.telefoonnummer if comp.enrichment else None),
+            "reden": item.reden,
+            "status": item.status,
+            "notities": item.notities,
+            "resultaat_wp": item.resultaat_wp,
+            "created_at": item.created_at.isoformat() + "Z" if item.created_at else None,
+        })
+    return result
+
+
+@router.patch("/bellijst/{item_id}")
+def update_bellijst_item(item_id: str, body: BellijstUpdate, db: Session = Depends(get_db)):
+    """Status, notities en resultaat-WP bijwerken voor een bellijst-item."""
+    item = db.get(CallListItem, item_id)
+    if not item:
+        raise HTTPException(404, "bellijst-item niet gevonden")
+    if body.status is not None:
+        item.status = body.status
+    if body.notities is not None:
+        item.notities = body.notities
+    if body.resultaat_wp is not None:
+        item.resultaat_wp = body.resultaat_wp
+    db.commit()
+    return {"id": item.id, "status": item.status}
+
+
+@router.post("/bellijst/{item_id}/doorvoeren")
+def doorvoeren_bellijst(item_id: str, db: Session = Depends(get_db),
+                        current_user: User = Depends(get_current_user)):
+    """Resultaat-WP van een afgerond bellijst-item doorvoeren als gecorrigeerde waarde."""
+    item = db.get(CallListItem, item_id)
+    if not item:
+        raise HTTPException(404, "bellijst-item niet gevonden")
+    if not item.resultaat_wp:
+        raise HTTPException(422, "geen resultaat-WP ingevuld om door te voeren")
+    comp = db.get(Company, item.company_id)
+    cand = comp.candidate if comp else None
+    if not cand:
+        raise HTTPException(404, "geen kandidaat gevonden voor dit bedrijf")
+    cand.status = "corrected"
+    cand.reconciliatie_reden = (cand.reconciliatie_reden or "") + \
+        f" | belactie {current_user.naam}: {item.resultaat_wp} WP"
+    rec = _maak_wp_record(db, cand, item.resultaat_wp, "corrected", current_user)
+    db.commit()
+    return {"wp_record_id": rec.id, "wp_waarde": rec.wp_waarde}
 
 
 @router.get("/batches/{batch_id}/export.csv")

@@ -107,8 +107,9 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
         )
     db.add(candidate)
 
-    # 🔴 zonder data -> bellijst
-    if candidate.confidence_label == "laag" and enrichment.telefoonnummer:
+    # 🔴 zonder data -> bellijst (alleen als er nog geen item staat — voorkom duplicaten)
+    existing_cli = db.query(CallListItem).filter_by(company_id=company.id).first()
+    if candidate.confidence_label == "laag" and enrichment.telefoonnummer and not existing_cli:
         db.add(CallListItem(company_id=company.id, telefoonnummer=enrichment.telefoonnummer,
                             reden=candidate.reconciliatie_reden or "lage confidence"))
     return candidate
@@ -121,19 +122,36 @@ async def run_batch(db: Session, batch_id: str) -> Batch:
     batch.status = "running"
     batch.verwerkt = 0
     db.commit()
-    try:
-        for company in batch.companies:
-            await verwerk_company(db, company, batch)
+
+    for company in batch.companies:
+        # Al succesvol verwerkt (re-run of gedeeltelijk uitgevoerde batch)
+        if company.candidate is not None:
             batch.verwerkt += 1
             db.commit()
-            db.refresh(batch)
-            if batch.status == "cancelled":
-                return batch
-        batch.status = "done"
-        batch.completed_at = datetime.utcnow()
-    except Exception:
-        batch.status = "error"
+            continue
+
+        # Maak eventuele halve vorige run schoon (enrichment maar geen candidate)
+        if company.enrichment is not None:
+            db.delete(company.enrichment)
+            for ar in list(company.agent_results):
+                db.delete(ar)
+            db.flush()
+
+        t0 = time.monotonic()
+        try:
+            await verwerk_company(db, company, batch)
+        except Exception as exc:
+            # Eén fout stopt de hele batch niet — loggen en doorgaan
+            db.rollback()
+            _log(db, batch.id, company.id, "verwerk_company", "error", t0,
+                 error=str(exc)[:1000])
+        batch.verwerkt += 1  # altijd ophogen, ook bij fout (= verwerkt/geprobeerd)
         db.commit()
-        raise
+        db.refresh(batch)
+        if batch.status == "cancelled":
+            return batch
+
+    batch.status = "done"
+    batch.completed_at = datetime.utcnow()
     db.commit()
     return batch
