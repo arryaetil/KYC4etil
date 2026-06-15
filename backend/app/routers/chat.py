@@ -1,0 +1,77 @@
+"""Publieke chat-endpoints — geen auth vereist. Bedrijven vullen hier hun WP-gegevens in."""
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..models import ChatSession, Company
+
+router = APIRouter(prefix="/chat", tags=["chat"])
+
+DEFAULT_VRAGEN = [
+    {
+        "id": "wp_count",
+        "label": "Aantal werkzame personen",
+        "type": "wp_count",
+        "verplicht": True,
+        "hint": "Headcount (niet FTE), peildatum 31 december vorig jaar",
+    },
+    {
+        "id": "opmerking",
+        "label": "Toelichting (optioneel)",
+        "type": "text",
+        "verplicht": False,
+        "hint": "Bijv. deeltijdwerkers, seizoenspersoneel, uitzendkrachten…",
+    },
+]
+
+
+@router.get("/{token}")
+def get_chat_session(token: str, db: Session = Depends(get_db)):
+    """Haalt chat-sessie op op basis van token. Geen auth vereist."""
+    session = db.query(ChatSession).filter_by(token_hash=token).first()
+    if not session:
+        raise HTTPException(404, "Chat-sessie niet gevonden of verlopen")
+    if session.status == "completed":
+        return {"status": "completed"}
+    comp = db.get(Company, session.company_id)
+    return {
+        "bedrijfsnaam": comp.naam if comp else "Onbekend bedrijf",
+        "gemeente": comp.gemeente if comp else None,
+        "variant": session.variant,
+        "pre_fill_wp": session.pre_fill_wp,
+        "status": session.status,
+        "vragen": session.vragen if session.vragen else DEFAULT_VRAGEN,
+    }
+
+
+class ChatSubmit(BaseModel):
+    antwoorden: dict  # {vraag_id: waarde}
+
+
+@router.post("/{token}/submit")
+def submit_chat(token: str, body: ChatSubmit, db: Session = Depends(get_db)):
+    """Slaat antwoorden op en markeert de sessie als afgerond."""
+    session = db.query(ChatSession).filter_by(token_hash=token).first()
+    if not session:
+        raise HTTPException(404, "Chat-sessie niet gevonden of verlopen")
+    if session.status == "completed":
+        raise HTTPException(409, "Deze link is al gebruikt")
+
+    wp = body.antwoorden.get("wp_count") or body.antwoorden.get("wp_opgegeven")
+    if wp is None:
+        raise HTTPException(422, "Geen WP-getal ingevuld")
+    try:
+        wp = int(wp)
+    except (TypeError, ValueError):
+        raise HTTPException(422, "WP-getal moet een geheel getal zijn")
+    if wp < 0:
+        raise HTTPException(422, "WP-getal moet 0 of hoger zijn")
+
+    session.antwoorden = body.antwoorden
+    session.status = "completed"
+    session.completed_at = datetime.utcnow()
+    db.commit()
+    return {"status": "completed", "wp_opgegeven": wp}

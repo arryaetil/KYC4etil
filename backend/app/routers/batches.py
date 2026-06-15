@@ -147,7 +147,9 @@ def get_batch(batch_id: str, db: Session = Depends(get_db)):
             labels[c.confidence_label] += 1
     fouten = db.query(PipelineRun).filter_by(batch_id=batch_id, status="error").count()
     return {"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
-            "totaal": b.totaal, "verwerkt": b.verwerkt, "labels": labels, "fouten": fouten}
+            "totaal": b.totaal, "verwerkt": b.verwerkt, "labels": labels, "fouten": fouten,
+            "created_at": b.created_at.isoformat() + "Z" if b.created_at else None,
+            "completed_at": b.completed_at.isoformat() + "Z" if b.completed_at else None}
 
 
 @router.post("/{batch_id}/companies/{company_id}/herverwerk")
@@ -218,6 +220,7 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
                     "website_url": comp.website_url, "telefoonnummer": comp.telefoonnummer},
         "enrichment": enr and {
             "website_url": enr.website_url, "telefoonnummer": enr.telefoonnummer,
+            "email": enr.email,
             "locatie_count_nl": enr.locatie_count_nl, "locatie_count_lb": enr.locatie_count_lb,
             "locatie_bron": enr.locatie_bron, "adres_validated": enr.adres_validated,
             "lookup_failed": enr.lookup_failed},

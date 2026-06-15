@@ -67,6 +67,7 @@ class Enrichment(Base):
     company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), unique=True)
     website_url: Mapped[str | None] = mapped_column(Text)
     telefoonnummer: Mapped[str | None] = mapped_column(String(50))
+    email: Mapped[str | None] = mapped_column(String(255))
     locatie_count_nl: Mapped[int | None] = mapped_column(Integer)
     locatie_count_lb: Mapped[int | None] = mapped_column(Integer)
     locatie_bron: Mapped[str | None] = mapped_column(String(20))  # kvk|places|mock
@@ -157,6 +158,17 @@ class ChatSession(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class ChatTemplate(Base):
+    __tablename__ = "chat_templates"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    naam: Mapped[str] = mapped_column(String(255))
+    beschrijving: Mapped[str | None] = mapped_column(Text)
+    vragen: Mapped[dict | None] = mapped_column(JSON)  # runtime: list van vraag-objecten
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    aangemaakt_door: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class CallListItem(Base):

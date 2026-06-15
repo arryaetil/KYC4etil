@@ -26,15 +26,39 @@ def get_db():
 
 def ensure_lightweight_migrations() -> None:
     inspector = inspect(engine)
-    if "companies" not in inspector.get_table_names():
+    tables = set(inspector.get_table_names())
+    if "companies" not in tables:
         return
 
-    existing = {column["name"] for column in inspector.get_columns("companies")}
-    additions = {
-        "website_url": "TEXT",
-        "telefoonnummer": "VARCHAR(50)",
-    }
+    existing_companies = {col["name"] for col in inspector.get_columns("companies")}
     with engine.begin() as conn:
-        for name, ddl_type in additions.items():
-            if name not in existing:
+        for name, ddl_type in [("website_url", "TEXT"), ("telefoonnummer", "VARCHAR(50)")]:
+            if name not in existing_companies:
                 conn.execute(text(f"ALTER TABLE companies ADD COLUMN {name} {ddl_type}"))
+
+    if "enrichments" in tables:
+        existing_enr = {col["name"] for col in inspector.get_columns("enrichments")}
+        with engine.begin() as conn:
+            if "email" not in existing_enr:
+                conn.execute(text("ALTER TABLE enrichments ADD COLUMN email VARCHAR(255)"))
+
+    if "batches" in tables:
+        existing_batches = {col["name"] for col in inspector.get_columns("batches")}
+        with engine.begin() as conn:
+            if "created_at" not in existing_batches:
+                conn.execute(text("ALTER TABLE batches ADD COLUMN created_at TIMESTAMP"))
+                conn.execute(text(
+                    "UPDATE batches SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"
+                ))
+            if "completed_at" not in existing_batches:
+                conn.execute(text("ALTER TABLE batches ADD COLUMN completed_at TIMESTAMP"))
+
+    if "chat_sessions" in tables:
+        existing_cs = {col["name"] for col in inspector.get_columns("chat_sessions")}
+        with engine.begin() as conn:
+            if "verwerkt" not in existing_cs:
+                conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN verwerkt BOOLEAN DEFAULT FALSE"))
+            if "vragen" not in existing_cs:
+                conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN vragen JSON"))
+            if "antwoorden" not in existing_cs:
+                conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN antwoorden JSON"))

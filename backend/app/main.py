@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import Base, SessionLocal, engine, ensure_lightweight_migrations
-from .models import Batch, PipelineRun
-from .routers import auth, batches, review
+from .models import Batch, ChatTemplate, PipelineRun
+from .routers import auth, batches, chat, chat_admin, review
 
 settings = get_settings()
 
@@ -20,11 +20,21 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_me
 app.include_router(auth.router)
 app.include_router(batches.router)
 app.include_router(review.router)
+app.include_router(chat.router)
+app.include_router(chat_admin.router)
+
+
+DEFAULT_TEMPLATE_VRAGEN = [
+    {"id": "wp_count", "label": "Aantal werkzame personen", "type": "wp_count",
+     "verplicht": True, "hint": "Headcount (niet FTE), peildatum 31 december vorig jaar"},
+    {"id": "opmerking", "label": "Toelichting (optioneel)", "type": "text",
+     "verplicht": False, "hint": "Bijv. deeltijdwerkers, seizoenspersoneel, uitzendkrachten…"},
+]
 
 
 @app.on_event("startup")
 def reset_stuck_batches() -> None:
-    """Zet batches die 'running' waren bij herstart terug naar 'error'."""
+    """Zet batches die 'running' waren bij herstart terug naar 'error'. Seeded standaard chat-template."""
     db = SessionLocal()
     try:
         stuck = db.query(Batch).filter_by(status="running").all()
@@ -34,6 +44,15 @@ def reset_stuck_batches() -> None:
                                status="error", duur_ms=0,
                                error="Batch onderbroken door service-herstart"))
         if stuck:
+            db.commit()
+
+        if db.query(ChatTemplate).count() == 0:
+            db.add(ChatTemplate(
+                naam="Standaard vragenlijst",
+                beschrijving="Basisvragenlijst voor gerichte WP-uitvraag bij bedrijven",
+                vragen=DEFAULT_TEMPLATE_VRAGEN,
+                is_default=True,
+            ))
             db.commit()
     finally:
         db.close()

@@ -77,14 +77,16 @@ async def test_live_website_agent_slaat_web_search_over_als_scraping_slaagt():
 
 @pytest.mark.asyncio
 async def test_live_jaarverslag_agent_zoekt_pdf_via_web_search():
-    """LiveJaarverslagAgent.run() moet _zoek_jaarverslag_pdf aanroepen."""
+    """LiveJaarverslagAgent.run() moet _zoek_jaarverslag_pdf aanroepen; fallback gemockt als None."""
     with patch("app.providers.live._zoek_jaarverslag_pdf",
-               new=AsyncMock(return_value=None)) as mock_zoek:
+               new=AsyncMock(return_value=None)) as mock_zoek, \
+         patch("app.providers.live._web_search_jaarverslag_wp",
+               new=AsyncMock(return_value=None)):
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
         result = await agent.run("Mondriaan", 2025)
     mock_zoek.assert_called_once_with("Mondriaan", 2025)
-    assert result is None  # geen PDF gevonden = None
+    assert result is None  # PDF niet gevonden, Fase-C fallback ook None
 
 
 @pytest.mark.asyncio
@@ -110,11 +112,13 @@ async def test_live_jaarverslag_agent_verwerkt_pdf_als_gevonden():
 
 @pytest.mark.asyncio
 async def test_live_jaarverslag_agent_handelt_pdf_fout_af():
-    """Als run_with_pdf faalt, moet run() None teruggeven (geen crash)."""
+    """Als run_with_pdf faalt, valt agent terug op web search (Fase C); mock web search geeft None."""
     with patch("app.providers.live._zoek_jaarverslag_pdf",
                new=AsyncMock(return_value="https://example.com/broken.pdf")), \
          patch("app.providers.live.LiveJaarverslagAgent.run_with_pdf",
-               new=AsyncMock(side_effect=Exception("download fout"))):
+               new=AsyncMock(side_effect=Exception("download fout"))), \
+         patch("app.providers.live._web_search_jaarverslag_wp",
+               new=AsyncMock(return_value=None)):
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
         result = await agent.run("TestBedrijf", 2025)
@@ -156,6 +160,7 @@ async def test_runner_draait_agents_ook_bij_lookup_failed():
     mock_lookup = MagicMock()
     mock_lookup.lookup = AsyncMock(return_value=None)  # lookup_failed scenario
     mock_lookup.locations = AsyncMock(return_value=LocationInfo(count_nl=None, count_lb=None, bron="web_search"))
+    mock_lookup.scrape_email = AsyncMock(return_value=None)
 
     mock_website = MagicMock()
     mock_website.run = AsyncMock(return_value=wp_finding)  # agent vindt wél iets

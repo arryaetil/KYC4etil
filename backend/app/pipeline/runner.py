@@ -28,10 +28,12 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
     loc = await lookup.locations(company.naam, company.kvk_nummer)
     website_url = (place.website if place else None) or company.website_url
     telefoonnummer = (place.phone if place else None) or company.telefoonnummer
+    email = await lookup.scrape_email(website_url)
     enrichment = Enrichment(
         company_id=company.id,
         website_url=website_url,
         telefoonnummer=telefoonnummer,
+        email=email,
         locatie_count_nl=loc.count_nl, locatie_count_lb=loc.count_lb,
         locatie_bron=loc.bron,
         is_multi_locatie=bool(loc.count_nl and loc.count_nl > 1),

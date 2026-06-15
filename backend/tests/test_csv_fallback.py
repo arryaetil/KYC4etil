@@ -55,6 +55,9 @@ class _NoPlacesLookup:
     async def locations(self, naam, kvk_nummer):
         return LocationInfo(count_nl=None, count_lb=None, bron="csv")
 
+    async def scrape_email(self, website_url):
+        return None
+
 
 class _WebsiteAgent:
     async def run(self, naam, adres, website_url, gemeente=None):

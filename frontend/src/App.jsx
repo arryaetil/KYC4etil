@@ -2,15 +2,22 @@ import {useEffect, useMemo, useRef, useState} from "react";
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
+  ChevronUp,
   Download,
   FileDown,
   FileUp,
+  GripVertical,
   ListChecks,
   LogOut,
+  Mail,
+  MessageSquare,
   Phone,
   Play,
+  Plus,
   RefreshCw,
   Search,
+  Settings,
   ShieldCheck,
   Square,
   Trash2,
@@ -170,7 +177,7 @@ function Shell({user, onLogout, children, title, actions}) {
   );
 }
 
-function Dashboard({api, user, onLogout, openBatch}) {
+function Dashboard({api, user, onLogout, openBatch, openChatTemplates}) {
   const fileRef = useRef(null);
   const [batches, setBatches] = useState([]);
   const [error, setError] = useState("");
@@ -257,6 +264,7 @@ function Dashboard({api, user, onLogout, openBatch}) {
       actions={
         <>
           <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={upload} />
+          <IconButton icon={Settings} variant="quiet" onClick={openChatTemplates}>Chat-templates</IconButton>
           <IconButton icon={RefreshCw} onClick={() => load().catch((err) => setError(err.message))}>Verversen</IconButton>
           <IconButton icon={FileUp} variant="primary" onClick={() => fileRef.current?.click()} disabled={busy}>CSV uploaden</IconButton>
         </>
@@ -317,7 +325,7 @@ function Dashboard({api, user, onLogout, openBatch}) {
   );
 }
 
-function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, openBellijst}) {
+function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, openBellijst, openChatSessies}) {
   const [batch, setBatch] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [label, setLabel] = useState("");
@@ -413,6 +421,7 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
           <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Groen goedkeuren</IconButton>
           <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.csv`, "export.csv")}>Export</IconButton>
           <IconButton icon={Phone} onClick={() => openBellijst(batchId)}>Bellijst</IconButton>
+          <IconButton icon={MessageSquare} onClick={() => openChatSessies(batchId)}>Chat-sessies</IconButton>
           <IconButton icon={Trash2} variant="quiet" onClick={deleteBatch} disabled={busy || isRunning} title="Batch verwijderen" />
         </>
       }
@@ -614,6 +623,11 @@ function BellijstView({api, user, onLogout, batchId, openBatch}) {
                         <Phone size={14} />{item.telefoonnummer}
                       </a>
                     ) : <div className="mt-1 text-sm text-slate-400">Geen telefoonnummer</div>}
+                    {item.email ? (
+                      <a className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-etil" href={`mailto:${item.email}`}>
+                        <Mail size={14} />{item.email}
+                      </a>
+                    ) : null}
                   </div>
                   <span className={classNames("rounded-md px-2 py-1 text-xs font-semibold", cfg.cls)}>{cfg.label}</span>
                 </div>
@@ -692,6 +706,8 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
   const [error, setError] = useState("");
   const [correctWp, setCorrectWp] = useState("");
   const [reason, setReason] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatResult, setChatResult] = useState(null);
 
   async function load() {
     setDetail(await api.company(batchId, companyId));
@@ -821,6 +837,52 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
                     Bellijst
                   </IconButton>
                 </div>
+                {chatResult ? (
+                  <div className="space-y-2">
+                    {chatResult.ok ? (
+                      <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                        <strong>Email verstuurd</strong> naar {chatResult.recipient}
+                      </div>
+                    ) : null}
+                    <div className="rounded-md border border-line bg-panel p-3">
+                      <div className="mb-1 text-xs font-medium text-slate-500">Chat-link</div>
+                      <a
+                        className="block break-all text-sm font-medium text-etil underline"
+                        href={chatResult.chatUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {chatResult.chatUrl}
+                      </a>
+                      <button
+                        className="mt-2 text-xs text-slate-500 underline"
+                        onClick={() => navigator.clipboard.writeText(chatResult.chatUrl)}
+                      >
+                        Kopieer link
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <IconButton
+                    icon={Mail}
+                    className="w-full justify-center"
+                    disabled={!candidate || chatBusy}
+                    onClick={async () => {
+                      setChatBusy(true);
+                      try {
+                        const res = await api.createChatSession(candidate.id);
+                        setChatResult({ok: res.email_sent, recipient: res.email_recipient, chatUrl: res.chat_url});
+                        await load();
+                      } catch (err) {
+                        setError(err.message);
+                      } finally {
+                        setChatBusy(false);
+                      }
+                    }}
+                  >
+                    {chatBusy ? "Bezig…" : "Verstuur chat-uitnodiging"}
+                  </IconButton>
+                )}
                 <div className="border-t border-line pt-3">
                   <IconButton icon={RefreshCw} className="w-full justify-center" onClick={() => action(() => api.herverwerk(batchId, companyId))}>
                     Herverwerk
@@ -893,12 +955,13 @@ function LabelCounts({labels = {}}) {
 function EnrichmentStrip({enrichment}) {
   const website = enrichment.website_url;
   const tel = enrichment.telefoonnummer;
+  const email = enrichment.email;
   const nlCount = enrichment.locatie_count_nl;
   const lbCount = enrichment.locatie_count_lb;
   const bron = enrichment.locatie_bron;
   const bronLabel = {places: "Places", kvk: "KvK", web_search: "web search"}[bron] || bron;
 
-  const hasAny = website || tel || nlCount;
+  const hasAny = website || tel || email || nlCount;
   if (!hasAny) return null;
 
   return (
@@ -915,6 +978,12 @@ function EnrichmentStrip({enrichment}) {
           <div>
             <span className="text-slate-500">Tel </span>
             <span className="font-medium">{tel}</span>
+          </div>
+        ) : null}
+        {email ? (
+          <div>
+            <span className="text-slate-500">E-mail </span>
+            <a className="font-medium text-etil underline" href={`mailto:${email}`}>{email}</a>
           </div>
         ) : null}
         {nlCount != null ? (
@@ -1018,7 +1087,592 @@ function Alert({message}) {
   );
 }
 
+function ChatForm({token}) {
+  const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+  const [session, setSession] = useState(null);
+  const [answers, setAnswers] = useState({});
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_URL}/chat/${token}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.status === "completed") {
+          setDone(true);
+        } else {
+          setSession(data);
+          if (data.pre_fill_wp) {
+            setAnswers((prev) => ({...prev, wp_count: String(data.pre_fill_wp)}));
+          }
+        }
+      })
+      .catch(() => setError("Chat-sessie niet gevonden of verlopen."));
+  }, [token]);
+
+  function setAnswer(id, value) {
+    setAnswers((prev) => ({...prev, [id]: value}));
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    const vragen = session?.vragen || [];
+    for (const v of vragen) {
+      if (v.verplicht && !answers[v.id] && answers[v.id] !== 0) {
+        setError(`Vul "${v.label}" in.`); return;
+      }
+    }
+    const wpRaw = answers["wp_count"];
+    const n = parseInt(wpRaw, 10);
+    if (isNaN(n) || n < 0) { setError("Vul een geldig aantal werkzame personen in."); return; }
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch(`${API_URL}/chat/${token}/submit`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({antwoorden: {...answers, wp_count: n}}),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.detail || "Inzenden mislukt.");
+      setDone(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (error && !session) return (
+    <main className="flex min-h-screen items-center justify-center bg-[#eef2f5] px-4">
+      <div className="w-full max-w-md rounded-lg border border-red-200 bg-white p-8 text-center shadow-sm">
+        <X className="mx-auto mb-3 text-red-500" size={32} />
+        <p className="font-medium text-red-800">{error}</p>
+      </div>
+    </main>
+  );
+
+  if (done) return (
+    <main className="flex min-h-screen items-center justify-center bg-[#eef2f5] px-4">
+      <div className="w-full max-w-md rounded-lg border border-line bg-white p-8 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
+          <Check className="text-emerald-600" size={28} />
+        </div>
+        <h2 className="mb-2 text-xl font-semibold">Bedankt!</h2>
+        <p className="text-slate-600">Uw gegevens zijn ontvangen. U kunt dit venster sluiten.</p>
+      </div>
+    </main>
+  );
+
+  if (!session) return (
+    <main className="flex min-h-screen items-center justify-center bg-[#eef2f5]">
+      <div className="text-slate-500">Laden…</div>
+    </main>
+  );
+
+  const vragen = session.vragen || [];
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#eef2f5] px-4 py-8">
+      <div className="w-full max-w-lg rounded-lg border border-line bg-white shadow-sm">
+        <div className="rounded-t-lg bg-etil px-6 py-4">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="text-white/80" size={22} />
+            <div>
+              <div className="text-sm font-semibold text-white">Vestigingsregister AI</div>
+              <div className="text-xs text-white/70">Etil Research Group — Provincie Limburg</div>
+            </div>
+          </div>
+        </div>
+        <div className="p-6">
+          <h1 className="mb-1 text-xl font-semibold">Gegevenscontrole</h1>
+          <p className="mb-5 text-sm text-slate-600">
+            Provincie Limburg vraagt u de personeelsgegevens van{" "}
+            <strong>{session.bedrijfsnaam}</strong>
+            {session.gemeente ? ` (${session.gemeente})` : ""} te controleren.
+          </p>
+          {session.variant === "gericht" && session.pre_fill_wp ? (
+            <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Onze gegevens tonen <strong>{session.pre_fill_wp} werkzame personen</strong>.
+              Klopt dit, of wilt u het corrigeren?
+            </div>
+          ) : null}
+          <form onSubmit={submit} className="space-y-5">
+            {vragen.map((vraag) => (
+              <div key={vraag.id}>
+                <label className="mb-1 block text-sm font-medium">
+                  {vraag.label}
+                  {!vraag.verplicht && <span className="ml-1 font-normal text-slate-500">(optioneel)</span>}
+                </label>
+                {vraag.hint ? <p className="mb-2 text-xs text-slate-500">{vraag.hint}</p> : null}
+                {vraag.type === "wp_count" ? (
+                  <input
+                    className="focus-ring h-12 w-full rounded-md border border-line px-3 text-lg font-semibold"
+                    type="number" min="0"
+                    value={answers[vraag.id] ?? ""}
+                    onChange={(e) => setAnswer(vraag.id, e.target.value)}
+                    placeholder="bijv. 250"
+                    required={vraag.verplicht}
+                  />
+                ) : vraag.type === "text" ? (
+                  <textarea
+                    className="focus-ring min-h-20 w-full rounded-md border border-line px-3 py-2 text-sm"
+                    value={answers[vraag.id] ?? ""}
+                    onChange={(e) => setAnswer(vraag.id, e.target.value)}
+                    placeholder={vraag.hint || ""}
+                    required={vraag.verplicht}
+                  />
+                ) : vraag.type === "boolean" ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!answers[vraag.id]}
+                      onChange={(e) => setAnswer(vraag.id, e.target.checked)}
+                    />
+                    {vraag.label}
+                  </label>
+                ) : (
+                  <input
+                    className="focus-ring h-10 w-full rounded-md border border-line px-3 text-sm"
+                    value={answers[vraag.id] ?? ""}
+                    onChange={(e) => setAnswer(vraag.id, e.target.value)}
+                    required={vraag.verplicht}
+                  />
+                )}
+              </div>
+            ))}
+            {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
+            <button
+              type="submit" disabled={busy}
+              className="focus-ring flex w-full items-center justify-center gap-2 rounded-md bg-etil px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            >
+              <Check size={16} />{busy ? "Bezig…" : "Gegevens bevestigen"}
+            </button>
+          </form>
+          <p className="mt-4 text-center text-xs text-slate-400">
+            Uw gegevens worden uitsluitend gebruikt voor het Vestigingsregister van Provincie Limburg.
+          </p>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+const CHAT_STATUS = {
+  created: {label: "Verzonden", cls: "bg-blue-100 text-blue-800"},
+  completed: {label: "Ingevuld", cls: "bg-amber-100 text-amber-800"},
+  verwerkt: {label: "Doorvoerd", cls: "bg-emerald-100 text-emerald-800"},
+};
+
+function ChatSessiesView({api, user, onLogout, batchId, openBatch}) {
+  const [sessies, setSessies] = useState([]);
+  const [doorgevoerd, setDoorgevoerd] = useState({});
+  const [saving, setSaving] = useState({});
+  const [error, setError] = useState("");
+
+  async function load() {
+    const data = await api.chatSessies(batchId);
+    setSessies(data);
+  }
+
+  useEffect(() => {
+    load().catch((err) => setError(err.message));
+    const timer = window.setInterval(() => load().catch(() => {}), 5000);
+    return () => window.clearInterval(timer);
+  }, [batchId]);
+
+  async function doorvoeren(sessionId) {
+    setSaving((prev) => ({...prev, [sessionId]: true}));
+    try {
+      await api.doorvoerenChat(sessionId);
+      setDoorgevoerd((prev) => ({...prev, [sessionId]: true}));
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving((prev) => ({...prev, [sessionId]: false}));
+    }
+  }
+
+  const totaal = sessies.length;
+  const ingevuld = sessies.filter((s) => s.status === "completed").length;
+  const verwerkt = sessies.filter((s) => s.verwerkt).length;
+
+  return (
+    <Shell
+      user={user}
+      onLogout={onLogout}
+      title="Chat-sessies"
+      actions={<IconButton icon={ListChecks} onClick={() => openBatch(batchId)}>Batchoverzicht</IconButton>}
+    >
+      {error ? <Alert message={error} /> : null}
+      <div className="mb-4 grid gap-3 md:grid-cols-3">
+        <Metric title="Totaal verzonden" value={totaal} />
+        <Metric title="Ingevuld" value={ingevuld} />
+        <Metric title="Doorvoerd" value={verwerkt} />
+      </div>
+      {!sessies.length ? (
+        <div className="rounded-lg border border-line bg-white p-8 text-center text-slate-500">
+          Geen chat-sessies voor deze batch
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sessies.map((s) => {
+            const statusKey = s.verwerkt ? "verwerkt" : s.status;
+            const cfg = CHAT_STATUS[statusKey] || CHAT_STATUS.created;
+            return (
+              <div key={s.id} className="rounded-lg border border-line bg-white p-4">
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">{s.naam}</div>
+                    <div className="text-sm text-slate-500">{s.gemeente}</div>
+                    {s.sent_at ? (
+                      <div className="mt-1 text-xs text-slate-400">
+                        Verzonden {new Date(s.sent_at).toLocaleString("nl-NL", {day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"})}
+                      </div>
+                    ) : null}
+                  </div>
+                  <span className={classNames("rounded-md px-2 py-1 text-xs font-semibold", cfg.cls)}>{cfg.label}</span>
+                </div>
+                <div className="grid gap-4 text-sm md:grid-cols-2">
+                  <div>
+                    <span className="text-xs font-medium uppercase text-slate-500">Pipeline-schatting</span>
+                    <div className="mt-1 text-lg font-semibold">{s.wp_kandidaat ?? "-"} WP</div>
+                  </div>
+                  {s.status === "completed" || s.verwerkt ? (
+                    <div>
+                      <span className="text-xs font-medium uppercase text-slate-500">Opgegeven door bedrijf</span>
+                      <div className="mt-1 text-lg font-semibold text-etil">{s.wp_opgegeven ?? "-"} WP</div>
+                    </div>
+                  ) : null}
+                </div>
+                {s.antwoorden && Object.keys(s.antwoorden).length > 0 && (
+                  <div className="mt-3 rounded-md border border-line bg-panel p-3 text-sm">
+                    <div className="mb-2 text-xs font-medium uppercase text-slate-500">Antwoorden</div>
+                    {Object.entries(s.antwoorden).map(([k, v]) => (
+                      <div key={k} className="flex gap-3">
+                        <span className="text-slate-500 min-w-24">{k}</span>
+                        <span className="font-medium">{String(v || "-")}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {s.completed_at ? (
+                  <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+                    <span className="text-sm text-slate-500">
+                      Ingevuld op {new Date(s.completed_at).toLocaleString("nl-NL", {day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"})}
+                    </span>
+                    {s.verwerkt || doorgevoerd[s.id] ? (
+                      <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-700">
+                        <Check size={15} /> Doorvoerd
+                      </span>
+                    ) : (
+                      <IconButton
+                        icon={Check}
+                        variant="primary"
+                        onClick={() => doorvoeren(s.id)}
+                        disabled={saving[s.id]}
+                      >
+                        {saving[s.id] ? "…" : "Doorvoeren"}
+                      </IconButton>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+const VRAAG_TYPES = [
+  {value: "wp_count", label: "WP-getal"},
+  {value: "text", label: "Tekstveld"},
+  {value: "boolean", label: "Ja/Nee"},
+  {value: "number", label: "Getal"},
+];
+
+function ChatTemplatesView({api, user, onLogout, openDashboard}) {
+  const [templates, setTemplates] = useState([]);
+  const [selected, setSelected] = useState(null); // {id?, naam, beschrijving, vragen, is_default}
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(null);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  async function load() {
+    const data = await api.chatTemplates();
+    setTemplates(data);
+  }
+
+  useEffect(() => {
+    load().catch((err) => setError(err.message));
+  }, []);
+
+  function newTemplate() {
+    setSelected({
+      naam: "Nieuw template",
+      beschrijving: "",
+      vragen: [
+        {id: "wp_count", label: "Aantal werkzame personen", type: "wp_count", verplicht: true, hint: "Headcount (niet FTE)"},
+        {id: "opmerking", label: "Toelichting", type: "text", verplicht: false, hint: ""},
+      ],
+      is_default: false,
+    });
+    setSaved(false);
+    setError("");
+  }
+
+  function editTemplate(t) {
+    setSelected({...t, vragen: t.vragen ? [...t.vragen.map((v) => ({...v}))] : []});
+    setSaved(false);
+    setError("");
+  }
+
+  async function deleteTemplate(t) {
+    if (!window.confirm(`Template "${t.naam}" verwijderen?`)) return;
+    setDeleting(t.id);
+    try {
+      await api.deleteTemplate(t.id);
+      if (selected?.id === t.id) setSelected(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  async function save() {
+    if (!selected) return;
+    setSaving(true);
+    setError("");
+    try {
+      if (selected.id) {
+        await api.updateTemplate(selected.id, {naam: selected.naam, beschrijving: selected.beschrijving, vragen: selected.vragen, is_default: selected.is_default});
+      } else {
+        const result = await api.createTemplate({naam: selected.naam, beschrijving: selected.beschrijving, vragen: selected.vragen, is_default: selected.is_default});
+        setSelected((prev) => ({...prev, id: result.id}));
+      }
+      await load();
+      setSaved(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function setField(field, value) {
+    setSelected((prev) => ({...prev, [field]: value}));
+    setSaved(false);
+  }
+
+  function setVraagField(index, field, value) {
+    setSelected((prev) => {
+      const vragen = [...prev.vragen];
+      vragen[index] = {...vragen[index], [field]: value};
+      return {...prev, vragen};
+    });
+    setSaved(false);
+  }
+
+  function addVraag() {
+    const newId = `vraag_${Date.now()}`;
+    setSelected((prev) => ({
+      ...prev,
+      vragen: [...prev.vragen, {id: newId, label: "Nieuwe vraag", type: "text", verplicht: false, hint: ""}],
+    }));
+    setSaved(false);
+  }
+
+  function removeVraag(index) {
+    setSelected((prev) => ({
+      ...prev,
+      vragen: prev.vragen.filter((_, i) => i !== index),
+    }));
+    setSaved(false);
+  }
+
+  function moveVraag(index, dir) {
+    const newIndex = index + dir;
+    if (newIndex < 0 || !selected || newIndex >= selected.vragen.length) return;
+    setSelected((prev) => {
+      const vragen = [...prev.vragen];
+      [vragen[index], vragen[newIndex]] = [vragen[newIndex], vragen[index]];
+      return {...prev, vragen};
+    });
+    setSaved(false);
+  }
+
+  return (
+    <Shell
+      user={user}
+      onLogout={onLogout}
+      title="Chat-templates"
+      actions={
+        <>
+          <IconButton icon={ListChecks} onClick={openDashboard}>Dashboard</IconButton>
+          <IconButton icon={Plus} variant="primary" onClick={newTemplate}>Nieuw template</IconButton>
+        </>
+      }
+    >
+      {error ? <Alert message={error} /> : null}
+      <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+        {/* Template-lijst */}
+        <div className="space-y-2">
+          {!templates.length ? (
+            <div className="rounded-lg border border-line bg-white p-6 text-center text-sm text-slate-500">
+              Geen templates — maak er een aan.
+            </div>
+          ) : templates.map((t) => (
+            <div
+              key={t.id}
+              className={classNames(
+                "cursor-pointer rounded-lg border bg-white p-4 transition",
+                selected?.id === t.id ? "border-etil ring-1 ring-etil" : "border-line hover:bg-panel",
+              )}
+              onClick={() => editTemplate(t)}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-semibold text-sm">{t.naam}</div>
+                  {t.beschrijving ? <div className="mt-0.5 text-xs text-slate-500 line-clamp-1">{t.beschrijving}</div> : null}
+                  <div className="mt-1 text-xs text-slate-400">{(t.vragen || []).length} vragen</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {t.is_default ? (
+                    <span className="rounded bg-etil/10 px-1.5 py-0.5 text-xs font-semibold text-etil">Standaard</span>
+                  ) : null}
+                  <button
+                    className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                    onClick={(e) => { e.stopPropagation(); deleteTemplate(t); }}
+                    disabled={deleting === t.id || t.is_default}
+                    title={t.is_default ? "Standaard-template kan niet worden verwijderd" : "Verwijderen"}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Editor */}
+        {selected ? (
+          <div className="rounded-lg border border-line bg-white p-5">
+            <div className="mb-5 grid gap-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium">Naam</label>
+                <input
+                  className="focus-ring h-10 w-full rounded-md border border-line px-3"
+                  value={selected.naam}
+                  onChange={(e) => setField("naam", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Beschrijving</label>
+                <input
+                  className="focus-ring h-10 w-full rounded-md border border-line px-3 text-sm"
+                  value={selected.beschrijving || ""}
+                  onChange={(e) => setField("beschrijving", e.target.value)}
+                  placeholder="Optionele omschrijving"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={selected.is_default}
+                  onChange={(e) => setField("is_default", e.target.checked)}
+                />
+                <span>Standaard-template (wordt automatisch gebruikt bij nieuwe uitnodigingen)</span>
+              </label>
+            </div>
+
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Vragen</h3>
+              <button
+                className="inline-flex items-center gap-1 rounded-md border border-etil px-2 py-1 text-xs font-medium text-etil hover:bg-etil/5"
+                onClick={addVraag}
+              >
+                <Plus size={13} /> Vraag toevoegen
+              </button>
+            </div>
+
+            <div className="mb-5 space-y-2">
+              {(selected.vragen || []).map((vraag, i) => (
+                <div key={vraag.id || i} className="rounded-md border border-line bg-panel p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <GripVertical size={15} className="shrink-0 text-slate-400" />
+                    <div className="grid flex-1 gap-2 sm:grid-cols-[1fr_140px_80px]">
+                      <input
+                        className="focus-ring h-8 rounded-md border border-line bg-white px-2 text-sm"
+                        value={vraag.label}
+                        onChange={(e) => setVraagField(i, "label", e.target.value)}
+                        placeholder="Label"
+                      />
+                      <select
+                        className="focus-ring h-8 rounded-md border border-line bg-white px-2 text-sm"
+                        value={vraag.type}
+                        onChange={(e) => setVraagField(i, "type", e.target.value)}
+                      >
+                        {VRAAG_TYPES.map(({value, label}) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                      <label className="flex h-8 items-center gap-1 text-xs text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={vraag.verplicht}
+                          onChange={(e) => setVraagField(i, "verplicht", e.target.checked)}
+                        />
+                        Verplicht
+                      </label>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <button className="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700" onClick={() => moveVraag(i, -1)} disabled={i === 0}><ChevronUp size={14} /></button>
+                      <button className="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700" onClick={() => moveVraag(i, 1)} disabled={i === selected.vragen.length - 1}><ChevronDown size={14} /></button>
+                      <button className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => removeVraag(i)}><Trash2 size={14} /></button>
+                    </div>
+                  </div>
+                  <input
+                    className="focus-ring h-8 w-full rounded-md border border-line bg-white px-2 text-xs text-slate-600"
+                    value={vraag.hint || ""}
+                    onChange={(e) => setVraagField(i, "hint", e.target.value)}
+                    placeholder="Hint / toelichting (zichtbaar voor bedrijf)"
+                  />
+                </div>
+              ))}
+              {!selected.vragen?.length ? (
+                <div className="rounded-md border border-dashed border-line p-4 text-center text-sm text-slate-400">
+                  Nog geen vragen — klik op "Vraag toevoegen"
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-3 border-t border-line pt-4">
+              <IconButton icon={Check} variant="primary" onClick={save} disabled={saving}>
+                {saving ? "Opslaan…" : "Opslaan"}
+              </IconButton>
+              {saved ? <span className="text-sm font-medium text-emerald-700"><Check size={14} className="inline" /> Opgeslagen</span> : null}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-line bg-white p-8 text-center text-sm text-slate-400">
+            Selecteer een template om te bewerken, of maak een nieuw template aan.
+          </div>
+        )}
+      </div>
+    </Shell>
+  );
+}
+
 export default function App() {
+  // Publieke chat-route — afhandelen vóór auth-flow
+  const chatToken = new URLSearchParams(window.location.search).get("chat");
+  if (chatToken) return <ChatForm token={chatToken} />;
+
   const [token, setToken] = useState(() => localStorage.getItem("token") || "");
   const [user, setUser] = useState(() => {
     const raw = localStorage.getItem("user");
@@ -1055,6 +1709,7 @@ export default function App() {
         openDashboard={() => setRoute({name: "dashboard"})}
         openCompany={(batchId, companyId) => setRoute({name: "detail", batchId, companyId})}
         openBellijst={(batchId) => setRoute({name: "bellijst", batchId})}
+        openChatSessies={(batchId) => setRoute({name: "chat-sessies", batchId})}
       />
     );
   }
@@ -1067,6 +1722,29 @@ export default function App() {
         onLogout={logout}
         batchId={route.batchId}
         openBatch={(batchId) => setRoute({name: "batch", batchId})}
+      />
+    );
+  }
+
+  if (route.name === "chat-sessies") {
+    return (
+      <ChatSessiesView
+        api={api}
+        user={user}
+        onLogout={logout}
+        batchId={route.batchId}
+        openBatch={(batchId) => setRoute({name: "batch", batchId})}
+      />
+    );
+  }
+
+  if (route.name === "chat-templates") {
+    return (
+      <ChatTemplatesView
+        api={api}
+        user={user}
+        onLogout={logout}
+        openDashboard={() => setRoute({name: "dashboard"})}
       />
     );
   }
@@ -1090,6 +1768,7 @@ export default function App() {
       user={user}
       onLogout={logout}
       openBatch={(batchId) => setRoute({name: "batch", batchId})}
+      openChatTemplates={() => setRoute({name: "chat-templates"})}
     />
   );
 }

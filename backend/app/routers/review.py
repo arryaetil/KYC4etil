@@ -1,5 +1,6 @@
 import csv
 import io
+import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,8 +9,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
+from ..config import get_settings
 from ..database import get_db
-from ..models import AgentResult, Batch, CallListItem, Candidate, Company, User, WPRecord
+from ..models import AgentResult, Batch, CallListItem, Candidate, ChatSession, ChatTemplate, Company, User, WPRecord
 
 router = APIRouter(tags=["review"], dependencies=[Depends(get_current_user)])
 
@@ -87,6 +89,43 @@ def zet_op_bellijst(candidate_id: str, body: BellijstBody | None = None,
     return {"call_list_id": item.id, "status": cand.status}
 
 
+@router.post("/candidates/{candidate_id}/create-chat")
+async def create_chat_session(candidate_id: str, db: Session = Depends(get_db),
+                               current_user: User = Depends(get_current_user)):
+    """Maakt een gerichte chat-sessie aan, verstuurt uitnodigingsmail (indien Resend geconfigureerd)."""
+    cand = db.get(Candidate, candidate_id)
+    if not cand:
+        raise HTTPException(404, "candidate niet gevonden")
+    default_template = db.query(ChatTemplate).filter_by(is_default=True).first()
+    vragen = default_template.vragen if default_template else None
+
+    token = secrets.token_urlsafe(32)
+    session = ChatSession(company_id=cand.company_id, token_hash=token,
+                          variant="gericht", pre_fill_wp=cand.wp_kandidaat, vragen=vragen)
+    db.add(session)
+    cand.status = "to_chat"
+    db.commit()
+
+    settings = get_settings()
+    chat_url = f"{settings.frontend_url}/?chat={token}"
+    comp = db.get(Company, cand.company_id)
+    email = comp.enrichment.email if comp and comp.enrichment else None
+
+    email_sent = False
+    email_recipient = None
+    if settings.resend_api_key and (email or settings.email_demo_recipient):
+        try:
+            from ..email import send_chat_invitation
+            await send_chat_invitation(email or "", comp.naam if comp else "", chat_url)
+            email_sent = True
+            email_recipient = settings.email_demo_recipient or email
+        except Exception:
+            pass  # email mislukt — frontend valt terug op mailto
+
+    return {"session_id": session.id, "chat_url": chat_url,
+            "email": email, "email_sent": email_sent, "email_recipient": email_recipient}
+
+
 @router.post("/batches/{batch_id}/approve-all-green")
 def bulk_approve(batch_id: str, db: Session = Depends(get_db),
                  current_user: User = Depends(get_current_user)):
@@ -119,6 +158,7 @@ def get_bellijst(batch_id: str, db: Session = Depends(get_db)):
             "naam": comp.naam,
             "gemeente": comp.gemeente,
             "telefoonnummer": item.telefoonnummer or (comp.enrichment.telefoonnummer if comp.enrichment else None),
+            "email": comp.enrichment.email if comp.enrichment else None,
             "reden": item.reden,
             "status": item.status,
             "notities": item.notities,

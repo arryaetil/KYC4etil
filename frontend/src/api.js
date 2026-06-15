@@ -56,6 +56,7 @@ export function createApi(token, onUnauthorized) {
     cancelBatch: (id) => request(`/batches/${id}/cancel`, {method: "POST"}),
     deleteBatch: (id) => request(`/batches/${id}`, {method: "DELETE"}),
     herverwerk: (batchId, companyId) => request(`/batches/${batchId}/companies/${companyId}/herverwerk`, {method: "POST"}),
+    createChatSession: (candidateId) => request(`/candidates/${candidateId}/create-chat`, {method: "POST"}),
     approve: (candidateId) => request(`/candidates/${candidateId}/approve`, {method: "POST"}),
     correct: (candidateId, wp_waarde, reden) => request(`/candidates/${candidateId}/correct`, {
       method: "POST",
@@ -69,6 +70,12 @@ export function createApi(token, onUnauthorized) {
     updateBellijstItem: (itemId, data) => request(`/bellijst/${itemId}`, {method: "PATCH", json: data}),
     doorvoerenBellijst: (itemId) => request(`/bellijst/${itemId}/doorvoeren`, {method: "POST"}),
     approveAllGreen: (batchId) => request(`/batches/${batchId}/approve-all-green`, {method: "POST"}),
+    chatSessies: (batchId) => request(`/batches/${batchId}/chat-sessies`),
+    doorvoerenChat: (sessionId) => request(`/chat-sessies/${sessionId}/doorvoeren`, {method: "POST"}),
+    chatTemplates: () => request("/chat-templates"),
+    createTemplate: (body) => request("/chat-templates", {method: "POST", json: body}),
+    updateTemplate: (id, body) => request(`/chat-templates/${id}`, {method: "PUT", json: body}),
+    deleteTemplate: (id) => request(`/chat-templates/${id}`, {method: "DELETE"}),
     download: async (path, filename) => {
       const headers = new Headers();
       if (token) headers.set("Authorization", `Bearer ${token}`);

@@ -15,7 +15,12 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me"
     register_peildatum: str = "2026-04-01"
     openai_model: str = "gpt-5.2"
+    playwright_enabled: bool = False  # zet op true in Railway nadat Chromium getest is
     frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173"
+    frontend_url: str = "http://localhost:5173"  # publieke URL voor chat-links in emails
+    resend_api_key: str = ""
+    email_from: str = "onboarding@resend.dev"
+    email_demo_recipient: str = "a.willems@etil.nl"  # leegmaken voor productie
 
     # Confidence-gewichten (som = 1.0) — zie documentatie §9
     w_locatie: float = 0.30

@@ -33,6 +33,9 @@ class MockLookupProvider:
         loc = entry["locaties"]
         return LocationInfo(count_nl=loc["nl"], count_lb=loc["lb"], bron="mock")
 
+    async def scrape_email(self, website_url: str | None) -> str | None:
+        return None
+
 
 class MockWebsiteAgent:
     def __init__(self):
