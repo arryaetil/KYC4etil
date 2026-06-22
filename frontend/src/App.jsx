@@ -1543,8 +1543,8 @@ function ChatForm({token}) {
             const preWp = session?.pre_fill_wp;
             const aantalUserBerichten = messages.filter((m) => m.role === "user").length;
             const toonWpBevestiging = aantalUserBerichten >= 1 && preWp && wpTotaal == null;
-            const toonDienstverband = heeftChat && wpTotaal != null && g.eigen_personeel == null;
-            const toonVerdeling = heeftChat && wpTotaal != null && g.eigen_personeel != null && g.man == null;
+            const toonDienstverband = aantalUserBerichten >= 1 && wpTotaal != null && g.eigen_personeel == null;
+            const toonVerdeling = aantalUserBerichten >= 1 && wpTotaal != null && g.eigen_personeel != null && g.man == null;
 
             async function sendText(text) {
               const updated = [...messages, {role: "user", content: text}];
