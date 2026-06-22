@@ -50,7 +50,7 @@ const OVERZICHT_GROEPEN = [
   {
     titel: "Vastgoed",
     velden: [
-      {key: "adres", label: "Adres", verplicht: true},
+      {key: "adres", label: "Vestigingsadres", verplicht: true},
       {key: "correspondentieadres", label: "Correspondentieadres", verplicht: false},
       {key: "perceeloppervlakte", label: "Perceeloppervlakte", verplicht: true},
       {key: "winkeloppervlakte", label: "Winkeloppervlakte", verplicht: true},
