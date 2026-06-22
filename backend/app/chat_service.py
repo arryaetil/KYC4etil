@@ -88,14 +88,6 @@ _ANTWOORDEN_SCHEMA = """{
   "opmerking": <tekst of null>
 }"""
 
-_PRIVACY_OPENING = (
-    "Open het gesprek met: u bent benaderd door Etil Research Group, in opdracht van "
-    "Provincie Limburg, voor het jaarlijkse Vestigingsregister. De antwoorden worden "
-    "door een medewerker gecontroleerd voordat ze worden verwerkt. "
-    "Vraag eerst bevestiging van de bedrijfsnaam en de rol/functie van de invuller."
-)
-
-
 def _build_system_prompt(session: ChatSession, company: Company,
                          enrichment: Enrichment | None) -> str:
     bekende_info = f"Bedrijfsnaam: {company.naam}"
@@ -109,43 +101,28 @@ def _build_system_prompt(session: ChatSession, company: Company,
         if enrichment.telefoonnummer:
             bekende_info += f"\nTelefoon: {enrichment.telefoonnummer}"
 
-    if session.variant == "gericht":
-        return f"""Je bent een vriendelijke data-assistent van Etil Research Group.
-
-DOEL: Bevestig of corrigeer het aantal werkzame personen voor deze vestiging, en vraag een optionele toelichting.
-
-{_PRIVACY_OPENING}
-
-BEKENDE GEGEVENS:
-{bekende_info}
-Geschat aantal WP: {session.pre_fill_wp}
-
-GESPREKSVERLOOP:
-1. Begroeting + transparantie (wie, waarvoor, review). Vraag bevestiging bedrijfsnaam en rol invuller.
-2. Presenteer de geschatte WP-waarde en vraag: "Klopt dit aantal, of wilt u het corrigeren?"
-3. Vraag of de gebruiker nog een toelichting wil toevoegen.
-4. BEVESTIGINGSSTAP: Verwijs naar het overzicht dat de gebruiker links in beeld ziet. Vraag: "Controleer het overzicht hiernaast. Klopt alles? Zo ja, dan sla ik het op."
-5. Als de gebruiker "ja" zegt: bedank en sluit af met done: true. Als "nee": corrigeer en vraag opnieuw.
-
-Bij de laatste beurt, voeg een "antwoorden" object toe met:
-{{"wp_totaal": <bevestigd of gecorrigeerd getal>, "opmerking": <toelichting of null>}}
-
-GEGEVENS-SCHEMA (gebruik dit voor het "gegevens" object in elke beurt):
-{_ANTWOORDEN_SCHEMA}
-
-{_FORMAT_RULES}"""
+    pre_fill_wp = ""
+    if session.pre_fill_wp:
+        pre_fill_wp = f"\nGeschat aantal WP: {session.pre_fill_wp} (bevestig of corrigeer dit met de gebruiker)"
 
     return f"""Je bent een vriendelijke data-assistent van Etil Research Group.
 
 DOEL: Verzamel personeels- en vastgoedgegevens voor deze vestiging via een natuurlijk gesprek. Groepeer gerelateerde vragen. Bevestig wat al bekend is — vraag het niet opnieuw.
 
-{_PRIVACY_OPENING}
+Open het gesprek met: u bent benaderd door Etil Research Group, in opdracht van Provincie Limburg, voor het jaarlijkse Vestigingsregister. De antwoorden worden door een medewerker gecontroleerd voordat ze worden verwerkt. Vraag eerst bevestiging van de bedrijfsnaam.
 
 BEKENDE GEGEVENS (bevestig, niet opnieuw vragen):
-{bekende_info}
+{bekende_info}{pre_fill_wp}
+
+VERPLICHTE VELDEN (deze MOETEN allemaal worden uitgevraagd):
+- Personeel: wp_totaal, eigen_personeel, uitzend, detachering, wsw, man, vrouw, voltijd, deeltijd, pct_op_locatie
+- Vastgoed: adres, perceeloppervlakte, winkeloppervlakte, kantooroppervlakte, bedrijfsvloeroppervlakte
+
+OPTIONELE VELDEN (vraag ernaar maar accepteer als de gebruiker het niet weet):
+- correspondentieadres, uitbreidingsruimte, seizoensverschil, opmerking
 
 GESPREKSVERLOOP (groepeer in ~5-6 beurten):
-1. Begroeting + transparantie. Bevestig bekende gegevens (adres, bedrijfsnaam). Vraag rol invuller.
+1. Begroeting + transparantie (wie, waarvoor, review). Bevestig bekende gegevens (adres, bedrijfsnaam).
 2. WP totaal + uitsplitsing: eigen personeel, uitzendkrachten, detachering, WSW.
 3. Man/vrouw, voltijd/deeltijd, percentage werkzaam op locatie (≥60% van de tijd).
 4. Oppervlaktes: perceel, winkel, kantoor, bedrijfsvloer. Uitbreidingsruimte.
@@ -154,7 +131,8 @@ GESPREKSVERLOOP (groepeer in ~5-6 beurten):
 7. Als de gebruiker "ja" zegt: bedank en sluit af met done: true. Als "nee": corrigeer en vraag opnieuw.
 
 BELANGRIJK:
-- Als de gebruiker een veld niet weet of het is niet van toepassing, accepteer dat en ga door.
+- Sla geen verplicht veld over. Als de gebruiker een veld niet weet, noteer null en ga door.
+- Als er een geschat WP-getal is, presenteer dit en vraag of het klopt.
 - Zet null voor onbekende velden in het gegevens/antwoorden-object.
 
 GEGEVENS-SCHEMA (gebruik dit voor het "gegevens" object in elke beurt EN voor "antwoorden" bij de laatste beurt):
