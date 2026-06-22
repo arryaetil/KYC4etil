@@ -31,6 +31,43 @@ const LABELS = {
   laag: {text: "Rood", dot: "bg-red-500", bg: "bg-red-50", textColor: "text-red-800"},
 };
 
+const OVERZICHT_GROEPEN = [
+  {
+    titel: "Personeel",
+    velden: [
+      {key: "wp_totaal", label: "WP totaal", verplicht: true},
+      {key: "eigen_personeel", label: "Eigen personeel", verplicht: true},
+      {key: "uitzend", label: "Uitzendkrachten", verplicht: true},
+      {key: "detachering", label: "Detachering", verplicht: true},
+      {key: "wsw", label: "WSW", verplicht: true},
+      {key: "man", label: "Man", verplicht: true},
+      {key: "vrouw", label: "Vrouw", verplicht: true},
+      {key: "voltijd", label: "Voltijd", verplicht: true},
+      {key: "deeltijd", label: "Deeltijd", verplicht: true},
+      {key: "pct_op_locatie", label: "% op locatie", verplicht: true},
+    ],
+  },
+  {
+    titel: "Vastgoed",
+    velden: [
+      {key: "adres", label: "Adres", verplicht: true},
+      {key: "correspondentieadres", label: "Correspondentieadres", verplicht: false},
+      {key: "perceeloppervlakte", label: "Perceeloppervlakte", verplicht: true},
+      {key: "winkeloppervlakte", label: "Winkeloppervlakte", verplicht: true},
+      {key: "kantooroppervlakte", label: "Kantooroppervlakte", verplicht: true},
+      {key: "bedrijfsvloeroppervlakte", label: "Bedrijfsvloeroppervlakte", verplicht: true},
+      {key: "uitbreidingsruimte", label: "Uitbreidingsruimte", verplicht: false},
+    ],
+  },
+  {
+    titel: "Overig",
+    velden: [
+      {key: "seizoensverschil", label: "Seizoensverschil", verplicht: false},
+      {key: "opmerking", label: "Opmerking", verplicht: false},
+    ],
+  },
+];
+
 const STRATEGIE_LABELS = {
   auto: "Auto",
   gerichte_chat: "Gerichte chat",
@@ -1087,6 +1124,93 @@ function Alert({message}) {
   );
 }
 
+function OverzichtPanel({gegevens}) {
+  const prevGegevensRef = useRef({});
+
+  const merged = gegevens || {};
+  const verplicht = OVERZICHT_GROEPEN.flatMap((g) => g.velden.filter((v) => v.verplicht));
+  const ingevuld = verplicht.filter((v) => merged[v.key] != null).length;
+  const totaal = verplicht.length;
+  const pctVoortgang = totaal ? Math.round((ingevuld / totaal) * 100) : 0;
+
+  const changedKeys = new Set();
+  const prev = prevGegevensRef.current;
+  for (const key of Object.keys(merged)) {
+    if (merged[key] != null && prev[key] !== merged[key]) {
+      changedKeys.add(key);
+    }
+  }
+
+  useEffect(() => {
+    prevGegevensRef.current = {...merged};
+  }, [gegevens]);
+
+  return (
+    <div className="flex flex-col gap-4 overflow-y-auto rounded-lg border border-line bg-white p-4 shadow-sm" style={{maxHeight: "85vh"}}>
+      <div>
+        <div className="mb-2 flex items-center justify-between text-sm">
+          <span className="font-semibold text-slate-700">Voortgang</span>
+          <span className="font-bold text-etil">{pctVoortgang}%</span>
+        </div>
+        <div className="h-2 rounded-full bg-slate-200">
+          <div
+            className="h-2 rounded-full bg-etil transition-all duration-500"
+            style={{width: `${pctVoortgang}%`}}
+          />
+        </div>
+        <div className="mt-1 text-xs text-slate-400">{ingevuld} van {totaal} verplichte velden</div>
+      </div>
+
+      {OVERZICHT_GROEPEN.map((groep) => {
+        const groepIngevuld = groep.velden.filter((v) => v.verplicht && merged[v.key] != null).length;
+        const groepTotaal = groep.velden.filter((v) => v.verplicht).length;
+        const groepKlaar = groepTotaal > 0 && groepIngevuld === groepTotaal;
+
+        return (
+          <div key={groep.titel}>
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-slate-500">
+              {groepKlaar
+                ? <span className="flex h-4 w-4 items-center justify-center rounded-full bg-etil text-[10px] text-white">✓</span>
+                : <span className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-400">○</span>
+              }
+              {groep.titel}
+              <span className="ml-auto font-normal text-slate-400">{groepIngevuld}/{groepTotaal}</span>
+            </div>
+            <div className="space-y-0.5">
+              {groep.velden.map((veld) => {
+                const waarde = merged[veld.key];
+                const heeftWaarde = waarde != null;
+                const isChanged = changedKeys.has(veld.key);
+
+                return (
+                  <div
+                    key={veld.key}
+                    className={classNames(
+                      "flex items-center gap-2 rounded px-2 py-1 text-sm",
+                      isChanged && "field-pulse"
+                    )}
+                  >
+                    {heeftWaarde
+                      ? <span className="text-etil text-xs">✓</span>
+                      : <span className="text-xs text-slate-300">○</span>
+                    }
+                    <span className={classNames("flex-1", heeftWaarde ? "text-slate-700" : "text-slate-400")}>
+                      {veld.label}
+                    </span>
+                    <span className={classNames("text-right", heeftWaarde ? "font-semibold text-slate-900" : "text-slate-300")}>
+                      {heeftWaarde ? String(waarde) : "—"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ChatForm({token}) {
   const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
   const [session, setSession] = useState(null);
@@ -1095,6 +1219,7 @@ function ChatForm({token}) {
   const [typing, setTyping] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
+  const [gegevens, setGegevens] = useState(null);
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -1105,6 +1230,10 @@ function ChatForm({token}) {
           setDone(true);
         } else {
           setSession(data);
+          const preFill = {};
+          if (data.adres) preFill.adres = data.adres;
+          if (data.pre_fill_wp) preFill.wp_totaal = data.pre_fill_wp;
+          if (Object.keys(preFill).length > 0) setGegevens(preFill);
           if (data.messages && data.messages.length > 0) {
             setMessages(data.messages);
           } else {
@@ -1132,6 +1261,7 @@ function ChatForm({token}) {
       const updated = [...msgs, {role: "assistant", content: data.reply}];
       setMessages(updated);
       if (data.done) setDone(true);
+      if (data.gegevens) setGegevens(data.gegevens);
     } catch (err) {
       setMessages((prev) => [...prev, {role: "assistant", content: "Er is een fout opgetreden. Probeer het opnieuw."}]);
     } finally {
@@ -1178,78 +1308,86 @@ function ChatForm({token}) {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#eef2f5] px-4 py-8">
-      <div className="flex w-full max-w-lg flex-col rounded-lg border border-line bg-white shadow-sm" style={{maxHeight: "90vh"}}>
-        <div className="flex-shrink-0 rounded-t-lg bg-etil px-6 py-4">
-          <div className="flex items-center gap-3">
-            <ShieldCheck className="text-white/80" size={22} />
-            <div>
-              <div className="text-sm font-semibold text-white">Vestigingsregister AI</div>
-              <div className="text-xs text-white/70">Etil Research Group — Provincie Limburg</div>
+      <div className="grid w-full gap-4" style={{maxWidth: "1000px", gridTemplateColumns: "320px 1fr"}}>
+        <OverzichtPanel gegevens={gegevens} />
+
+        <div className="flex flex-col rounded-lg border border-line bg-white shadow-sm" style={{maxHeight: "90vh"}}>
+          <div className="flex-shrink-0 rounded-t-lg bg-etil px-6 py-4">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="text-white/80" size={22} />
+              <div>
+                <div className="text-sm font-semibold text-white">Vestigingsregister AI</div>
+                <div className="text-xs text-white/70">Etil Research Group — Provincie Limburg</div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4" style={{minHeight: "300px"}}>
-          {messages.map((msg, i) => (
-            <div key={i} className={classNames("flex gap-2", msg.role === "user" ? "flex-row-reverse" : "flex-row")}>
-              <div className={classNames(
-                "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold",
-                msg.role === "user" ? "bg-slate-200 text-slate-600" : "bg-etil text-white"
-              )}>
-                {msg.role === "user" ? "U" : "E"}
+          <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4" style={{minHeight: "300px"}}>
+            {messages.map((msg, i) => (
+              <div key={i} className={classNames("flex gap-2", msg.role === "user" ? "flex-row-reverse" : "flex-row")}>
+                <div className={classNames(
+                  "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                  msg.role === "user" ? "bg-slate-200 text-slate-600" : "bg-etil text-white"
+                )}>
+                  {msg.role === "user" ? "U" : "E"}
+                </div>
+                <div className={classNames(
+                  "max-w-[80%] rounded-xl px-4 py-2.5 text-sm leading-relaxed",
+                  msg.role === "user"
+                    ? "rounded-br-sm bg-etil text-white"
+                    : "rounded-bl-sm border border-line bg-panel text-slate-800"
+                )} style={{whiteSpace: "pre-wrap"}}>
+                  {msg.content.split(/(\*\*.*?\*\*)/).map((part, j) =>
+                    part.startsWith("**") && part.endsWith("**")
+                      ? <strong key={j}>{part.slice(2, -2)}</strong>
+                      : part
+                  )}
+                </div>
               </div>
-              <div className={classNames(
-                "max-w-[80%] rounded-xl px-4 py-2.5 text-sm leading-relaxed",
-                msg.role === "user"
-                  ? "rounded-br-sm bg-etil text-white"
-                  : "rounded-bl-sm border border-line bg-panel text-slate-800"
-              )}>
-                {msg.content}
+            ))}
+            {typing && (
+              <div className="flex gap-2">
+                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-etil text-xs font-bold text-white">E</div>
+                <div className="flex items-center gap-1 rounded-xl rounded-bl-sm border border-line bg-panel px-4 py-3">
+                  <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-etil" style={{animationDelay: "0ms"}} />
+                  <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-etil" style={{animationDelay: "150ms"}} />
+                  <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-etil" style={{animationDelay: "300ms"}} />
+                </div>
               </div>
-            </div>
-          ))}
-          {typing && (
-            <div className="flex gap-2">
-              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-etil text-xs font-bold text-white">E</div>
-              <div className="flex items-center gap-1 rounded-xl rounded-bl-sm border border-line bg-panel px-4 py-3">
-                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-etil" style={{animationDelay: "0ms"}} />
-                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-etil" style={{animationDelay: "150ms"}} />
-                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-etil" style={{animationDelay: "300ms"}} />
+            )}
+            {done && messages.length > 0 && (
+              <div className="mx-auto my-4 flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
+                <Check size={16} /> Gegevens ontvangen — bedankt!
               </div>
-            </div>
+            )}
+          </div>
+
+          {!done && (
+            <form onSubmit={send} className="flex flex-shrink-0 gap-2 border-t border-line p-3">
+              <input
+                className="focus-ring h-11 flex-1 rounded-md border border-line px-3 text-sm"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Typ uw antwoord..."
+                disabled={typing}
+                autoFocus
+              />
+              <button
+                type="submit"
+                disabled={typing || !input.trim()}
+                className="focus-ring flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md bg-etil text-white transition hover:opacity-90 disabled:opacity-40"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
+            </form>
           )}
-          {done && messages.length > 0 && (
-            <div className="mx-auto my-4 flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
-              <Check size={16} /> Gegevens ontvangen — bedankt!
-            </div>
-          )}
-        </div>
 
-        {!done && (
-          <form onSubmit={send} className="flex flex-shrink-0 gap-2 border-t border-line p-3">
-            <input
-              className="focus-ring h-11 flex-1 rounded-md border border-line px-3 text-sm"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Typ uw antwoord..."
-              disabled={typing}
-              autoFocus
-            />
-            <button
-              type="submit"
-              disabled={typing || !input.trim()}
-              className="focus-ring flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md bg-etil text-white transition hover:opacity-90 disabled:opacity-40"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button>
-          </form>
-        )}
-
-        <div className="flex-shrink-0 px-4 pb-3 text-center text-xs text-slate-400">
-          Uw gegevens worden uitsluitend gebruikt voor het Vestigingsregister van Provincie Limburg.
+          <div className="flex-shrink-0 px-4 pb-3 text-center text-xs text-slate-400">
+            Uw gegevens worden uitsluitend gebruikt voor het Vestigingsregister van Provincie Limburg.
+          </div>
         </div>
       </div>
     </main>

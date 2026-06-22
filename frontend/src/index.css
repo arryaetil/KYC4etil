@@ -28,3 +28,11 @@ button:disabled {
 .focus-ring {
   @apply focus:outline-none focus:ring-2 focus:ring-etil focus:ring-offset-2;
 }
+
+@keyframes fieldPulse {
+  0% { background-color: rgba(15, 118, 110, 0.15); }
+  100% { background-color: transparent; }
+}
+.field-pulse {
+  animation: fieldPulse 1.5s ease-out;
+}
