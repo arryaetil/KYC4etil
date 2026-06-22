@@ -10,11 +10,154 @@ from ..models import ChatSession, Company
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-DEFAULT_VRAGEN = [
+# Volledige vragenlijst conform ADO #1413 (Roger Vaessens)
+VRAGEN_VOLLEDIG = [
+    # --- Adresgegevens ---
     {
-        "id": "wp_count",
-        "label": "Aantal werkzame personen",
-        "type": "wp_count",
+        "id": "adres",
+        "label": "Adres vestiging",
+        "type": "text",
+        "verplicht": True,
+        "hint": "Straat, huisnummer, postcode, plaats",
+    },
+    {
+        "id": "correspondentie_adres",
+        "label": "Correspondentieadres",
+        "type": "text",
+        "verplicht": False,
+        "hint": "Alleen invullen als dit afwijkt van het vestigingsadres",
+    },
+    # --- Werkzame personen ---
+    {
+        "id": "wp_totaal",
+        "label": "Aantal werkzame personen (totaal)",
+        "type": "number",
+        "verplicht": True,
+        "hint": "Headcount (niet FTE), peildatum 31 december vorig jaar",
+    },
+    {
+        "id": "wp_eigen",
+        "label": "Waarvan eigen personeel",
+        "type": "number",
+        "verplicht": False,
+        "hint": "Medewerkers direct in dienst bij uw organisatie",
+    },
+    {
+        "id": "wp_uitzend",
+        "label": "Waarvan uitzendkrachten",
+        "type": "number",
+        "verplicht": False,
+        "hint": "",
+    },
+    {
+        "id": "wp_detachering",
+        "label": "Waarvan gedetacheerd personeel",
+        "type": "number",
+        "verplicht": False,
+        "hint": "",
+    },
+    {
+        "id": "wp_wsw",
+        "label": "Waarvan WSW-medewerkers",
+        "type": "number",
+        "verplicht": False,
+        "hint": "Wet Sociale Werkvoorziening",
+    },
+    {
+        "id": "wp_man",
+        "label": "Waarvan man",
+        "type": "number",
+        "verplicht": False,
+        "hint": "",
+    },
+    {
+        "id": "wp_vrouw",
+        "label": "Waarvan vrouw",
+        "type": "number",
+        "verplicht": False,
+        "hint": "",
+    },
+    {
+        "id": "wp_voltijd",
+        "label": "Waarvan voltijd (≥12 uur per week)",
+        "type": "number",
+        "verplicht": False,
+        "hint": "",
+    },
+    {
+        "id": "wp_deeltijd",
+        "label": "Waarvan deeltijd (<12 uur per week)",
+        "type": "number",
+        "verplicht": False,
+        "hint": "",
+    },
+    {
+        "id": "wp_op_locatie",
+        "label": "Werkzame personen ≥60% op locatie",
+        "type": "number",
+        "verplicht": False,
+        "hint": "Aantal medewerkers dat minimaal 60% van de werktijd fysiek aanwezig is op deze vestiging",
+    },
+    # --- Bedrijfsvastgoed ---
+    {
+        "id": "opp_perceel",
+        "label": "Perceeloppervlakte (m²)",
+        "type": "number",
+        "verplicht": False,
+        "hint": "",
+    },
+    {
+        "id": "opp_winkel",
+        "label": "Winkelvloeroppervlakte (m²)",
+        "type": "number",
+        "verplicht": False,
+        "hint": "Alleen invullen indien van toepassing",
+    },
+    {
+        "id": "opp_kantoor",
+        "label": "Kantoorvloeroppervlakte (m²)",
+        "type": "number",
+        "verplicht": False,
+        "hint": "Alleen invullen indien van toepassing",
+    },
+    {
+        "id": "opp_bedrijf",
+        "label": "Bedrijfsvloeroppervlakte (m²)",
+        "type": "number",
+        "verplicht": False,
+        "hint": "Alleen invullen indien van toepassing",
+    },
+    {
+        "id": "uitbreidingsruimte",
+        "label": "Gewenste uitbreidingsruimte (m²)",
+        "type": "number",
+        "verplicht": False,
+        "hint": "Hoeveel extra ruimte heeft u nodig als u zou willen uitbreiden?",
+    },
+    # --- Seizoen ---
+    {
+        "id": "seizoen_verschil",
+        "label": "Verschil hoog- en laagseizoen",
+        "type": "text",
+        "verplicht": False,
+        "hint": "Bijv. 'In de zomer 20 extra medewerkers' of 'geen seizoensverschil'",
+    },
+    # --- Toelichting ---
+    {
+        "id": "opmerking",
+        "label": "Overige toelichting",
+        "type": "text",
+        "verplicht": False,
+        "hint": "",
+    },
+]
+
+# Gerichte variant (🟡): alleen WP-bevestiging + opmerkingen
+VRAGEN_GERICHT = [
+    {
+        "id": "wp_totaal",
+        "label": "Aantal werkzame personen (totaal)",
+        "type": "number",
         "verplicht": True,
         "hint": "Headcount (niet FTE), peildatum 31 december vorig jaar",
     },
@@ -26,6 +169,9 @@ DEFAULT_VRAGEN = [
         "hint": "Bijv. deeltijdwerkers, seizoenspersoneel, uitzendkrachten…",
     },
 ]
+
+# Fallback voor sessies zonder expliciete variant
+DEFAULT_VRAGEN = VRAGEN_VOLLEDIG
 
 
 @router.get("/{token}")
@@ -43,7 +189,9 @@ def get_chat_session(token: str, db: Session = Depends(get_db)):
         "variant": session.variant,
         "pre_fill_wp": session.pre_fill_wp,
         "status": session.status,
-        "vragen": session.vragen if session.vragen else DEFAULT_VRAGEN,
+        "vragen": session.vragen if session.vragen else (
+            VRAGEN_GERICHT if session.variant == "gericht" else VRAGEN_VOLLEDIG
+        ),
     }
 
 
