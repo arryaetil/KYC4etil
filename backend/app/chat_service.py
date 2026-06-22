@@ -59,12 +59,17 @@ _FORMAT_RULES = """ANTWOORDFORMAAT:
 - Het "gegevens" object bevat ALTIJD alle velden uit het schema, met null voor nog onbekende waarden. Werk het bij na elke beurt.
 - Bij de LAATSTE beurt (als de gebruiker het overzicht heeft bevestigd): {"reply": "<afsluitend bericht>", "done": true, "gegevens": {<finale data>}, "antwoorden": {<finale data>}}
 - GEEN code fences, GEEN emojis, GEEN tekst buiten het JSON-object.
-- Je MAG **vetgedrukt** (dubbele sterretjes) gebruiken in de reply-waarde.
-- Gebruik komma's als scheidingsteken tussen waarden wanneer je gegevens samenvat in de reply-tekst.
 - Gebruik \\n voor nieuwe regels in de reply-waarde.
 - Stel maximaal één groep gerelateerde vragen per beurt (max 3-4 vragen per groep).
 - Spreek de gebruiker formeel maar vriendelijk aan (u).
-- Houd berichten beknopt."""
+- Houd berichten beknopt.
+
+OPMAAK VAN REPLY-TEKST:
+- Wanneer je gegevens samenvat of bevestigt, gebruik een overzichtelijke opsomming met \\n per regel.
+- Zet waarden die de gebruiker heeft doorgegeven in **vetgedrukt** (dubbele sterretjes).
+- Waarden die nog onbekend zijn schrijf je zonder vetgedrukt.
+- Wanneer je vragen stelt, nummer ze (1. 2. 3.) met elk een eigen regel via \\n.
+- Gebruik komma's als scheidingsteken wanneer je meerdere waarden op één regel samenvat."""
 
 _ANTWOORDEN_SCHEMA = """{
   "wp_totaal": <getal of null>,
