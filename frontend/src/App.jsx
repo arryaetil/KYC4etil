@@ -1542,9 +1542,10 @@ function ChatForm({token}) {
             const wpTotaal = typeof g.wp_totaal === "number" ? g.wp_totaal : null;
             const preWp = session?.pre_fill_wp;
             const aantalUserBerichten = messages.filter((m) => m.role === "user").length;
-            const toonWpBevestiging = aantalUserBerichten >= 1 && preWp && wpTotaal == null;
-            const toonDienstverband = aantalUserBerichten >= 1 && wpTotaal != null && g.eigen_personeel == null;
-            const toonVerdeling = aantalUserBerichten >= 1 && wpTotaal != null && g.eigen_personeel != null && g.man == null;
+            const toonWpBevestiging = !typing && aantalUserBerichten >= 1 && preWp && wpTotaal == null;
+            const toonDienstverband = !typing && aantalUserBerichten >= 1 && wpTotaal != null && g.eigen_personeel == null;
+            const toonVerdeling = !typing && aantalUserBerichten >= 1 && wpTotaal != null && g.eigen_personeel != null && g.man == null;
+            const toonFormulier = toonWpBevestiging || toonDienstverband || toonVerdeling;
 
             async function sendText(text) {
               const updated = [...messages, {role: "user", content: text}];
@@ -1555,40 +1556,42 @@ function ChatForm({token}) {
             return (
               <div className="flex-shrink-0 border-t border-line">
                 {toonWpBevestiging && (
-                  <div className="border-b border-line p-3">
+                  <div className="p-3">
                     <WpBevestiging wpSchatting={preWp} disabled={typing} onSubmit={sendText} />
                   </div>
                 )}
                 {toonDienstverband && (
-                  <div className="border-b border-line p-3">
+                  <div className="p-3">
                     <DienstverbandFormulier wpTotaal={wpTotaal} disabled={typing} onSubmit={sendText} />
                   </div>
                 )}
                 {toonVerdeling && (
-                  <div className="border-b border-line p-3">
+                  <div className="p-3">
                     <VerdelingFormulier wpTotaal={wpTotaal} disabled={typing} onSubmit={sendText} />
                   </div>
                 )}
-                <form onSubmit={send} className="flex gap-2 p-3">
-                  <input
-                    className="focus-ring h-11 flex-1 rounded-md border border-line px-3 text-sm"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Typ uw antwoord..."
-                    disabled={typing}
-                    autoFocus
-                  />
-                  <button
-                    type="submit"
-                    disabled={typing || !input.trim()}
-                    className="focus-ring flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md bg-etil text-white transition hover:opacity-90 disabled:opacity-40"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="22" y1="2" x2="11" y2="13" />
-                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                    </svg>
-                  </button>
-                </form>
+                {!toonFormulier && (
+                  <form onSubmit={send} className="flex gap-2 p-3">
+                    <input
+                      className="focus-ring h-11 flex-1 rounded-md border border-line px-3 text-sm"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Typ uw antwoord..."
+                      disabled={typing}
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      disabled={typing || !input.trim()}
+                      className="focus-ring flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md bg-etil text-white transition hover:opacity-90 disabled:opacity-40"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                    </button>
+                  </form>
+                )}
               </div>
             );
           })()}
