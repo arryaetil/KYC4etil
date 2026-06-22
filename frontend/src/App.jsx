@@ -1090,10 +1090,12 @@ function Alert({message}) {
 function ChatForm({token}) {
   const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
   const [session, setSession] = useState(null);
-  const [answers, setAnswers] = useState({});
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [typing, setTyping] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const scrollRef = useRef(null);
 
   useEffect(() => {
     fetch(`${API_URL}/chat/${token}`)
@@ -1103,45 +1105,48 @@ function ChatForm({token}) {
           setDone(true);
         } else {
           setSession(data);
-          if (data.pre_fill_wp) {
-            setAnswers((prev) => ({...prev, wp_count: String(data.pre_fill_wp)}));
+          if (data.messages && data.messages.length > 0) {
+            setMessages(data.messages);
+          } else {
+            fetchReply([]);
           }
         }
       })
       .catch(() => setError("Chat-sessie niet gevonden of verlopen."));
   }, [token]);
 
-  function setAnswer(id, value) {
-    setAnswers((prev) => ({...prev, [id]: value}));
-  }
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, typing]);
 
-  async function submit(e) {
-    e.preventDefault();
-    const vragen = session?.vragen || [];
-    for (const v of vragen) {
-      if (v.verplicht && !answers[v.id] && answers[v.id] !== 0) {
-        setError(`Vul "${v.label}" in.`); return;
-      }
-    }
-    const wpRaw = answers["wp_count"];
-    const n = parseInt(wpRaw, 10);
-    if (isNaN(n) || n < 0) { setError("Vul een geldig aantal werkzame personen in."); return; }
-    setBusy(true);
-    setError("");
+  async function fetchReply(msgs) {
+    setTyping(true);
     try {
-      const r = await fetch(`${API_URL}/chat/${token}/submit`, {
+      const r = await fetch(`${API_URL}/chat/${token}/message`, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({antwoorden: {...answers, wp_count: n}}),
+        body: JSON.stringify({messages: msgs}),
       });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.detail || "Inzenden mislukt.");
-      setDone(true);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "Fout in de chat.");
+      const updated = [...msgs, {role: "assistant", content: data.reply}];
+      setMessages(updated);
+      if (data.done) setDone(true);
     } catch (err) {
-      setError(err.message);
+      setMessages((prev) => [...prev, {role: "assistant", content: "Er is een fout opgetreden. Probeer het opnieuw."}]);
     } finally {
-      setBusy(false);
+      setTyping(false);
     }
+  }
+
+  async function send(e) {
+    if (e) e.preventDefault();
+    const text = input.trim();
+    if (!text || typing || done) return;
+    setInput("");
+    const updated = [...messages, {role: "user", content: text}];
+    setMessages(updated);
+    await fetchReply(updated);
   }
 
   if (error && !session) return (
@@ -1153,7 +1158,7 @@ function ChatForm({token}) {
     </main>
   );
 
-  if (done) return (
+  if (done && !messages.length) return (
     <main className="flex min-h-screen items-center justify-center bg-[#eef2f5] px-4">
       <div className="w-full max-w-md rounded-lg border border-line bg-white p-8 text-center shadow-sm">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
@@ -1165,18 +1170,16 @@ function ChatForm({token}) {
     </main>
   );
 
-  if (!session) return (
+  if (!session && !done) return (
     <main className="flex min-h-screen items-center justify-center bg-[#eef2f5]">
       <div className="text-slate-500">Laden…</div>
     </main>
   );
 
-  const vragen = session.vragen || [];
-
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#eef2f5] px-4 py-8">
-      <div className="w-full max-w-lg rounded-lg border border-line bg-white shadow-sm">
-        <div className="rounded-t-lg bg-etil px-6 py-4">
+      <div className="flex w-full max-w-lg flex-col rounded-lg border border-line bg-white shadow-sm" style={{maxHeight: "90vh"}}>
+        <div className="flex-shrink-0 rounded-t-lg bg-etil px-6 py-4">
           <div className="flex items-center gap-3">
             <ShieldCheck className="text-white/80" size={22} />
             <div>
@@ -1185,74 +1188,68 @@ function ChatForm({token}) {
             </div>
           </div>
         </div>
-        <div className="p-6">
-          <h1 className="mb-1 text-xl font-semibold">Gegevenscontrole</h1>
-          <p className="mb-5 text-sm text-slate-600">
-            Provincie Limburg vraagt u de personeelsgegevens van{" "}
-            <strong>{session.bedrijfsnaam}</strong>
-            {session.gemeente ? ` (${session.gemeente})` : ""} te controleren.
-          </p>
-          {session.variant === "gericht" && session.pre_fill_wp ? (
-            <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              Onze gegevens tonen <strong>{session.pre_fill_wp} werkzame personen</strong>.
-              Klopt dit, of wilt u het corrigeren?
-            </div>
-          ) : null}
-          <form onSubmit={submit} className="space-y-5">
-            {vragen.map((vraag) => (
-              <div key={vraag.id}>
-                <label className="mb-1 block text-sm font-medium">
-                  {vraag.label}
-                  {!vraag.verplicht && <span className="ml-1 font-normal text-slate-500">(optioneel)</span>}
-                </label>
-                {vraag.hint ? <p className="mb-2 text-xs text-slate-500">{vraag.hint}</p> : null}
-                {vraag.type === "wp_count" ? (
-                  <input
-                    className="focus-ring h-12 w-full rounded-md border border-line px-3 text-lg font-semibold"
-                    type="number" min="0"
-                    value={answers[vraag.id] ?? ""}
-                    onChange={(e) => setAnswer(vraag.id, e.target.value)}
-                    placeholder="bijv. 250"
-                    required={vraag.verplicht}
-                  />
-                ) : vraag.type === "text" ? (
-                  <textarea
-                    className="focus-ring min-h-20 w-full rounded-md border border-line px-3 py-2 text-sm"
-                    value={answers[vraag.id] ?? ""}
-                    onChange={(e) => setAnswer(vraag.id, e.target.value)}
-                    placeholder={vraag.hint || ""}
-                    required={vraag.verplicht}
-                  />
-                ) : vraag.type === "boolean" ? (
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={!!answers[vraag.id]}
-                      onChange={(e) => setAnswer(vraag.id, e.target.checked)}
-                    />
-                    {vraag.label}
-                  </label>
-                ) : (
-                  <input
-                    className="focus-ring h-10 w-full rounded-md border border-line px-3 text-sm"
-                    value={answers[vraag.id] ?? ""}
-                    onChange={(e) => setAnswer(vraag.id, e.target.value)}
-                    required={vraag.verplicht}
-                  />
-                )}
+
+        <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4" style={{minHeight: "300px"}}>
+          {messages.map((msg, i) => (
+            <div key={i} className={classNames("flex gap-2", msg.role === "user" ? "flex-row-reverse" : "flex-row")}>
+              <div className={classNames(
+                "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                msg.role === "user" ? "bg-slate-200 text-slate-600" : "bg-etil text-white"
+              )}>
+                {msg.role === "user" ? "U" : "E"}
               </div>
-            ))}
-            {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
+              <div className={classNames(
+                "max-w-[80%] rounded-xl px-4 py-2.5 text-sm leading-relaxed",
+                msg.role === "user"
+                  ? "rounded-br-sm bg-etil text-white"
+                  : "rounded-bl-sm border border-line bg-panel text-slate-800"
+              )}>
+                {msg.content}
+              </div>
+            </div>
+          ))}
+          {typing && (
+            <div className="flex gap-2">
+              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-etil text-xs font-bold text-white">E</div>
+              <div className="flex items-center gap-1 rounded-xl rounded-bl-sm border border-line bg-panel px-4 py-3">
+                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-etil" style={{animationDelay: "0ms"}} />
+                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-etil" style={{animationDelay: "150ms"}} />
+                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-etil" style={{animationDelay: "300ms"}} />
+              </div>
+            </div>
+          )}
+          {done && messages.length > 0 && (
+            <div className="mx-auto my-4 flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
+              <Check size={16} /> Gegevens ontvangen — bedankt!
+            </div>
+          )}
+        </div>
+
+        {!done && (
+          <form onSubmit={send} className="flex flex-shrink-0 gap-2 border-t border-line p-3">
+            <input
+              className="focus-ring h-11 flex-1 rounded-md border border-line px-3 text-sm"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Typ uw antwoord..."
+              disabled={typing}
+              autoFocus
+            />
             <button
-              type="submit" disabled={busy}
-              className="focus-ring flex w-full items-center justify-center gap-2 rounded-md bg-etil px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              type="submit"
+              disabled={typing || !input.trim()}
+              className="focus-ring flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md bg-etil text-white transition hover:opacity-90 disabled:opacity-40"
             >
-              <Check size={16} />{busy ? "Bezig…" : "Gegevens bevestigen"}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
             </button>
           </form>
-          <p className="mt-4 text-center text-xs text-slate-400">
-            Uw gegevens worden uitsluitend gebruikt voor het Vestigingsregister van Provincie Limburg.
-          </p>
+        )}
+
+        <div className="flex-shrink-0 px-4 pb-3 text-center text-xs text-slate-400">
+          Uw gegevens worden uitsluitend gebruikt voor het Vestigingsregister van Provincie Limburg.
         </div>
       </div>
     </main>
