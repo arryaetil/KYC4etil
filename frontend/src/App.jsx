@@ -1213,111 +1213,174 @@ function OverzichtPanel({gegevens}) {
   );
 }
 
-const PERSONEEL_STAPPEN = [
-  {
-    label: "Dienstverband",
-    somVelden: [
-      {key: "eigen_personeel", label: "Eigen personeel"},
-      {key: "uitzend", label: "Uitzendkrachten"},
-      {key: "detachering", label: "Detachering"},
-      {key: "wsw", label: "WSW"},
-    ],
-    detectKey: "eigen_personeel",
-  },
-  {
-    label: "Geslacht",
-    somVelden: [
-      {key: "man", label: "Man"},
-      {key: "vrouw", label: "Vrouw"},
-    ],
-    detectKey: "man",
-  },
-  {
-    label: "Arbeidsduur & locatie",
-    somVelden: [
-      {key: "voltijd", label: "Voltijd"},
-      {key: "deeltijd", label: "Deeltijd"},
-    ],
-    extraVelden: [
-      {key: "pct_op_locatie", label: "% werkzaam op locatie", suffix: "%"},
-    ],
-    detectKey: "voltijd",
-  },
-];
-
-function PersoneelFormulier({wpTotaal, stap, onSubmit, disabled}) {
-  const [values, setValues] = useState({});
-
-  const som = stap.somVelden.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
-  const resterend = wpTotaal - som;
-  const extraVelden = stap.extraVelden || [];
-  const extraIngevuld = extraVelden.every((v) => values[v.key] !== undefined && values[v.key] !== "");
-  const kanVersturen = resterend === 0 && (extraVelden.length === 0 || extraIngevuld);
-
-  function update(key, val) {
-    setValues((prev) => ({...prev, [key]: val}));
-  }
+function WpBevestiging({wpSchatting, onSubmit, disabled}) {
+  const [keuze, setKeuze] = useState(null);
+  const [correctie, setCorrectie] = useState("");
 
   function submit() {
-    if (!kanVersturen) return;
-    const parts = stap.somVelden.map((v) => `${v.label}: ${values[v.key] || 0}`);
-    extraVelden.forEach((v) => parts.push(`${v.label}: ${values[v.key]}${v.suffix || ""}`));
-    onSubmit(parts.join(", "), values);
+    if (keuze === "ja") {
+      onSubmit(`WP totaal: ${wpSchatting} (bevestigd)`);
+    } else if (keuze === "nee" && correctie) {
+      onSubmit(`WP totaal: ${correctie} (gecorrigeerd van ${wpSchatting})`);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-etil/30 bg-etil/5 p-3">
+      <div className="mb-2 text-xs font-semibold uppercase text-etil">WP-getal bevestigen</div>
+      <div className="mb-2 text-sm text-slate-700">Geschat aantal werkzame personen: <strong>{wpSchatting}</strong></div>
+      {keuze === null && (
+        <div className="flex gap-2">
+          <button type="button" disabled={disabled} onClick={() => { setKeuze("ja"); setTimeout(submit, 0); onSubmit(`WP totaal: ${wpSchatting} (bevestigd)`); }}
+            className="focus-ring flex-1 rounded-md bg-etil px-3 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40">
+            Ja, klopt
+          </button>
+          <button type="button" disabled={disabled} onClick={() => setKeuze("nee")}
+            className="focus-ring flex-1 rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-panel disabled:opacity-40">
+            Nee, klopt niet
+          </button>
+        </div>
+      )}
+      {keuze === "nee" && (
+        <div className="flex gap-2">
+          <input
+            type="number"
+            min="1"
+            className="focus-ring h-10 flex-1 rounded-md border border-line px-3 text-sm"
+            value={correctie}
+            onChange={(e) => setCorrectie(e.target.value)}
+            placeholder="Juiste aantal WP"
+            autoFocus
+            disabled={disabled}
+          />
+          <button type="button" disabled={!correctie || disabled} onClick={submit}
+            className="focus-ring rounded-md bg-etil px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40">
+            Verstuur
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SomRij({label, velden, wpTotaal, values, onUpdate, disabled}) {
+  const som = velden.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
+  const resterend = wpTotaal - som;
+  return (
+    <div className="mb-3">
+      <div className="mb-1 text-xs font-semibold text-slate-500">{label}</div>
+      <div className="mb-1 grid gap-2" style={{gridTemplateColumns: `repeat(${velden.length}, 1fr)`}}>
+        {velden.map((v) => (
+          <div key={v.key}>
+            <label className="mb-1 block text-xs text-slate-600">{v.label}</label>
+            <input type="number" min="0" max={wpTotaal}
+              className="focus-ring h-9 w-full rounded-md border border-line px-2 text-sm text-center"
+              value={values[v.key] ?? ""} onChange={(e) => onUpdate(v.key, e.target.value)} disabled={disabled} />
+          </div>
+        ))}
+      </div>
+      <span className={classNames("text-xs font-medium", resterend === 0 ? "text-emerald-600" : resterend < 0 ? "text-red-600" : "text-amber-600")}>
+        {resterend === 0 ? "✓ Som klopt" : resterend > 0 ? `Nog ${resterend} te verdelen` : `${Math.abs(resterend)} te veel`}
+      </span>
+    </div>
+  );
+}
+
+function DienstverbandFormulier({wpTotaal, onSubmit, disabled}) {
+  const [values, setValues] = useState({});
+  const velden = [
+    {key: "eigen_personeel", label: "Eigen personeel"},
+    {key: "uitzend", label: "Uitzendkrachten"},
+    {key: "detachering", label: "Detachering"},
+    {key: "wsw", label: "WSW"},
+  ];
+  const som = velden.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
+
+  return (
+    <div className="rounded-lg border border-etil/30 bg-etil/5 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase text-etil">Dienstverband</span>
+        <span className="text-xs text-slate-500">Totaal WP: <strong>{wpTotaal}</strong></span>
+      </div>
+      <SomRij label="" velden={velden} wpTotaal={wpTotaal} values={values}
+        onUpdate={(k, v) => setValues((p) => ({...p, [k]: v}))} disabled={disabled} />
+      <div className="flex justify-end">
+        <button type="button" disabled={som !== wpTotaal || disabled}
+          onClick={() => { const parts = velden.map((v) => `${v.label}: ${values[v.key] || 0}`); onSubmit(parts.join(", ")); }}
+          className="focus-ring rounded-md bg-etil px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-40">
+          Verstuur
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function VerdelingFormulier({wpTotaal, onSubmit, disabled}) {
+  const [values, setValues] = useState({});
+  const [subStap, setSubStap] = useState(0);
+
+  const geslacht = [{key: "man", label: "Man"}, {key: "vrouw", label: "Vrouw"}];
+  const arbeid = [{key: "voltijd", label: "Voltijd"}, {key: "deeltijd", label: "Deeltijd"}];
+
+  const somGeslacht = geslacht.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
+  const somArbeid = arbeid.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
+  const pctIngevuld = values.pct_op_locatie !== undefined && values.pct_op_locatie !== "";
+
+  function update(key, val) { setValues((p) => ({...p, [key]: val})); }
+
+  function volgende() {
+    if (somGeslacht !== wpTotaal) return;
+    setSubStap(1);
+  }
+
+  function verstuur() {
+    if (somArbeid !== wpTotaal || !pctIngevuld) return;
+    const parts = [
+      ...geslacht.map((v) => `${v.label}: ${values[v.key] || 0}`),
+      ...arbeid.map((v) => `${v.label}: ${values[v.key] || 0}`),
+      `% werkzaam op locatie: ${values.pct_op_locatie}%`,
+    ];
+    onSubmit(parts.join(", "));
   }
 
   return (
     <div className="rounded-lg border border-etil/30 bg-etil/5 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase text-etil">{stap.label}</span>
+        <span className="text-xs font-semibold uppercase text-etil">{subStap === 0 ? "Geslacht" : "Arbeidsduur & locatie"}</span>
         <span className="text-xs text-slate-500">Totaal WP: <strong>{wpTotaal}</strong></span>
       </div>
-      <div className="mb-2 grid gap-2" style={{gridTemplateColumns: `repeat(${stap.somVelden.length}, 1fr)`}}>
-        {stap.somVelden.map((v) => (
-          <div key={v.key}>
-            <label className="mb-1 block text-xs text-slate-600">{v.label}</label>
-            <input
-              type="number"
-              min="0"
-              max={wpTotaal}
-              className="focus-ring h-9 w-full rounded-md border border-line px-2 text-sm text-center"
-              value={values[v.key] ?? ""}
-              onChange={(e) => update(v.key, e.target.value)}
-              disabled={disabled}
-            />
+      {subStap === 0 && (
+        <>
+          <SomRij label="" velden={geslacht} wpTotaal={wpTotaal} values={values} onUpdate={update} disabled={disabled} />
+          <div className="flex justify-end">
+            <button type="button" disabled={somGeslacht !== wpTotaal || disabled} onClick={volgende}
+              className="focus-ring rounded-md bg-etil px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-40">
+              Volgende
+            </button>
           </div>
-        ))}
-      </div>
-      {extraVelden.length > 0 && (
-        <div className="mb-2 grid gap-2" style={{gridTemplateColumns: `repeat(${extraVelden.length}, 1fr)`}}>
-          {extraVelden.map((v) => (
-            <div key={v.key}>
-              <label className="mb-1 block text-xs text-slate-600">{v.label}</label>
-              <input
-                type="number"
-                min="0"
-                max={100}
-                className="focus-ring h-9 w-full rounded-md border border-line px-2 text-sm text-center"
-                value={values[v.key] ?? ""}
-                onChange={(e) => update(v.key, e.target.value)}
-                placeholder={v.suffix || ""}
-                disabled={disabled}
-              />
-            </div>
-          ))}
-        </div>
+        </>
       )}
-      <div className="flex items-center justify-between">
-        <span className={classNames("text-xs font-medium", resterend === 0 ? "text-emerald-600" : resterend < 0 ? "text-red-600" : "text-amber-600")}>
-          {resterend === 0 ? "✓ Som klopt" : resterend > 0 ? `Nog ${resterend} te verdelen` : `${Math.abs(resterend)} te veel`}
-        </span>
-        <button
-          type="button"
-          disabled={!kanVersturen || disabled}
-          onClick={submit}
-          className="focus-ring rounded-md bg-etil px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-40"
-        >
-          Verstuur
-        </button>
+      {subStap === 1 && (
+        <>
+          <SomRij label="" velden={arbeid} wpTotaal={wpTotaal} values={values} onUpdate={update} disabled={disabled} />
+          <div className="mb-3">
+            <label className="mb-1 block text-xs text-slate-600">% werkzaam op locatie (≥60% van de tijd)</label>
+            <input type="number" min="0" max="100"
+              className="focus-ring h-9 w-32 rounded-md border border-line px-2 text-sm text-center"
+              value={values.pct_op_locatie ?? ""} onChange={(e) => update("pct_op_locatie", e.target.value)}
+              placeholder="%" disabled={disabled} />
+          </div>
+          <div className="flex justify-end">
+            <button type="button" disabled={somArbeid !== wpTotaal || !pctIngevuld || disabled} onClick={verstuur}
+              className="focus-ring rounded-md bg-etil px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-40">
+              Verstuur
+            </button>
+          </div>
+        </>
+      )}
+      <div className="mt-2 flex gap-1">
+        <div className={classNames("h-1 flex-1 rounded-full", "bg-etil")} />
+        <div className={classNames("h-1 flex-1 rounded-full", subStap >= 1 ? "bg-etil" : "bg-slate-200")} />
       </div>
     </div>
   );
@@ -1477,25 +1540,32 @@ function ChatForm({token}) {
           {!done && (() => {
             const g = gegevens || {};
             const wpTotaal = typeof g.wp_totaal === "number" ? g.wp_totaal : null;
-            const actieveStap = wpTotaal != null
-              ? PERSONEEL_STAPPEN.find((s) => g[s.detectKey] == null)
-              : null;
+            const preWp = session?.pre_fill_wp;
+            const toonWpBevestiging = preWp && wpTotaal == null;
+            const toonDienstverband = wpTotaal != null && g.eigen_personeel == null;
+            const toonVerdeling = wpTotaal != null && g.eigen_personeel != null && g.man == null;
+
+            async function sendText(text) {
+              const updated = [...messages, {role: "user", content: text}];
+              setMessages(updated);
+              await fetchReply(updated);
+            }
 
             return (
               <div className="flex-shrink-0 border-t border-line">
-                {actieveStap && (
+                {toonWpBevestiging && (
                   <div className="border-b border-line p-3">
-                    <PersoneelFormulier
-                      key={actieveStap.detectKey}
-                      wpTotaal={wpTotaal}
-                      stap={actieveStap}
-                      disabled={typing}
-                      onSubmit={async (text) => {
-                        const updated = [...messages, {role: "user", content: text}];
-                        setMessages(updated);
-                        await fetchReply(updated);
-                      }}
-                    />
+                    <WpBevestiging wpSchatting={preWp} disabled={typing} onSubmit={sendText} />
+                  </div>
+                )}
+                {toonDienstverband && (
+                  <div className="border-b border-line p-3">
+                    <DienstverbandFormulier wpTotaal={wpTotaal} disabled={typing} onSubmit={sendText} />
+                  </div>
+                )}
+                {toonVerdeling && (
+                  <div className="border-b border-line p-3">
+                    <VerdelingFormulier wpTotaal={wpTotaal} disabled={typing} onSubmit={sendText} />
                   </div>
                 )}
                 <form onSubmit={send} className="flex gap-2 p-3">
