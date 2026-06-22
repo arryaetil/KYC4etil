@@ -1129,77 +1129,111 @@ function ScoreBreakdown({breakdown, label}) {
   );
 }
 
-function KennisVeld({label, value, unit}) {
+const BRON_TAG = {
+  chat:      {label: "Via chat",      cls: "bg-blue-50 text-blue-600 border-blue-200"},
+  belactie:  {label: "Via belactie",  cls: "bg-amber-50 text-amber-600 border-amber-200"},
+  handmatig: {label: "Handmatig",     cls: "bg-slate-50 text-slate-500 border-slate-200"},
+  pipeline:  {label: "Via pipeline",  cls: "bg-violet-50 text-violet-600 border-violet-200"},
+};
+
+function BronTag({bron}) {
+  const cfg = BRON_TAG[bron] || BRON_TAG.handmatig;
+  return (
+    <span className={classNames("rounded border px-1.5 py-0.5 text-xs font-medium", cfg.cls)}>
+      {cfg.label}
+    </span>
+  );
+}
+
+function KennisVeld({label, value, unit, bron}) {
   const isEmpty = value === null || value === undefined || value === "";
   return (
     <div>
-      <dt className="text-xs font-medium uppercase text-slate-400">{label}</dt>
-      <dd className={classNames("mt-0.5 font-medium", isEmpty ? "text-slate-300" : "text-slate-800")}>
-        {isEmpty ? "—" : (unit ? `${value} ${unit}` : String(value))}
-      </dd>
+      <dt className="mb-0.5 text-xs font-medium uppercase text-slate-400">{label}</dt>
+      {isEmpty ? (
+        <dd className="flex items-center gap-1.5">
+          <span className="text-slate-300">—</span>
+          {bron && <BronTag bron={bron} />}
+        </dd>
+      ) : (
+        <dd className="font-semibold text-slate-800">
+          {unit ? `${value} ${unit}` : String(value === true ? "Ja" : value === false ? "Nee" : value)}
+        </dd>
+      )}
+    </div>
+  );
+}
+
+function Volledigheid({gevuld, totaal}) {
+  const pctVal = totaal ? Math.round((gevuld / totaal) * 100) : 0;
+  const kleur = pctVal === 100 ? "bg-emerald-500" : pctVal >= 50 ? "bg-amber-400" : "bg-red-400";
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-md border border-line bg-panel px-3 py-2">
+      <div className="flex-1">
+        <div className="mb-1 flex justify-between text-xs text-slate-500">
+          <span>Compleetheid</span>
+          <span className="font-semibold">{gevuld}/{totaal} velden bekend</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-slate-200">
+          <div className={classNames("h-1.5 rounded-full transition-all", kleur)} style={{width: `${pctVal}%`}} />
+        </div>
+      </div>
     </div>
   );
 }
 
 function WpUitsplitsing({wp_historie}) {
-  const record = wp_historie?.[0];
-  if (!record) return null;
-
-  const heeftUitsplitsing = [record.man, record.vrouw, record.voltijd, record.deeltijd,
-    record.eigen_personeel, record.uitzend, record.detachering, record.wsw].some((v) => v != null);
-
-  if (!heeftUitsplitsing) return (
-    <Panel title="WP-uitsplitsing">
-      <div className="text-sm text-slate-400">Uitsplitsing nog niet beschikbaar voor {record.wp_jaar} — komt via chat of belactie.</div>
-    </Panel>
-  );
+  const record = wp_historie?.[0] ?? null;
+  const r = record || {};
+  const velden = [r.man, r.vrouw, r.voltijd, r.deeltijd, r.eigen_personeel, r.uitzend, r.detachering, r.wsw, r.pct_op_locatie];
+  const gevuld = velden.filter((v) => v != null).length;
 
   return (
-    <Panel title={`WP-uitsplitsing ${record.wp_jaar}`}>
+    <Panel title={record ? `WP-uitsplitsing ${record.wp_jaar}` : "WP-uitsplitsing"}>
+      <Volledigheid gevuld={gevuld} totaal={velden.length} />
+      {!record && (
+        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Nog geen goedgekeurd WP-record — uitsplitsing beschikbaar na goedkeuring of chat/belactie.
+        </div>
+      )}
       <div className="space-y-4 text-sm">
-        {(record.man != null || record.vrouw != null) && (
-          <div>
-            <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Man / vrouw</div>
-            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <KennisVeld label="Man" value={record.man} />
-              <KennisVeld label="Vrouw" value={record.vrouw} />
-            </dl>
-          </div>
-        )}
-        {(record.voltijd != null || record.deeltijd != null) && (
-          <div>
-            <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Voltijd / deeltijd</div>
-            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <KennisVeld label="Voltijd (≥12u)" value={record.voltijd} />
-              <KennisVeld label="Deeltijd (&lt;12u)" value={record.deeltijd} />
-              {record.pct_op_locatie != null && (
-                <KennisVeld label="% op locatie" value={Math.round(record.pct_op_locatie * 100)} unit="%" />
-              )}
-            </dl>
-          </div>
-        )}
-        {(record.eigen_personeel != null || record.uitzend != null) && (
-          <div>
-            <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Type personeel</div>
-            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <KennisVeld label="Eigen personeel" value={record.eigen_personeel} />
-              <KennisVeld label="Uitzend" value={record.uitzend} />
-              <KennisVeld label="Detachering" value={record.detachering} />
-              <KennisVeld label="WSW" value={record.wsw} />
-            </dl>
-          </div>
-        )}
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Man / vrouw</div>
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KennisVeld label="Man" value={r.man} bron="chat" />
+            <KennisVeld label="Vrouw" value={r.vrouw} bron="chat" />
+          </dl>
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Voltijd / deeltijd</div>
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KennisVeld label="Voltijd (≥12u)" value={r.voltijd} bron="chat" />
+            <KennisVeld label="Deeltijd (&lt;12u)" value={r.deeltijd} bron="chat" />
+            <KennisVeld label="% op locatie" value={r.pct_op_locatie != null ? Math.round(r.pct_op_locatie * 100) : null} unit="%" bron="chat" />
+          </dl>
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Type personeel</div>
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KennisVeld label="Eigen personeel" value={r.eigen_personeel} bron="chat" />
+            <KennisVeld label="Uitzend" value={r.uitzend} bron="chat" />
+            <KennisVeld label="Detachering" value={r.detachering} bron="chat" />
+            <KennisVeld label="WSW" value={r.wsw} bron="chat" />
+          </dl>
+        </div>
       </div>
     </Panel>
   );
 }
 
 const VASTGOED_VELDEN = [
-  {key: "perceel_opp",     label: "Perceeloppervlakte",          unit: "m²", type: "number"},
-  {key: "winkel_opp",      label: "Winkeloppervlakte",           unit: "m²", type: "number"},
-  {key: "kantoor_opp",     label: "Kantooroppervlakte",          unit: "m²", type: "number"},
-  {key: "bedrijfs_opp",    label: "Bedrijfsvloeroppervlakte",    unit: "m²", type: "number"},
-  {key: "correspondentieadres", label: "Correspondentieadres",  unit: "",   type: "text"},
+  {key: "perceel_opp",          label: "Perceeloppervlakte",       unit: "m²", type: "number"},
+  {key: "winkel_opp",           label: "Winkeloppervlakte",        unit: "m²", type: "number"},
+  {key: "kantoor_opp",          label: "Kantooroppervlakte",       unit: "m²", type: "number"},
+  {key: "bedrijfs_opp",         label: "Bedrijfsvloeroppervlakte", unit: "m²", type: "number"},
+  {key: "correspondentieadres", label: "Correspondentieadres",     unit: "",   type: "text"},
+  {key: "uitbreidingsruimte",   label: "Uitbreidingsruimte",       unit: "",   type: "bool"},
+  {key: "seizoensverschillen",  label: "Seizoensverschillen",      unit: "",   type: "bool"},
 ];
 
 function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
@@ -1212,21 +1246,17 @@ function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
     kantoor_opp: initVastgoed?.kantoor_opp ?? "",
     bedrijfs_opp: initVastgoed?.bedrijfs_opp ?? "",
   }));
+  const [bewerken, setBewerken] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  const [open, setOpen] = useState(!!initVastgoed);
 
-  function set(key, value) {
-    setForm((prev) => ({...prev, [key]: value}));
-    setSaved(false);
-  }
+  function set(key, value) { setForm((p) => ({...p, [key]: value})); setSaved(false); }
 
   async function save() {
-    setSaving(true);
-    setError("");
+    setSaving(true); setError("");
     try {
-      const body = {
+      await api.saveVastgoed(batchId, companyId, {
         perceel_opp: form.perceel_opp !== "" ? Number(form.perceel_opp) : null,
         winkel_opp: form.winkel_opp !== "" ? Number(form.winkel_opp) : null,
         kantoor_opp: form.kantoor_opp !== "" ? Number(form.kantoor_opp) : null,
@@ -1235,101 +1265,85 @@ function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
         seizoensverschillen: form.seizoensverschillen,
         seizoen_toelichting: form.seizoen_toelichting || null,
         correspondentieadres: form.correspondentieadres || null,
-      };
-      await api.saveVastgoed(batchId, companyId, body);
-      setSaved(true);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
+      });
+      setSaved(true); setBewerken(false);
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
   }
 
-  const heeftData = initVastgoed && Object.values(initVastgoed).some((v) => v != null && v !== "");
+  const vg = initVastgoed || {};
+  const gevuld = VASTGOED_VELDEN.filter(({key}) => vg[key] != null && vg[key] !== "").length;
 
   return (
     <Panel title="Vastgoed & locatie">
-      {!open ? (
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-400">Nog geen vastgoedgegevens ingevuld</span>
-          <button className="text-sm font-medium text-etil underline" onClick={() => setOpen(true)}>Invullen</button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {heeftData && initVastgoed?.updated_at ? (
-            <div className="text-xs text-slate-400">
-              Laatst bijgewerkt: {new Date(initVastgoed.updated_at).toLocaleString("nl-NL", {day: "2-digit", month: "2-digit", year: "numeric"})}
-              {initVastgoed.bron ? ` · bron: ${initVastgoed.bron}` : ""}
+      <Volledigheid gevuld={gevuld} totaal={VASTGOED_VELDEN.length} />
+      {!bewerken ? (
+        <>
+          <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+            {VASTGOED_VELDEN.map(({key, label, unit}) => (
+              <KennisVeld key={key} label={label}
+                value={vg[key] != null && vg[key] !== "" ? vg[key] : null}
+                unit={unit} bron="chat" />
+            ))}
+          </dl>
+          {vg.seizoensverschillen === true && vg.seizoen_toelichting && (
+            <div className="mt-3 rounded-md border border-line bg-panel px-3 py-2 text-xs text-slate-600">
+              <span className="font-medium">Seizoenstoelichting: </span>{vg.seizoen_toelichting}
             </div>
-          ) : null}
+          )}
+          {initVastgoed?.updated_at && (
+            <div className="mt-2 text-xs text-slate-400">
+              Bijgewerkt {new Date(initVastgoed.updated_at).toLocaleDateString("nl-NL")} · {initVastgoed.bron || "handmatig"}
+            </div>
+          )}
+          <div className="mt-3 border-t border-line pt-3">
+            <button className="text-sm font-medium text-etil underline" onClick={() => setBewerken(true)}>
+              {gevuld === 0 ? "Gegevens invullen" : "Bewerken"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            {VASTGOED_VELDEN.map(({key, label, unit, type}) => (
+            {VASTGOED_VELDEN.filter(({type}) => type !== "bool").map(({key, label, unit, type}) => (
               <div key={key}>
-                <label className="mb-1 block text-xs font-medium text-slate-500">
-                  {label}{unit ? ` (${unit})` : ""}
-                </label>
-                {type === "number" ? (
-                  <input
-                    className="focus-ring h-9 w-full rounded-md border border-line px-3 text-sm"
-                    type="number" min="0"
-                    value={form[key] ?? ""}
-                    onChange={(e) => set(key, e.target.value)}
-                    placeholder="—"
-                  />
-                ) : (
-                  <input
-                    className="focus-ring h-9 w-full rounded-md border border-line px-3 text-sm"
-                    value={form[key] ?? ""}
-                    onChange={(e) => set(key, e.target.value)}
-                    placeholder="—"
-                  />
-                )}
+                <label className="mb-1 block text-xs font-medium text-slate-500">{label}{unit ? ` (${unit})` : ""}</label>
+                <input className="focus-ring h-9 w-full rounded-md border border-line px-3 text-sm"
+                  type={type === "number" ? "number" : "text"} min="0"
+                  value={form[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder="—" />
               </div>
             ))}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <div className="mb-1 text-xs font-medium text-slate-500">Uitbreidingsruimte</div>
-              <div className="flex gap-3 text-sm">
-                {[true, false, null].map((v) => (
-                  <label key={String(v)} className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" checked={form.uitbreidingsruimte === v}
-                      onChange={() => set("uitbreidingsruimte", v)} />
-                    {v === true ? "Ja" : v === false ? "Nee" : "Onbekend"}
-                  </label>
-                ))}
+            {["uitbreidingsruimte", "seizoensverschillen"].map((key) => (
+              <div key={key}>
+                <div className="mb-1 text-xs font-medium text-slate-500">
+                  {key === "uitbreidingsruimte" ? "Uitbreidingsruimte" : "Seizoensverschillen"}
+                </div>
+                <div className="flex gap-3 text-sm">
+                  {[true, false, null].map((v) => (
+                    <label key={String(v)} className="flex cursor-pointer items-center gap-1.5">
+                      <input type="radio" checked={form[key] === v} onChange={() => set(key, v)} />
+                      {v === true ? "Ja" : v === false ? "Nee" : "Onbekend"}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div>
-              <div className="mb-1 text-xs font-medium text-slate-500">Seizoensverschillen</div>
-              <div className="flex gap-3 text-sm">
-                {[true, false, null].map((v) => (
-                  <label key={String(v)} className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" checked={form.seizoensverschillen === v}
-                      onChange={() => set("seizoensverschillen", v)} />
-                    {v === true ? "Ja" : v === false ? "Nee" : "Onbekend"}
-                  </label>
-                ))}
-              </div>
-            </div>
+            ))}
           </div>
           {form.seizoensverschillen === true && (
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Toelichting seizoensverschillen</label>
-              <textarea
-                className="focus-ring min-h-16 w-full rounded-md border border-line px-3 py-2 text-sm"
-                value={form.seizoen_toelichting || ""}
-                onChange={(e) => set("seizoen_toelichting", e.target.value)}
-                placeholder="Bijv. zomer +30% door terrasmedewerkers"
-              />
+              <label className="mb-1 block text-xs font-medium text-slate-500">Toelichting seizoen</label>
+              <textarea className="focus-ring min-h-16 w-full rounded-md border border-line px-3 py-2 text-sm"
+                value={form.seizoen_toelichting || ""} onChange={(e) => set("seizoen_toelichting", e.target.value)}
+                placeholder="Bijv. zomer +30% door terrasmedewerkers" />
             </div>
           )}
-          {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
+          {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
           <div className="flex items-center gap-3 border-t border-line pt-3">
-            <IconButton icon={Check} variant="primary" onClick={save} disabled={saving}>
-              {saving ? "Opslaan…" : "Opslaan"}
-            </IconButton>
-            {saved ? <span className="text-sm font-medium text-emerald-700"><Check size={14} className="inline" /> Opgeslagen</span> : null}
+            <IconButton icon={Check} variant="primary" onClick={save} disabled={saving}>{saving ? "Opslaan…" : "Opslaan"}</IconButton>
+            <button className="text-sm text-slate-500 underline" onClick={() => setBewerken(false)}>Annuleren</button>
+            {saved && <span className="text-sm font-medium text-emerald-700"><Check size={14} className="inline" /> Opgeslagen</span>}
           </div>
         </div>
       )}
@@ -1338,37 +1352,41 @@ function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
 }
 
 function WpHistorie({wp_historie}) {
-  if (!wp_historie?.length) return null;
   return (
     <Panel title="WP-historie">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left text-sm">
-          <thead className="text-xs uppercase text-slate-400">
-            <tr>
-              <th className="pb-2 pr-4">Jaar</th>
-              <th className="pb-2 pr-4">WP</th>
-              <th className="pb-2 pr-4">Bron</th>
-              <th className="pb-2 pr-4">Status</th>
-              <th className="pb-2">Goedgekeurd</th>
-            </tr>
-          </thead>
-          <tbody>
-            {wp_historie.map((r, i) => (
-              <tr key={i} className="border-t border-line">
-                <td className="py-2 pr-4 font-semibold">{r.wp_jaar}</td>
-                <td className="py-2 pr-4 font-semibold text-etil">{r.wp_waarde}</td>
-                <td className="py-2 pr-4 text-slate-500">{r.bron_type || "—"}</td>
-                <td className="py-2 pr-4"><StatusPill status={r.status} /></td>
-                <td className="py-2 text-slate-400 text-xs">
-                  {r.goedgekeurd_op
-                    ? new Date(r.goedgekeurd_op).toLocaleDateString("nl-NL", {day: "2-digit", month: "2-digit", year: "numeric"})
-                    : "—"}
-                </td>
+      {!wp_historie?.length ? (
+        <div className="flex items-center gap-2 text-sm text-slate-400">
+          <span>Nog geen goedgekeurde records</span>
+          <BronTag bron="pipeline" />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-sm">
+            <thead className="text-xs uppercase text-slate-400">
+              <tr>
+                <th className="pb-2 pr-4">Jaar</th>
+                <th className="pb-2 pr-4">WP</th>
+                <th className="pb-2 pr-4">Bron</th>
+                <th className="pb-2 pr-4">Status</th>
+                <th className="pb-2">Goedgekeurd</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {wp_historie.map((r, i) => (
+                <tr key={i} className="border-t border-line">
+                  <td className="py-2 pr-4 font-semibold">{r.wp_jaar}</td>
+                  <td className="py-2 pr-4 font-semibold text-etil">{r.wp_waarde}</td>
+                  <td className="py-2 pr-4 text-slate-500">{r.bron_type || "—"}</td>
+                  <td className="py-2 pr-4"><StatusPill status={r.status} /></td>
+                  <td className="py-2 text-xs text-slate-400">
+                    {r.goedgekeurd_op ? new Date(r.goedgekeurd_op).toLocaleDateString("nl-NL") : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Panel>
   );
 }
