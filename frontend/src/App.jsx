@@ -12,6 +12,7 @@ import {
   LogOut,
   Mail,
   MessageSquare,
+  Pencil,
   Phone,
   Play,
   Plus,
@@ -936,11 +937,30 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
   );
 }
 
-function Panel({title, children}) {
+function Panel({title, subtitle, children, onEdit, completeness}) {
   return (
-    <section className="rounded-lg border border-line bg-white p-4 shadow-sm">
-      <h2 className="mb-4 text-base font-semibold">{title}</h2>
-      {children}
+    <section className="rounded-lg border border-line bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-line px-5 py-3">
+        <div>
+          <h2 className="text-sm font-semibold text-ink">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-xs text-slate-400">{subtitle}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          {completeness && (
+            <span className="text-xs tabular-nums text-slate-400">{completeness.gevuld}/{completeness.totaal}</span>
+          )}
+          {onEdit && (
+            <button
+              onClick={onEdit}
+              className="rounded-md p-1.5 text-slate-400 transition hover:bg-panel hover:text-ink"
+              title="Bewerken"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="px-5 py-4">{children}</div>
     </section>
   );
 }
@@ -1129,6 +1149,18 @@ function ScoreBreakdown({breakdown, label}) {
   );
 }
 
+function Tooltip({content, children}) {
+  return (
+    <span className="group relative inline-block">
+      {children}
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-max max-w-52 -translate-x-1/2 rounded-md bg-ink px-2.5 py-1.5 text-center text-xs leading-snug text-white shadow-lg group-hover:block">
+        {content}
+        <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-ink" />
+      </span>
+    </span>
+  );
+}
+
 const BRON_TAG = {
   chat:      {label: "Via chat",      cls: "bg-blue-50 text-blue-600 border-blue-200"},
   belactie:  {label: "Via belactie",  cls: "bg-amber-50 text-amber-600 border-amber-200"},
@@ -1145,39 +1177,34 @@ function BronTag({bron}) {
   );
 }
 
-function KennisVeld({label, value, unit, bron}) {
+function KennisVeld({label, value, unit, type, tooltip}) {
   const isEmpty = value === null || value === undefined || value === "";
+
+  function renderValue() {
+    if (isEmpty) return <span className="text-slate-300">—</span>;
+    if (type === "link") {
+      const display = String(value).replace(/^https?:\/\//, "").replace(/\/$/, "");
+      return <a href={value} target="_blank" rel="noreferrer" className="break-all font-semibold text-etil underline">{display}</a>;
+    }
+    if (type === "email") {
+      return <a href={`mailto:${value}`} className="font-semibold text-etil underline">{value}</a>;
+    }
+    const text = unit
+      ? `${value} ${unit}`
+      : String(value === true ? "Ja" : value === false ? "Nee" : value);
+    return <span className="font-semibold text-ink">{text}</span>;
+  }
+
+  const labelEl = tooltip ? (
+    <Tooltip content={tooltip}>
+      <span className="cursor-help border-b border-dotted border-slate-300">{label}</span>
+    </Tooltip>
+  ) : label;
+
   return (
     <div>
-      <dt className="mb-0.5 text-xs font-medium uppercase text-slate-400">{label}</dt>
-      {isEmpty ? (
-        <dd className="flex items-center gap-1.5">
-          <span className="text-slate-300">—</span>
-          {bron && <BronTag bron={bron} />}
-        </dd>
-      ) : (
-        <dd className="font-semibold text-slate-800">
-          {unit ? `${value} ${unit}` : String(value === true ? "Ja" : value === false ? "Nee" : value)}
-        </dd>
-      )}
-    </div>
-  );
-}
-
-function Volledigheid({gevuld, totaal}) {
-  const pctVal = totaal ? Math.round((gevuld / totaal) * 100) : 0;
-  const kleur = pctVal === 100 ? "bg-emerald-500" : pctVal >= 50 ? "bg-amber-400" : "bg-red-400";
-  return (
-    <div className="mb-4 flex items-center gap-3 rounded-md border border-line bg-panel px-3 py-2">
-      <div className="flex-1">
-        <div className="mb-1 flex justify-between text-xs text-slate-500">
-          <span>Compleetheid</span>
-          <span className="font-semibold">{gevuld}/{totaal} velden bekend</span>
-        </div>
-        <div className="h-1.5 rounded-full bg-slate-200">
-          <div className={classNames("h-1.5 rounded-full transition-all", kleur)} style={{width: `${pctVal}%`}} />
-        </div>
-      </div>
+      <dt className="mb-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">{labelEl}</dt>
+      <dd className="mt-0.5">{renderValue()}</dd>
     </div>
   );
 }
@@ -1189,39 +1216,52 @@ function WpUitsplitsing({wp_historie}) {
   const gevuld = velden.filter((v) => v != null).length;
 
   return (
-    <Panel title={record ? `WP-uitsplitsing ${record.wp_jaar}` : "WP-uitsplitsing"}>
-      <Volledigheid gevuld={gevuld} totaal={velden.length} />
-      {!record && (
-        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Nog geen goedgekeurd WP-record — uitsplitsing beschikbaar na goedkeuring of chat/belactie.
+    <Panel
+      title="WP-uitsplitsing"
+      subtitle={record ? `Peiljaar ${record.wp_jaar}` : null}
+      completeness={{gevuld, totaal: velden.length}}
+    >
+      {record ? (
+        <div className="mb-5 flex items-baseline gap-2">
+          <span className="text-3xl font-bold text-ink">{record.wp_waarde}</span>
+          <span className="text-sm text-slate-500">werkzame personen</span>
+        </div>
+      ) : (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Nog geen goedgekeurd WP-record — uitsplitsing beschikbaar na goedkeuring of via chat/belactie.
         </div>
       )}
-      <div className="space-y-4 text-sm">
+      <div className="space-y-5 text-sm">
         <div>
-          <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Man / vrouw</div>
-          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <KennisVeld label="Man" value={r.man} bron="chat" />
-            <KennisVeld label="Vrouw" value={r.vrouw} bron="chat" />
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Geslacht</div>
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <KennisVeld label="Man" value={r.man} />
+            <KennisVeld label="Vrouw" value={r.vrouw} />
           </dl>
         </div>
         <div>
-          <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Voltijd / deeltijd</div>
-          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <KennisVeld label="Voltijd (≥12u)" value={r.voltijd} bron="chat" />
-            <KennisVeld label="Deeltijd (&lt;12u)" value={r.deeltijd} bron="chat" />
-            <KennisVeld label="% op locatie" value={r.pct_op_locatie != null ? Math.round(r.pct_op_locatie * 100) : null} unit="%" bron="chat" />
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Dienstverband</div>
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <KennisVeld label="Voltijd" value={r.voltijd} tooltip="Werkzaam ≥12 uur/week op dit vestigingsadres" />
+            <KennisVeld label="Deeltijd" value={r.deeltijd} tooltip="Werkzaam <12 uur/week" />
+            <KennisVeld label="% op locatie" value={r.pct_op_locatie != null ? Math.round(r.pct_op_locatie * 100) : null} unit="%" tooltip="Aandeel WP werkzaam op dit vestigingsadres" />
           </dl>
         </div>
         <div>
-          <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Type personeel</div>
-          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <KennisVeld label="Eigen personeel" value={r.eigen_personeel} bron="chat" />
-            <KennisVeld label="Uitzend" value={r.uitzend} bron="chat" />
-            <KennisVeld label="Detachering" value={r.detachering} bron="chat" />
-            <KennisVeld label="WSW" value={r.wsw} bron="chat" />
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Type personeel</div>
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <KennisVeld label="Eigen personeel" value={r.eigen_personeel} tooltip="Direct in dienst van deze vestiging" />
+            <KennisVeld label="Uitzend" value={r.uitzend} tooltip="Ingehuurd via uitzendbureau" />
+            <KennisVeld label="Detachering" value={r.detachering} tooltip="Uitgeleend aan andere werkgever; telt mee bij vestiging" />
+            <KennisVeld label="WSW" value={r.wsw} tooltip="Wet sociale werkvoorziening" />
           </dl>
         </div>
       </div>
+      {gevuld < velden.length && (
+        <p className="mt-4 border-t border-line pt-3 text-xs text-slate-400">
+          Missende velden worden aangevuld via chat of belactie.
+        </p>
+      )}
     </Panel>
   );
 }
@@ -1283,7 +1323,7 @@ function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
             {VASTGOED_VELDEN.map(({key, label, unit}) => (
               <KennisVeld key={key} label={label}
                 value={vg[key] != null && vg[key] !== "" ? vg[key] : null}
-                unit={unit} bron="chat" />
+                unit={unit} />
             ))}
           </dl>
           {vg.seizoensverschillen === true && vg.seizoen_toelichting && (
@@ -1355,10 +1395,7 @@ function WpHistorie({wp_historie}) {
   return (
     <Panel title="WP-historie">
       {!wp_historie?.length ? (
-        <div className="flex items-center gap-2 text-sm text-slate-400">
-          <span>Nog geen goedgekeurde records</span>
-          <BronTag bron="pipeline" />
-        </div>
+        <div className="text-sm text-slate-400">Nog geen goedgekeurde records</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left text-sm">
