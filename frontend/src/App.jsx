@@ -1213,62 +1213,11 @@ function OverzichtPanel({gegevens}) {
   );
 }
 
-function WpBevestiging({wpSchatting, onSubmit, disabled}) {
-  const [keuze, setKeuze] = useState(null);
-  const [correctie, setCorrectie] = useState("");
-
-  function submit() {
-    if (keuze === "ja") {
-      onSubmit(`WP totaal: ${wpSchatting} (bevestigd)`);
-    } else if (keuze === "nee" && correctie) {
-      onSubmit(`WP totaal: ${correctie} (gecorrigeerd van ${wpSchatting})`);
-    }
-  }
-
-  return (
-    <div className="rounded-lg border border-etil/30 bg-etil/5 p-3">
-      <div className="mb-2 text-xs font-semibold uppercase text-etil">WP-getal bevestigen</div>
-      <div className="mb-2 text-sm text-slate-700">Geschat aantal werkzame personen: <strong>{wpSchatting}</strong></div>
-      {keuze === null && (
-        <div className="flex gap-2">
-          <button type="button" disabled={disabled} onClick={() => { setKeuze("ja"); setTimeout(submit, 0); onSubmit(`WP totaal: ${wpSchatting} (bevestigd)`); }}
-            className="focus-ring flex-1 rounded-md bg-etil px-3 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40">
-            Ja, klopt
-          </button>
-          <button type="button" disabled={disabled} onClick={() => setKeuze("nee")}
-            className="focus-ring flex-1 rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-panel disabled:opacity-40">
-            Nee, klopt niet
-          </button>
-        </div>
-      )}
-      {keuze === "nee" && (
-        <div className="flex gap-2">
-          <input
-            type="number"
-            min="1"
-            className="focus-ring h-10 flex-1 rounded-md border border-line px-3 text-sm"
-            value={correctie}
-            onChange={(e) => setCorrectie(e.target.value)}
-            placeholder="Juiste aantal WP"
-            autoFocus
-            disabled={disabled}
-          />
-          <button type="button" disabled={!correctie || disabled} onClick={submit}
-            className="focus-ring rounded-md bg-etil px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40">
-            Verstuur
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SomRij({label, velden, wpTotaal, values, onUpdate, disabled}) {
+function SomRij({velden, wpTotaal, values, onUpdate, disabled}) {
   const som = velden.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
   const resterend = wpTotaal - som;
   return (
     <div className="mb-3">
-      <div className="mb-1 text-xs font-semibold text-slate-500">{label}</div>
       <div className="mb-1 grid gap-2" style={{gridTemplateColumns: `repeat(${velden.length}, 1fr)`}}>
         {velden.map((v) => (
           <div key={v.key}>
@@ -1286,30 +1235,81 @@ function SomRij({label, velden, wpTotaal, values, onUpdate, disabled}) {
   );
 }
 
-function DienstverbandFormulier({wpTotaal, onSubmit, disabled}) {
+function WpEnDienstverbandFormulier({wpSchatting, onSubmit, disabled}) {
+  const [stap, setStap] = useState(0);
+  const [wpKeuze, setWpKeuze] = useState(null);
+  const [wpCorrectie, setWpCorrectie] = useState("");
   const [values, setValues] = useState({});
-  const velden = [
+
+  const wpTotaal = wpKeuze === "nee" ? Number(wpCorrectie) || 0 : wpSchatting;
+  const dienstVelden = [
     {key: "eigen_personeel", label: "Eigen personeel"},
     {key: "uitzend", label: "Uitzendkrachten"},
     {key: "detachering", label: "Detachering"},
     {key: "wsw", label: "WSW"},
   ];
-  const som = velden.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
+  const som = dienstVelden.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
+
+  function verstuur() {
+    if (som !== wpTotaal) return;
+    const wpTekst = wpKeuze === "nee"
+      ? `WP totaal: ${wpTotaal} (gecorrigeerd van ${wpSchatting})`
+      : `WP totaal: ${wpTotaal} (bevestigd)`;
+    const dienstTekst = dienstVelden.map((v) => `${v.label}: ${values[v.key] || 0}`).join(", ");
+    onSubmit(`${wpTekst}, ${dienstTekst}`);
+  }
 
   return (
     <div className="rounded-lg border border-etil/30 bg-etil/5 p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase text-etil">Dienstverband</span>
-        <span className="text-xs text-slate-500">Totaal WP: <strong>{wpTotaal}</strong></span>
-      </div>
-      <SomRij label="" velden={velden} wpTotaal={wpTotaal} values={values}
-        onUpdate={(k, v) => setValues((p) => ({...p, [k]: v}))} disabled={disabled} />
-      <div className="flex justify-end">
-        <button type="button" disabled={som !== wpTotaal || disabled}
-          onClick={() => { const parts = velden.map((v) => `${v.label}: ${values[v.key] || 0}`); onSubmit(parts.join(", ")); }}
-          className="focus-ring rounded-md bg-etil px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-40">
-          Verstuur
-        </button>
+      {stap === 0 && (
+        <>
+          <div className="mb-2 text-xs font-semibold uppercase text-etil">WP-getal bevestigen</div>
+          <div className="mb-2 text-sm text-slate-700">Geschat aantal werkzame personen: <strong>{wpSchatting}</strong></div>
+          {wpKeuze === null && (
+            <div className="flex gap-2">
+              <button type="button" disabled={disabled} onClick={() => { setWpKeuze("ja"); setStap(1); }}
+                className="focus-ring flex-1 rounded-md bg-etil px-3 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40">
+                Ja, klopt
+              </button>
+              <button type="button" disabled={disabled} onClick={() => setWpKeuze("nee")}
+                className="focus-ring flex-1 rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-panel disabled:opacity-40">
+                Nee, klopt niet
+              </button>
+            </div>
+          )}
+          {wpKeuze === "nee" && (
+            <div className="flex gap-2">
+              <input type="number" min="1"
+                className="focus-ring h-10 flex-1 rounded-md border border-line px-3 text-sm"
+                value={wpCorrectie} onChange={(e) => setWpCorrectie(e.target.value)}
+                placeholder="Juiste aantal WP" autoFocus disabled={disabled} />
+              <button type="button" disabled={!wpCorrectie || disabled} onClick={() => setStap(1)}
+                className="focus-ring rounded-md bg-etil px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40">
+                Volgende
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {stap === 1 && (
+        <>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase text-etil">Dienstverband</span>
+            <span className="text-xs text-slate-500">Totaal WP: <strong>{wpTotaal}</strong></span>
+          </div>
+          <SomRij velden={dienstVelden} wpTotaal={wpTotaal} values={values}
+            onUpdate={(k, v) => setValues((p) => ({...p, [k]: v}))} disabled={disabled} />
+          <div className="flex justify-end">
+            <button type="button" disabled={som !== wpTotaal || disabled} onClick={verstuur}
+              className="focus-ring rounded-md bg-etil px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-40">
+              Verstuur
+            </button>
+          </div>
+        </>
+      )}
+      <div className="mt-2 flex gap-1">
+        <div className="h-1 flex-1 rounded-full bg-etil" />
+        <div className={classNames("h-1 flex-1 rounded-full", stap >= 1 ? "bg-etil" : "bg-slate-200")} />
       </div>
     </div>
   );
@@ -1542,10 +1542,9 @@ function ChatForm({token}) {
             const wpTotaal = typeof g.wp_totaal === "number" ? g.wp_totaal : null;
             const preWp = session?.pre_fill_wp;
             const aantalUserBerichten = messages.filter((m) => m.role === "user").length;
-            const toonWpBevestiging = !typing && aantalUserBerichten >= 1 && preWp && wpTotaal == null;
-            const toonDienstverband = !typing && aantalUserBerichten >= 1 && wpTotaal != null && g.eigen_personeel == null;
+            const toonWpDienst = !typing && aantalUserBerichten >= 1 && preWp && g.eigen_personeel == null;
             const toonVerdeling = !typing && aantalUserBerichten >= 1 && wpTotaal != null && g.eigen_personeel != null && g.man == null;
-            const toonFormulier = toonWpBevestiging || toonDienstverband || toonVerdeling;
+            const toonFormulier = toonWpDienst || toonVerdeling;
 
             async function sendText(text) {
               const updated = [...messages, {role: "user", content: text}];
@@ -1555,14 +1554,9 @@ function ChatForm({token}) {
 
             return (
               <div className="flex-shrink-0 border-t border-line">
-                {toonWpBevestiging && (
+                {toonWpDienst && (
                   <div className="p-3">
-                    <WpBevestiging wpSchatting={preWp} disabled={typing} onSubmit={sendText} />
-                  </div>
-                )}
-                {toonDienstverband && (
-                  <div className="p-3">
-                    <DienstverbandFormulier wpTotaal={wpTotaal} disabled={typing} onSubmit={sendText} />
+                    <WpEnDienstverbandFormulier wpSchatting={preWp} disabled={typing} onSubmit={sendText} />
                   </div>
                 )}
                 {toonVerdeling && (
