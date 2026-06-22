@@ -1146,8 +1146,8 @@ function OverzichtPanel({gegevens}) {
   }, [gegevens]);
 
   return (
-    <div className="flex flex-col gap-4 overflow-y-auto rounded-lg border border-line bg-white p-4 shadow-sm max-h-[40vh] md:max-h-[85vh]">
-      <div>
+    <div className="flex flex-col rounded-lg border border-line bg-white shadow-sm max-h-[40vh] md:max-h-[85vh]">
+      <div className="sticky top-0 z-10 rounded-t-lg border-b border-line bg-white p-4">
         <div className="mb-2 flex items-center justify-between text-sm">
           <span className="font-semibold text-slate-700">Voortgang</span>
           <span className="font-bold text-etil">{pctVoortgang}%</span>
@@ -1160,6 +1160,7 @@ function OverzichtPanel({gegevens}) {
         </div>
         <div className="mt-1 text-xs text-slate-400">{ingevuld} van {totaal} velden</div>
       </div>
+      <div className="flex flex-col gap-4 overflow-y-auto p-4">
 
       {OVERZICHT_GROEPEN.map((groep) => {
         const groepIngevuld = groep.velden.filter((v) => merged[v.key] != null).length;
@@ -1207,6 +1208,7 @@ function OverzichtPanel({gegevens}) {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

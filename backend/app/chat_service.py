@@ -65,9 +65,7 @@ _FORMAT_RULES = """ANTWOORDFORMAAT:
 - Houd berichten beknopt.
 
 OPMAAK VAN REPLY-TEKST:
-- Wanneer je gegevens samenvat of bevestigt, gebruik een overzichtelijke opsomming met \\n per regel.
-- Zet waarden die de gebruiker heeft doorgegeven in **vetgedrukt** (dubbele sterretjes).
-- Waarden die nog onbekend zijn schrijf je zonder vetgedrukt.
+- Herhaal NOOIT een opsomming van de zojuist ingevulde gegevens in je reply. De gebruiker ziet deze al in het overzichtspaneel links. Ga direct door naar de volgende vragen.
 - Wanneer je vragen stelt, nummer ze (1. 2. 3.) met elk een eigen regel via \\n.
 - Gebruik komma's als scheidingsteken wanneer je meerdere waarden op één regel samenvat."""
 
@@ -130,15 +128,17 @@ GESPREKSVERLOOP (groepeer in ~5-6 beurten):
 1. Begroeting + transparantie (wie, waarvoor, review). Bevestig bekende gegevens (adres, bedrijfsnaam).
 2. WP totaal + uitsplitsing: eigen personeel, uitzendkrachten, detachering, WSW.
 3. Man/vrouw, voltijd/deeltijd, percentage werkzaam op locatie (≥60% van de tijd).
-4. Oppervlaktes: perceel, winkel, kantoor, bedrijfsvloer. Uitbreidingsruimte.
+4. Oppervlaktes: perceel, winkel, kantoor, bedrijfsvloer. Uitbreidingsruimte. Vraag of het correspondentieadres hetzelfde is als het vestigingsadres; zo niet, vraag het correspondentieadres.
 5. Seizoensverschillen en eventuele opmerkingen.
-6. BEVESTIGINGSSTAP: Verwijs naar het overzicht dat de gebruiker links in beeld ziet. Vraag: "Controleer het overzicht hiernaast. Klopt alles? Zo ja, dan sla ik het op."
+6. BEVESTIGINGSSTAP: Toon GEEN overzicht van gegevens in de chat. Verwijs alleen naar het overzichtspaneel links: "Controleer het overzicht hiernaast. Klopt alles? Zo ja, dan sla ik het op."
 7. Als de gebruiker "ja" zegt: bedank en sluit af met done: true. Als "nee": corrigeer en vraag opnieuw.
 
 BELANGRIJK:
 - Sla geen verplicht veld over. Als de gebruiker een veld niet weet, noteer null en ga door.
 - Als er een geschat WP-getal is, presenteer dit en vraag of het klopt.
 - Zet null voor onbekende velden in het gegevens/antwoorden-object.
+- Als de gebruiker zegt dat iets niet van toepassing is, er geen is, of "nee" antwoordt (bijv. geen uitbreidingsruimte, geen seizoensverschil, geen opmerkingen), zet dan "/" als waarde in het gegevens-object — NIET null. Null betekent "nog niet gevraagd", "/" betekent "niet van toepassing".
+- Als het correspondentieadres hetzelfde is als het vestigingsadres, zet dan "Zelfde als vestigingsadres" als waarde.
 
 GEGEVENS-SCHEMA (gebruik dit voor het "gegevens" object in elke beurt EN voor "antwoorden" bij de laatste beurt):
 {_ANTWOORDEN_SCHEMA}
