@@ -155,6 +155,7 @@ async def get_chat_reply(messages: list[dict], session: ChatSession,
     response = await client.chat.completions.create(
         model=settings.openai_model,
         max_tokens=900,
+        response_format={"type": "json_object"},
         messages=[{"role": "system", "content": system_text}] + messages,
     )
 
