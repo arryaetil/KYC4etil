@@ -765,6 +765,7 @@ function WpKaart({candidate, wp_historie, vorig_jaar, api, onRefresh}) {
   return (
     <Panel
       title="Werkzame personen"
+      collapsible
       onEdit={candidate ? () => setEditMode((e) => !e) : undefined}
     >
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -875,7 +876,7 @@ function OutboundPanel({candidate, api, batchId, companyId, onRefresh}) {
   }
 
   return (
-    <Panel title="Outbound">
+    <Panel title="Outbound" collapsible>
       {error && <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>}
       <div className="space-y-3">
         {chatResult ? (
@@ -938,7 +939,7 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
       {detail ? (
         <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
           <section className="space-y-5">
-            <Panel title="Vestigingsgegevens">
+            <Panel title="Vestigingsgegevens" collapsible>
               <dl className="grid gap-3 text-sm sm:grid-cols-2">
                 <Info label="Naam" value={detail.company.naam} />
                 <Info label="Gemeente" value={detail.company.gemeente} />
@@ -1330,6 +1331,7 @@ function WpUitsplitsing({wp_historie}) {
       title="WP-uitsplitsing"
       subtitle={record ? `Peiljaar ${record.wp_jaar}` : null}
       completeness={{gevuld, totaal: velden.length}}
+      collapsible
     >
       {record ? (
         <div className="mb-5 flex items-baseline gap-2">
@@ -1425,6 +1427,7 @@ function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
   return (
     <Panel
       title="Vastgoed & locatie"
+      collapsible
       onEdit={() => setBewerken((b) => !b)}
       completeness={{gevuld, totaal: VASTGOED_VELDEN.length}}
     >
@@ -1536,6 +1539,7 @@ function ContactgegevensKaart({enrichment, vastgoed: initVastgoed, api, batchId,
   return (
     <Panel
       title="Contactgegevens"
+      collapsible
       onEdit={() => setBewerken((b) => !b)}
       completeness={{gevuld, totaal: 4}}
     >
@@ -1575,7 +1579,7 @@ function ContactgegevensKaart({enrichment, vastgoed: initVastgoed, api, batchId,
 
 function WpHistorie({wp_historie}) {
   return (
-    <Panel title="WP-historie">
+    <Panel title="WP-historie" collapsible>
       {!wp_historie?.length ? (
         <p className="text-sm text-slate-400">Nog geen goedgekeurde records.</p>
       ) : (
