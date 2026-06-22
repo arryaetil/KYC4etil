@@ -43,6 +43,7 @@ def get_chat_session(token: str, db: Session = Depends(get_db)):
     return {
         "bedrijfsnaam": comp.naam if comp else "Onbekend bedrijf",
         "gemeente": comp.gemeente if comp else None,
+        "adres": comp.adres if comp else None,
         "variant": session.variant,
         "pre_fill_wp": session.pre_fill_wp,
         "status": session.status,
