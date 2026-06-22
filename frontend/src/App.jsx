@@ -272,8 +272,8 @@ function Dashboard({api, user, onLogout, openBatch, openChatTemplates}) {
             <tr>
               <th className="px-4 py-3">Batch</th>
               <th className="px-4 py-3">Aangemaakt</th>
-              <th className="px-4 py-3">Voortgang</th>
-              <th className="px-4 py-3">Labels</th>
+              <th className="w-36 px-4 py-3">Voortgang</th>
+              <th className="w-48 px-4 py-3">Labels</th>
               <th className="px-4 py-3">Status</th>
               <th className="w-40 px-4 py-3"></th>
             </tr>
@@ -447,7 +447,7 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
       }
     >
       {error ? <Alert message={error} /> : null}
-      <div className="mb-4 grid gap-3 md:grid-cols-[1fr_180px_220px]">
+      <div className="mb-4 grid gap-3 md:grid-cols-[1fr_200px]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-3 text-slate-400" size={17} />
           <input className="focus-ring h-11 w-full rounded-md border border-line bg-white pl-9 pr-3" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Zoeken" />
@@ -924,7 +924,7 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
     >
       {error ? <Alert message={error} /> : null}
       {detail ? (
-        <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+        <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
           <section className="space-y-5">
             <VestigingsgegevensKaart
               company={detail.company}
@@ -1076,27 +1076,45 @@ function Metric({title, value}) {
 function Progress({value, total}) {
   const width = total ? Math.round((value / total) * 100) : 0;
   return (
-    <div>
+    <div className="min-w-[100px]">
       <div className="mb-1 flex justify-between text-xs text-slate-500">
         <span>{value}</span>
         <span>{total}</span>
       </div>
-      <div className="h-2 rounded-full bg-slate-200">
-        <div className="h-2 rounded-full bg-etil" style={{width: `${Math.max(0, Math.min(100, width))}%`}} />
+      <div className="h-3 rounded-full bg-slate-200">
+        <div className="h-3 rounded-full bg-etil transition-all" style={{width: `${Math.max(0, Math.min(100, width))}%`}} />
       </div>
     </div>
   );
 }
 
 function LabelCounts({labels = {}}) {
+  const totaal = (labels.hoog || 0) + (labels.middel || 0) + (labels.laag || 0);
   return (
-    <div className="flex flex-wrap gap-2">
-      {["hoog", "middel", "laag"].map((label) => (
-        <span key={label} className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2 py-1 text-xs">
-          <span className={classNames("h-2 w-2 rounded-full", LABELS[label].dot)} />
-          {labels?.[label] || 0}
-        </span>
-      ))}
+    <div className="min-w-[140px]">
+      {totaal > 0 ? (
+        <div className="mb-1.5 flex h-3 w-full overflow-hidden rounded-full">
+          {labels.hoog > 0 && (
+            <div className="bg-emerald-500" style={{width: `${(labels.hoog / totaal) * 100}%`}} />
+          )}
+          {labels.middel > 0 && (
+            <div className="bg-amber-400" style={{width: `${(labels.middel / totaal) * 100}%`}} />
+          )}
+          {labels.laag > 0 && (
+            <div className="bg-red-500" style={{width: `${(labels.laag / totaal) * 100}%`}} />
+          )}
+        </div>
+      ) : (
+        <div className="mb-1.5 h-3 w-full rounded-full bg-slate-200" />
+      )}
+      <div className="flex gap-3 text-xs text-slate-600">
+        {["hoog", "middel", "laag"].map((label) => (
+          <span key={label} className="inline-flex items-center gap-1">
+            <span className={classNames("h-2 w-2 rounded-full", LABELS[label].dot)} />
+            {labels?.[label] || 0}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
