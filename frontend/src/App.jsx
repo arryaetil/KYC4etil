@@ -1128,9 +1128,9 @@ function OverzichtPanel({gegevens}) {
   const prevGegevensRef = useRef({});
 
   const merged = gegevens || {};
-  const verplicht = OVERZICHT_GROEPEN.flatMap((g) => g.velden.filter((v) => v.verplicht));
-  const ingevuld = verplicht.filter((v) => merged[v.key] != null).length;
-  const totaal = verplicht.length;
+  const alleVelden = OVERZICHT_GROEPEN.flatMap((g) => g.velden);
+  const ingevuld = alleVelden.filter((v) => merged[v.key] != null).length;
+  const totaal = alleVelden.length;
   const pctVoortgang = totaal ? Math.round((ingevuld / totaal) * 100) : 0;
 
   const changedKeys = new Set();
@@ -1158,13 +1158,13 @@ function OverzichtPanel({gegevens}) {
             style={{width: `${pctVoortgang}%`}}
           />
         </div>
-        <div className="mt-1 text-xs text-slate-400">{ingevuld} van {totaal} verplichte velden</div>
+        <div className="mt-1 text-xs text-slate-400">{ingevuld} van {totaal} velden</div>
       </div>
 
       {OVERZICHT_GROEPEN.map((groep) => {
-        const groepIngevuld = groep.velden.filter((v) => v.verplicht && merged[v.key] != null).length;
-        const groepTotaal = groep.velden.filter((v) => v.verplicht).length;
-        const groepKlaar = groepTotaal > 0 && groepIngevuld === groepTotaal;
+        const groepIngevuld = groep.velden.filter((v) => merged[v.key] != null).length;
+        const groepTotaal = groep.velden.length;
+        const groepKlaar = groepIngevuld === groepTotaal;
 
         return (
           <div key={groep.titel}>
