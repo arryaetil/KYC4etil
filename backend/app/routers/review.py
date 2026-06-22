@@ -258,12 +258,14 @@ def export_xlsx(batch_id: str, db: Session = Depends(get_db)):
 
     headers = [
         "Vestigingsnummer", "Naam", "Gemeente", "Adres", "SBI-code", "CB-er", "KvK",
+        "Website", "Telefoon", "E-mail", "Correspondentieadres",
         "WP-kandidaat", "Betrouwbaarheid", "Status", "Schatting",
         "WP goedgekeurd", "Jaar", "Bron", "Bron-URL",
         "Man", "Vrouw", "Voltijd", "Deeltijd",
         "Eigen personeel", "Uitzend", "Detachering", "WSW", "% op locatie",
     ]
     widths = [18, 34, 18, 28, 10, 10, 14,
+              28, 16, 28, 32,
               12, 14, 14, 10,
               14, 6, 14, 40,
               7, 7, 8, 8, 16, 9, 13, 7, 12]
@@ -287,9 +289,15 @@ def export_xlsx(batch_id: str, db: Session = Depends(get_db)):
                .order_by(WPRecord.wp_jaar.desc())
                .first())
         pct = f"{round(rec.pct_op_locatie * 100)}%" if rec and rec.pct_op_locatie is not None else None
+        enr = comp.enrichment
+        vg = comp.vastgoed
         values = [
             comp.vestigingsnummer, comp.naam, comp.gemeente, comp.adres,
             comp.sbi_code, comp.cb_er, comp.kvk_nummer,
+            enr.website_url if enr else comp.website_url,
+            enr.telefoonnummer if enr else comp.telefoonnummer,
+            enr.email if enr else None,
+            vg.correspondentieadres if vg else None,
             cand.wp_kandidaat if cand else None,
             _CONF_LABELS.get(cand.confidence_label, "") if cand else "",
             cand.status if cand else "",
