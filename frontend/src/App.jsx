@@ -401,6 +401,20 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
     }
   }
 
+  async function resetVastgelopen() {
+    if (!window.confirm("Batch terugzetten naar 'pending'?\n\nAlleen doen als de server herstart is en de taak echt niet meer draait.")) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.resetVastgelopen(batchId);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteBatch() {
     if (!window.confirm(`Batch "${batch?.naam}" definitief verwijderen?`)) return;
     setBusy(true);
@@ -423,10 +437,14 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
       actions={
         <>
           <IconButton icon={ListChecks} onClick={openDashboard}>Dashboard</IconButton>
-          {isRunning
-            ? <IconButton icon={Square} variant="quiet" onClick={cancelBatch} disabled={busy}>Annuleren</IconButton>
-            : <IconButton icon={Play} variant="primary" onClick={runBatch} disabled={busy}>Run</IconButton>
-          }
+          {isRunning ? (
+            <>
+              <IconButton icon={Square} variant="quiet" onClick={cancelBatch} disabled={busy}>Annuleren</IconButton>
+              <IconButton icon={RefreshCw} variant="quiet" onClick={resetVastgelopen} disabled={busy} title="Gebruik alleen na server-herstart als de taak niet meer draait">Vastgelopen?</IconButton>
+            </>
+          ) : (
+            <IconButton icon={Play} variant="primary" onClick={runBatch} disabled={busy}>Run</IconButton>
+          )}
           <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Groen goedkeuren</IconButton>
           <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.csv`, "export.csv")}>Export</IconButton>
           <IconButton icon={Phone} onClick={() => openBellijst(batchId)}>Bellijst</IconButton>

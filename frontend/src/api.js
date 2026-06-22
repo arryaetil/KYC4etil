@@ -54,6 +54,7 @@ export function createApi(token, onUnauthorized) {
     },
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
     cancelBatch: (id) => request(`/batches/${id}/cancel`, {method: "POST"}),
+    resetVastgelopen: (id) => request(`/batches/${id}/reset-vastgelopen`, {method: "POST"}),
     deleteBatch: (id) => request(`/batches/${id}`, {method: "DELETE"}),
     herverwerk: (batchId, companyId) => request(`/batches/${batchId}/companies/${companyId}/herverwerk`, {method: "POST"}),
     createChatSession: (candidateId) => request(`/candidates/${candidateId}/create-chat`, {method: "POST"}),

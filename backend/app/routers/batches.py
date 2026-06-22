@@ -101,6 +101,21 @@ def cancel_batch(batch_id: str, db: Session = Depends(get_db)):
     return {"batch_id": batch.id, "status": batch.status}
 
 
+@router.post("/{batch_id}/reset-vastgelopen")
+def reset_vastgelopen(batch_id: str, db: Session = Depends(get_db)):
+    """Zet een vastzittende 'running'-batch terug naar 'pending' na een server-herstart.
+    Alleen bedoeld als de achtergrondtaak aantoonbaar niet meer draait (bijv. na deploy).
+    Veilig: maakt geen data aan of verwijdert niets — wijzigt alleen de batch-status."""
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(404, "batch niet gevonden")
+    if batch.status != "running":
+        raise HTTPException(409, f"batch heeft status '{batch.status}'; alleen 'running' batches kunnen worden gereset")
+    batch.status = "pending"
+    db.commit()
+    return {"batch_id": batch.id, "status": batch.status, "bericht": "batch teruggezet naar 'pending'; kan opnieuw gestart worden"}
+
+
 @router.delete("/{batch_id}")
 def delete_batch(batch_id: str, db: Session = Depends(get_db)):
     """Verwijdert een batch en alle gekoppelde records. Blokkeert bij status 'running'."""
@@ -211,8 +226,29 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
     comp = db.get(Company, company_id)
     if not comp or comp.batch_id != batch_id:
         raise HTTPException(404, "company niet gevonden")
+    batch = db.get(Batch, batch_id)
     enr: Enrichment | None = comp.enrichment
     cand: Candidate | None = comp.candidate
+    vorige = None
+    if batch:
+        prev_rec = (db.query(WPRecord)
+                    .filter(WPRecord.company_id == company_id, WPRecord.wp_jaar < batch.jaar)
+                    .order_by(WPRecord.wp_jaar.desc(), WPRecord.created_at.desc())
+                    .first())
+        if prev_rec:
+            delta = cand.wp_kandidaat - prev_rec.wp_waarde if cand and cand.wp_kandidaat is not None else None
+            pct_delta = (abs(delta) / prev_rec.wp_waarde) if delta is not None and prev_rec.wp_waarde else None
+            vorige = {
+                "wp_jaar": prev_rec.wp_jaar,
+                "wp_waarde": prev_rec.wp_waarde,
+                "bron_type": prev_rec.bron_type,
+                "status": prev_rec.status,
+                "bron_url": prev_rec.bron_url,
+                "goedgekeurd_op": prev_rec.goedgekeurd_op.isoformat() + "Z" if prev_rec.goedgekeurd_op else None,
+                "verschil_abs": delta,
+                "verschil_pct": pct_delta,
+                "signaal": "hoog" if pct_delta is not None and pct_delta > 0.25 else "normaal",
+            }
     return {
         "company": {"id": comp.id, "naam": comp.naam, "adres": comp.adres,
                     "gemeente": comp.gemeente, "sbi_code": comp.sbi_code,
@@ -243,4 +279,5 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
             "confidence_label": cand.confidence_label,
             "score_breakdown": cand.score_breakdown,
             "strategie": cand.strategie, "status": cand.status},
+        "vorig_jaar": vorige,
     }

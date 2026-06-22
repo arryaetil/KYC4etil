@@ -137,3 +137,57 @@ def test_vorig_jaar_zonder_candidate_geeft_geen_verschil():
     vj = _get_detail(batch_id, comp_id, token)["vorig_jaar"]
     assert vj["verschil_abs"] is None
     assert vj["signaal"] == "normaal"
+
+
+# --- reset-vastgelopen endpoint ---
+
+def _create_running_batch() -> str:
+    db = SessionLocal()
+    try:
+        batch = Batch(naam="vastgelopen-batch", jaar=2026, status="running", totaal=5, verwerkt=2)
+        db.add(batch)
+        db.commit()
+        return batch.id
+    finally:
+        db.close()
+
+
+def test_reset_vastgelopen_zet_status_naar_pending():
+    email = _unique_email("reset-ok")
+    _create_user(email)
+    token = _token(email)
+    batch_id = _create_running_batch()
+    r = client.post(f"/batches/{batch_id}/reset-vastgelopen",
+                    headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "pending"
+
+
+def test_reset_vastgelopen_weigert_als_niet_running():
+    email = _unique_email("reset-weiger")
+    _create_user(email)
+    token = _token(email)
+    db = SessionLocal()
+    try:
+        batch = Batch(naam="klare-batch", jaar=2026, status="done", totaal=5, verwerkt=5)
+        db.add(batch)
+        db.commit()
+        batch_id = batch.id
+    finally:
+        db.close()
+    r = client.post(f"/batches/{batch_id}/reset-vastgelopen",
+                    headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 409
+
+
+def test_reset_vastgelopen_batch_kan_daarna_opnieuw_gestart():
+    """Na reset moet de batch opnieuw gestart kunnen worden (status pending)."""
+    email = _unique_email("reset-rerun")
+    _create_user(email)
+    token = _token(email)
+    batch_id = _create_running_batch()
+    client.post(f"/batches/{batch_id}/reset-vastgelopen",
+                headers={"Authorization": f"Bearer {token}"})
+    r = client.get(f"/batches/{batch_id}", headers={"Authorization": f"Bearer {token}"})
+    assert r.json()["status"] == "pending"
