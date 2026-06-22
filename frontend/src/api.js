@@ -58,6 +58,7 @@ export function createApi(token, onUnauthorized) {
     deleteBatch: (id) => request(`/batches/${id}`, {method: "DELETE"}),
     herverwerk: (batchId, companyId) => request(`/batches/${batchId}/companies/${companyId}/herverwerk`, {method: "POST"}),
     saveVastgoed: (batchId, companyId, body) => request(`/batches/${batchId}/companies/${companyId}/vastgoed`, {method: "PUT", json: body}),
+    saveWpUitsplitsing: (batchId, companyId, body) => request(`/batches/${batchId}/companies/${companyId}/wp-uitsplitsing`, {method: "PUT", json: body}),
     createChatSession: (candidateId) => request(`/candidates/${candidateId}/create-chat`, {method: "POST"}),
     approve: (candidateId) => request(`/candidates/${candidateId}/approve`, {method: "POST"}),
     correct: (candidateId, wp_waarde, reden) => request(`/candidates/${candidateId}/correct`, {

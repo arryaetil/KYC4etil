@@ -307,6 +307,40 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
     }
 
 
+class WpUitsplitsingBody(BaseModel):
+    man: int | None = None
+    vrouw: int | None = None
+    voltijd: int | None = None
+    deeltijd: int | None = None
+    eigen_personeel: int | None = None
+    uitzend: int | None = None
+    detachering: int | None = None
+    wsw: int | None = None
+    pct_op_locatie: float | None = None
+
+
+@router.put("/{batch_id}/companies/{company_id}/wp-uitsplitsing")
+def update_wp_uitsplitsing(batch_id: str, company_id: str, body: WpUitsplitsingBody,
+                            db: Session = Depends(get_db),
+                            current_user=Depends(get_current_user)):
+    """Werkt de uitsplitsingsvelden bij op het meest recente WP-record van de vestiging."""
+    comp = db.get(Company, company_id)
+    if not comp or comp.batch_id != batch_id:
+        raise HTTPException(404, "company niet gevonden")
+
+    record = (db.query(WPRecord)
+              .filter_by(company_id=company_id)
+              .order_by(WPRecord.wp_jaar.desc())
+              .first())
+    if not record:
+        raise HTTPException(404, "geen WP-record gevonden — bevestig eerst een WP-waarde")
+
+    for field, value in body.model_dump(exclude_unset=False).items():
+        setattr(record, field, value)
+    db.commit()
+    return {"company_id": company_id, "wp_jaar": record.wp_jaar}
+
+
 class VastgoedBody(BaseModel):
     perceel_opp: int | None = None
     winkel_opp: int | None = None
