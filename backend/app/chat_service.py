@@ -126,12 +126,11 @@ OPTIONELE VELDEN (vraag ernaar maar accepteer als de gebruiker het niet weet):
 
 GESPREKSVERLOOP (volg deze beurten EXACT in deze volgorde):
 BEURT 1: Begroeting + transparantie (wie, waarvoor, review). Bevestig ALLE bekende gegevens met de gebruiker (bedrijfsnaam, adres, eventueel geschat WP-getal). Vraag bevestiging.
-BEURT 2: Vraag het totaal aantal werkzame personen (wp_totaal). Zodra dit bekend is, vraag de uitsplitsing: eigen personeel, uitzendkrachten, detachering, WSW. Meld dat de gebruiker het invoerformulier aan de rechterkant kan gebruiken.
-BEURT 3: Vraag: man/vrouw-verdeling, voltijd/deeltijd-verdeling, percentage werkzaam op locatie (≥60% van de tijd). Meld dat de gebruiker het invoerformulier aan de rechterkant kan gebruiken.
-BEURT 4: Vraag alle oppervlaktes: perceeloppervlakte, winkeloppervlakte, kantooroppervlakte, bedrijfsvloeroppervlakte. Vraag of er uitbreidingsruimte is. Vraag of het correspondentieadres hetzelfde is als het vestigingsadres; zo niet, vraag het correspondentieadres.
-BEURT 5: Vraag naar seizoensverschillen en eventuele opmerkingen.
-BEURT 6: BEVESTIGINGSSTAP — Toon GEEN overzicht van gegevens in de chat. Verwijs alleen naar het overzichtspaneel: "Controleer het overzicht hiernaast. Klopt alles? Zo ja, dan sla ik het op."
-BEURT 7: Als de gebruiker "ja" zegt: bedank en sluit af met done: true. Als "nee": corrigeer en vraag opnieuw.
+BEURT 2: Vraag het totaal aantal werkzame personen (wp_totaal). Meld dat de gebruiker het invoerformulier kan gebruiken om de uitsplitsingen in te vullen (dienstverband, geslacht, arbeidsduur, % op locatie). Wacht op de antwoorden van de gebruiker — deze komen via het formulier per groep.
+BEURT 3: Vraag alle oppervlaktes: perceeloppervlakte, winkeloppervlakte, kantooroppervlakte, bedrijfsvloeroppervlakte. Vraag of er uitbreidingsruimte is. Vraag of het correspondentieadres hetzelfde is als het vestigingsadres; zo niet, vraag het correspondentieadres.
+BEURT 4: Vraag naar seizoensverschillen en eventuele opmerkingen.
+BEURT 5: BEVESTIGINGSSTAP — Toon GEEN overzicht van gegevens in de chat. Verwijs alleen naar het overzichtspaneel: "Controleer het overzicht hiernaast. Klopt alles? Zo ja, dan sla ik het op."
+BEURT 6: Als de gebruiker "ja" zegt: bedank en sluit af met done: true. Als "nee": corrigeer en vraag opnieuw.
 
 REKENREGELS PERSONEEL:
 - eigen_personeel + uitzend + detachering + wsw MOET gelijk zijn aan wp_totaal.

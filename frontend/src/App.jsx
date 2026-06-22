@@ -1213,61 +1213,66 @@ function OverzichtPanel({gegevens}) {
   );
 }
 
-const PERSONEEL_GROEPEN = [
+const PERSONEEL_STAPPEN = [
   {
     label: "Dienstverband",
-    velden: [
+    somVelden: [
       {key: "eigen_personeel", label: "Eigen personeel"},
       {key: "uitzend", label: "Uitzendkrachten"},
       {key: "detachering", label: "Detachering"},
       {key: "wsw", label: "WSW"},
     ],
+    detectKey: "eigen_personeel",
   },
   {
     label: "Geslacht",
-    velden: [
+    somVelden: [
       {key: "man", label: "Man"},
       {key: "vrouw", label: "Vrouw"},
     ],
+    detectKey: "man",
   },
   {
-    label: "Arbeidsduur",
-    velden: [
+    label: "Arbeidsduur & locatie",
+    somVelden: [
       {key: "voltijd", label: "Voltijd"},
       {key: "deeltijd", label: "Deeltijd"},
     ],
+    extraVelden: [
+      {key: "pct_op_locatie", label: "% werkzaam op locatie", suffix: "%"},
+    ],
+    detectKey: "voltijd",
   },
 ];
 
-function PersoneelFormulier({wpTotaal, onSubmit, disabled}) {
+function PersoneelFormulier({wpTotaal, stap, onSubmit, disabled}) {
   const [values, setValues] = useState({});
-  const [activeGroep, setActiveGroep] = useState(0);
 
-  const groep = PERSONEEL_GROEPEN[activeGroep];
-  const som = groep.velden.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
+  const som = stap.somVelden.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
   const resterend = wpTotaal - som;
+  const extraVelden = stap.extraVelden || [];
+  const extraIngevuld = extraVelden.every((v) => values[v.key] !== undefined && values[v.key] !== "");
+  const kanVersturen = resterend === 0 && (extraVelden.length === 0 || extraIngevuld);
 
   function update(key, val) {
     setValues((prev) => ({...prev, [key]: val}));
   }
 
-  function submitGroep() {
-    if (resterend !== 0) return;
-    if (activeGroep < PERSONEEL_GROEPEN.length - 1) {
-      setActiveGroep(activeGroep + 1);
-    } else {
-      onSubmit(values);
-    }
+  function submit() {
+    if (!kanVersturen) return;
+    const parts = stap.somVelden.map((v) => `${v.label}: ${values[v.key] || 0}`);
+    extraVelden.forEach((v) => parts.push(`${v.label}: ${values[v.key]}${v.suffix || ""}`));
+    onSubmit(parts.join(", "), values);
   }
 
   return (
     <div className="rounded-lg border border-etil/30 bg-etil/5 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase text-etil">{groep.label}</span>
+        <span className="text-xs font-semibold uppercase text-etil">{stap.label}</span>
         <span className="text-xs text-slate-500">Totaal WP: <strong>{wpTotaal}</strong></span>
       </div>
-      <div className="mb-2 grid gap-2" style={{gridTemplateColumns: `repeat(${groep.velden.length}, 1fr)`}}>
-        {groep.velden.map((v) => (
+      <div className="mb-2 grid gap-2" style={{gridTemplateColumns: `repeat(${stap.somVelden.length}, 1fr)`}}>
+        {stap.somVelden.map((v) => (
           <div key={v.key}>
             <label className="mb-1 block text-xs text-slate-600">{v.label}</label>
             <input
@@ -1282,23 +1287,37 @@ function PersoneelFormulier({wpTotaal, onSubmit, disabled}) {
           </div>
         ))}
       </div>
+      {extraVelden.length > 0 && (
+        <div className="mb-2 grid gap-2" style={{gridTemplateColumns: `repeat(${extraVelden.length}, 1fr)`}}>
+          {extraVelden.map((v) => (
+            <div key={v.key}>
+              <label className="mb-1 block text-xs text-slate-600">{v.label}</label>
+              <input
+                type="number"
+                min="0"
+                max={100}
+                className="focus-ring h-9 w-full rounded-md border border-line px-2 text-sm text-center"
+                value={values[v.key] ?? ""}
+                onChange={(e) => update(v.key, e.target.value)}
+                placeholder={v.suffix || ""}
+                disabled={disabled}
+              />
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <span className={classNames("text-xs font-medium", resterend === 0 ? "text-emerald-600" : resterend < 0 ? "text-red-600" : "text-amber-600")}>
           {resterend === 0 ? "✓ Som klopt" : resterend > 0 ? `Nog ${resterend} te verdelen` : `${Math.abs(resterend)} te veel`}
         </span>
         <button
           type="button"
-          disabled={resterend !== 0 || disabled}
-          onClick={submitGroep}
+          disabled={!kanVersturen || disabled}
+          onClick={submit}
           className="focus-ring rounded-md bg-etil px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-40"
         >
-          {activeGroep < PERSONEEL_GROEPEN.length - 1 ? "Volgende" : "Verstuur"}
+          Verstuur
         </button>
-      </div>
-      <div className="mt-2 flex gap-1">
-        {PERSONEEL_GROEPEN.map((g, i) => (
-          <div key={g.label} className={classNames("h-1 flex-1 rounded-full", i <= activeGroep ? "bg-etil" : "bg-slate-200")} />
-        ))}
       </div>
     </div>
   );
@@ -1458,22 +1477,20 @@ function ChatForm({token}) {
           {!done && (() => {
             const g = gegevens || {};
             const wpTotaal = typeof g.wp_totaal === "number" ? g.wp_totaal : null;
-            const needsBreakdown = wpTotaal != null && (g.eigen_personeel == null || g.man == null || g.voltijd == null);
+            const actieveStap = wpTotaal != null
+              ? PERSONEEL_STAPPEN.find((s) => g[s.detectKey] == null)
+              : null;
 
             return (
               <div className="flex-shrink-0 border-t border-line">
-                {needsBreakdown && (
+                {actieveStap && (
                   <div className="border-b border-line p-3">
                     <PersoneelFormulier
+                      key={actieveStap.detectKey}
                       wpTotaal={wpTotaal}
+                      stap={actieveStap}
                       disabled={typing}
-                      onSubmit={async (vals) => {
-                        const parts = Object.entries(vals)
-                          .map(([k, v]) => {
-                            const def = PERSONEEL_GROEPEN.flatMap((g) => g.velden).find((f) => f.key === k);
-                            return `${def?.label || k}: ${v}`;
-                          });
-                        const text = parts.join(", ");
+                      onSubmit={async (text) => {
                         const updated = [...messages, {role: "user", content: text}];
                         setMessages(updated);
                         await fetchReply(updated);
