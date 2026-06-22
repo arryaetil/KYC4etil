@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..chat_service import get_chat_reply
 from ..chat_utils import lookup_session
 from ..database import get_db
 from ..models import ChatSession, Company
@@ -76,3 +77,37 @@ def submit_chat(token: str, body: ChatSubmit, db: Session = Depends(get_db)):
     session.completed_at = datetime.utcnow()
     db.commit()
     return {"status": "completed", "wp_opgegeven": wp}
+
+
+class ChatMessageRequest(BaseModel):
+    messages: list[dict]
+
+
+@router.post("/{token}/message")
+async def chat_message(token: str, body: ChatMessageRequest,
+                       db: Session = Depends(get_db)):
+    """Conversational chat endpoint — stuurt berichtgeschiedenis naar OpenAI."""
+    session = lookup_session(token, db)
+    if session.status == "completed":
+        raise HTTPException(409, "Deze chat-sessie is al afgerond")
+
+    if session.status in ("created", "sent"):
+        session.status = "opened"
+
+    comp = db.get(Company, session.company_id)
+    enrichment = comp.enrichment if comp else None
+
+    result = await get_chat_reply(body.messages, session, comp, enrichment)
+
+    all_messages = list(body.messages)
+    all_messages.append({"role": "assistant", "content": result["reply"]})
+    session.messages = all_messages
+
+    if result["done"]:
+        session.status = "completed"
+        session.completed_at = datetime.utcnow()
+        if result.get("antwoorden"):
+            session.antwoorden = result["antwoorden"]
+
+    db.commit()
+    return {"reply": result["reply"], "done": result["done"]}
