@@ -252,18 +252,20 @@ _CONF_LABELS = {"hoog": "Groen", "middel": "Geel", "laag": "Rood"}
 
 @router.get("/batches/{batch_id}/export.xlsx")
 def export_xlsx(batch_id: str, db: Session = Depends(get_db)):
-    """Export van alle WP-records voor het Vestigingsregister als Excel."""
+    """Export van alle vestigingen (met pipeline-resultaten) als Excel."""
     batch = db.get(Batch, batch_id)
     naam = (batch.naam or batch_id) if batch else batch_id
 
     headers = [
         "Vestigingsnummer", "Naam", "Gemeente", "Adres", "SBI-code", "CB-er", "KvK",
-        "WP", "Jaar", "Bron", "Bron-URL", "Status", "Betrouwbaarheid",
+        "WP-kandidaat", "Betrouwbaarheid", "Status", "Schatting",
+        "WP goedgekeurd", "Jaar", "Bron", "Bron-URL",
         "Man", "Vrouw", "Voltijd", "Deeltijd",
-        "Eigen personeel", "Uitzend", "Detachering", "WSW",
-        "% op locatie",
+        "Eigen personeel", "Uitzend", "Detachering", "WSW", "% op locatie",
     ]
-    widths = [18, 34, 18, 28, 10, 10, 14, 7, 6, 14, 40, 14, 14,
+    widths = [18, 34, 18, 28, 10, 10, 14,
+              12, 14, 14, 10,
+              14, 6, 14, 40,
               7, 7, 8, 8, 16, 9, 13, 7, 12]
 
     wb = Workbook()
@@ -272,22 +274,34 @@ def export_xlsx(batch_id: str, db: Session = Depends(get_db)):
     ws.sheet_properties.tabColor = _ETIL_TEAL
     _style_sheet(ws, headers, widths)
 
-    rows = (db.query(WPRecord, Company, Candidate)
-            .join(Company, WPRecord.company_id == Company.id)
-            .outerjoin(Candidate, Candidate.company_id == Company.id)
-            .filter(Company.batch_id == batch_id)
-            .order_by(Company.naam)
-            .all())
+    # Alle companies — left-join op Candidate en meest recente WPRecord
+    companies = (db.query(Company)
+                 .filter_by(batch_id=batch_id)
+                 .order_by(Company.naam)
+                 .all())
 
-    for row_idx, (rec, comp, cand) in enumerate(rows, 2):
-        pct = f"{round(rec.pct_op_locatie * 100)}%" if rec.pct_op_locatie is not None else None
+    for row_idx, comp in enumerate(companies, 2):
+        cand = comp.candidate
+        rec = (db.query(WPRecord)
+               .filter_by(company_id=comp.id)
+               .order_by(WPRecord.wp_jaar.desc())
+               .first())
+        pct = f"{round(rec.pct_op_locatie * 100)}%" if rec and rec.pct_op_locatie is not None else None
         values = [
             comp.vestigingsnummer, comp.naam, comp.gemeente, comp.adres,
             comp.sbi_code, comp.cb_er, comp.kvk_nummer,
-            rec.wp_waarde, rec.wp_jaar, rec.bron_type, rec.bron_url, rec.status,
+            cand.wp_kandidaat if cand else None,
             _CONF_LABELS.get(cand.confidence_label, "") if cand else "",
-            rec.man, rec.vrouw, rec.voltijd, rec.deeltijd,
-            rec.eigen_personeel, rec.uitzend, rec.detachering, rec.wsw,
+            cand.status if cand else "",
+            "Ja" if (cand and cand.is_schatting) else "",
+            rec.wp_waarde if rec else None,
+            rec.wp_jaar if rec else None,
+            rec.bron_type if rec else None,
+            rec.bron_url if rec else None,
+            rec.man if rec else None, rec.vrouw if rec else None,
+            rec.voltijd if rec else None, rec.deeltijd if rec else None,
+            rec.eigen_personeel if rec else None, rec.uitzend if rec else None,
+            rec.detachering if rec else None, rec.wsw if rec else None,
             pct,
         ]
         for col_idx, val in enumerate(values, 1):
