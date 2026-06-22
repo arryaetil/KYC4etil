@@ -301,7 +301,16 @@ function Dashboard({api, user, onLogout, openBatch, openChatTemplates}) {
                 <td className="px-4 py-3">
                   <LabelCounts labels={batch.labels} />
                 </td>
-                <td className="px-4 py-3"><StatusPill status={batch.status} /></td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill status={batch.status} />
+                    {batch.fouten > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">
+                        <AlertTriangle size={11} />{batch.fouten}
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3 text-right">
                   <div className="inline-flex items-center gap-2">
                     {batch.status === "running"
@@ -432,12 +441,15 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
           <Search className="pointer-events-none absolute left-3 top-3 text-slate-400" size={17} />
           <input className="focus-ring h-11 w-full rounded-md border border-line bg-white pl-9 pr-3" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Zoeken" />
         </div>
-        <select className="focus-ring h-11 rounded-md border border-line bg-white px-3" value={label} onChange={(event) => setLabel(event.target.value)}>
+        <select className={classNames(
+          "focus-ring h-11 rounded-md border bg-white px-3",
+          label === "fouten" ? "border-red-400 text-red-700 font-medium" : "border-line",
+        )} value={label} onChange={(event) => setLabel(event.target.value)}>
           <option value="">Alle labels</option>
           <option value="hoog">Groen</option>
           <option value="middel">Geel</option>
           <option value="laag">Rood</option>
-          <option value="fouten">Fouten</option>
+          <option value="fouten">{batch?.fouten > 0 ? `Fouten (${batch.fouten})` : "Fouten"}</option>
         </select>
         <select className="focus-ring h-11 rounded-md border border-line bg-white px-3" value={strategie} onChange={(event) => setStrategie(event.target.value)}>
           <option value="">Alle strategieen</option>
@@ -477,9 +489,14 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="font-semibold">{company.naam}</div>
-                    {company.pipeline_error && <AlertTriangle size={14} className="shrink-0 text-red-500" title={company.pipeline_error} />}
+                    {company.pipeline_error && <AlertTriangle size={14} className="shrink-0 text-red-500" />}
                   </div>
                   <div className="text-xs text-slate-500">{company.gemeente}</div>
+                  {company.pipeline_error && (
+                    <div className="mt-1 max-w-xs truncate text-xs font-medium text-red-600" title={company.pipeline_error}>
+                      {company.pipeline_error}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3 font-medium">{company.wp_kandidaat ?? "-"}</td>
                 <td className="px-4 py-3">
@@ -785,8 +802,9 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
               </div>
             </Panel>
             <Panel title="Score-uitleg">
-              <ScoreBreakdown breakdown={candidate?.score_breakdown} />
+              <ScoreBreakdown breakdown={candidate?.score_breakdown} label={candidate?.confidence_label} />
             </Panel>
+            <VorigJaarVergelijking vorig_jaar={detail?.vorig_jaar} huidig_wp={candidate?.wp_kandidaat} />
             {detail.pipeline_fouten?.length > 0 && (
               <Panel title="Pipeline-fouten">
                 <div className="space-y-2">
@@ -1004,10 +1022,16 @@ const ZEKERHEID_STYLE = {
   laag: "bg-red-100 text-red-800",
 };
 
-function ScoreBreakdown({breakdown}) {
+const BREAKDOWN_NL = {
+  fte_only: "FTE opgegeven, geen WP — niet 1:1 vergelijkbaar",
+  proportionele_schatting: "Proportionele schatting — inherent onzeker",
+  places_fuzzy: "Locatiecount via Google Places, niet KvK-exact",
+  consensus: "Bevestigd door meerdere onafhankelijke bronnen",
+};
+
+function ScoreBreakdown({breakdown, label}) {
   if (!breakdown) return <div className="text-sm text-slate-500">Geen score beschikbaar</div>;
 
-  // No-data geval: pipeline vond niets, breakdown bevat alleen een reden
   if (!breakdown.zekerheid_llm) {
     return (
       <div className="rounded-md border border-slate-200 bg-panel p-3 text-sm text-slate-700">
@@ -1023,9 +1047,29 @@ function ScoreBreakdown({breakdown}) {
   const penalties = breakdown.penalties || {};
   const hasBonuses = Object.keys(bonuses).length > 0;
   const hasPenalties = Object.keys(penalties).length > 0;
+  const isNietGroen = label === "middel" || label === "laag";
 
   return (
     <div className="space-y-3 text-sm">
+      {isNietGroen && (hasPenalties || zekerheid !== "hoog") ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900">
+          <div className="mb-1.5 font-semibold text-xs uppercase">Waarom niet groen?</div>
+          <ul className="space-y-1">
+            {zekerheid !== "hoog" ? (
+              <li className="flex items-start gap-1.5">
+                <span className="mt-0.5 shrink-0 text-amber-500">▸</span>
+                LLM-zekerheid is <strong>{zekerheid}</strong> — basesscore {pct(base)}%
+              </li>
+            ) : null}
+            {Object.keys(penalties).map((key) => (
+              <li key={key} className="flex items-start gap-1.5">
+                <span className="mt-0.5 shrink-0 text-amber-500">▸</span>
+                {BREAKDOWN_NL[key] || key.replaceAll("_", " ")}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="flex items-center justify-between">
         <span className="text-slate-500">LLM-zekerheid</span>
         <span className={classNames("rounded-md px-2 py-0.5 font-semibold capitalize", ZEKERHEID_STYLE[zekerheid] || ZEKERHEID_STYLE.laag)}>
@@ -1036,31 +1080,78 @@ function ScoreBreakdown({breakdown}) {
         <span className="text-slate-500">Basisscore</span>
         <span className="font-medium">{pct(base)}%</span>
       </div>
-      <div>
-        <div className="mb-1 text-xs text-slate-400 uppercase">Bron</div>
-        <div>{breakdown.bron_type || "-"}{breakdown.n_bronnen > 1 ? ` (${breakdown.n_bronnen} bronnen)` : ""}</div>
+      <div className="flex items-center justify-between">
+        <span className="text-slate-500">Bron</span>
+        <span>{breakdown.bron_type || "-"}{breakdown.n_bronnen > 1 ? ` · ${breakdown.n_bronnen} bronnen` : ""}</span>
       </div>
       {hasBonuses ? (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
           {Object.entries(bonuses).map(([key, value]) => (
-            <div key={key} className="flex justify-between gap-3 text-emerald-800">
-              <span>{key.replaceAll("_", " ")}</span>
-              <span>+{pct(value)}%</span>
+            <div key={key} className="flex justify-between gap-3 text-emerald-800 text-xs">
+              <span>{BREAKDOWN_NL[key] || key.replaceAll("_", " ")}</span>
+              <span className="shrink-0 font-semibold">+{pct(value)}%</span>
             </div>
           ))}
         </div>
       ) : null}
       {hasPenalties ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-900">
           {Object.entries(penalties).map(([key, value]) => (
-            <div key={key} className="flex justify-between gap-3">
-              <span>{key.replaceAll("_", " ")}</span>
-              <span>-{pct(value)}%</span>
+            <div key={key} className="flex justify-between gap-3 text-xs">
+              <span>{BREAKDOWN_NL[key] || key.replaceAll("_", " ")}</span>
+              <span className="shrink-0 font-semibold">-{pct(value)}%</span>
             </div>
           ))}
         </div>
       ) : null}
     </div>
+  );
+}
+
+function VorigJaarVergelijking({vorig_jaar, huidig_wp}) {
+  if (!vorig_jaar) return null;
+  const {wp_jaar, wp_waarde, verschil_abs, verschil_pct, signaal} = vorig_jaar;
+  const isHoog = signaal === "hoog";
+  const isPositief = verschil_abs != null && verschil_abs > 0;
+  const isNegatief = verschil_abs != null && verschil_abs < 0;
+  const pctTekst = verschil_pct != null
+    ? `${isPositief ? "+" : ""}${(verschil_pct * (isNegatief ? -100 : 100)).toFixed(1)}%`
+    : null;
+
+  return (
+    <Panel title="Vergelijking vorig jaar">
+      {isHoog ? (
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-orange-300 bg-orange-50 p-3 text-sm text-orange-900">
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+          <div>
+            <strong>Grote afwijking (&gt;25%)</strong> — controleer of dit plausibel is vóór goedkeuring.
+            Groen label sluit een grote jaarfluctuatie niet uit.
+          </div>
+        </div>
+      ) : null}
+      <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="rounded-md border border-line bg-panel p-3">
+          <div className="text-xs font-medium uppercase text-slate-500 mb-1">{wp_jaar}</div>
+          <div className="text-2xl font-semibold">{wp_waarde}</div>
+          <div className="text-xs text-slate-400 mt-0.5">vorig jaar</div>
+        </div>
+        <div className="rounded-md border border-line bg-panel p-3">
+          <div className="text-xs font-medium uppercase text-slate-500 mb-1">Verschil</div>
+          <div className={classNames(
+            "text-2xl font-semibold",
+            isPositief ? "text-emerald-700" : isNegatief ? "text-red-700" : "text-slate-500",
+          )}>
+            {verschil_abs != null ? (isPositief ? "+" : "") + verschil_abs : "—"}
+          </div>
+          {pctTekst ? <div className="text-xs text-slate-400 mt-0.5">{pctTekst}</div> : null}
+        </div>
+        <div className="rounded-md border border-line bg-panel p-3">
+          <div className="text-xs font-medium uppercase text-slate-500 mb-1">Huidig</div>
+          <div className="text-2xl font-semibold">{huidig_wp ?? "—"}</div>
+          <div className="text-xs text-slate-400 mt-0.5">kandidaat</div>
+        </div>
+      </div>
+    </Panel>
   );
 }
 
