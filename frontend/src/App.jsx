@@ -737,13 +737,185 @@ function BellijstView({api, user, onLogout, batchId, openBatch}) {
   );
 }
 
+function WpKaart({candidate, wp_historie, vorig_jaar, api, onRefresh}) {
+  const [editMode, setEditMode] = useState(false);
+  const [correctWp, setCorrectWp] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function bevestigen() {
+    if (!candidate) return;
+    setBusy(true); setError("");
+    try {
+      if (correctWp && Number(correctWp) !== candidate.wp_kandidaat) {
+        await api.correct(candidate.id, correctWp, reason);
+      } else {
+        await api.approve(candidate.id);
+      }
+      setEditMode(false); setCorrectWp(""); setReason("");
+      await onRefresh();
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+
+  const isHoog = vorig_jaar?.signaal === "hoog";
+  const recentHistorie = wp_historie?.slice(0, 4) || [];
+
+  return (
+    <Panel
+      title="Werkzame personen"
+      onEdit={candidate ? () => setEditMode((e) => !e) : undefined}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          {editMode ? (
+            <input
+              className="focus-ring h-12 w-32 rounded-md border border-line px-3 text-2xl font-bold"
+              type="number" min="0"
+              value={correctWp}
+              onChange={(e) => setCorrectWp(e.target.value)}
+              placeholder={String(candidate?.wp_kandidaat ?? "")}
+              autoFocus
+            />
+          ) : (
+            <div className="text-4xl font-bold text-ink">{candidate?.wp_kandidaat ?? "—"}</div>
+          )}
+          <div className="mt-0.5 text-xs text-slate-400">gevonden door agent</div>
+        </div>
+        <LabelBadge label={candidate?.confidence_label} />
+      </div>
+      <Progress value={pct(candidate?.confidence_score)} total={100} />
+      {candidate?.is_schatting && (
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          Proportionele schatting — niet geschikt voor groen label.
+        </div>
+      )}
+      {isHoog && (
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-orange-300 bg-orange-50 p-2.5 text-xs text-orange-900">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span><strong>&gt;25% afwijking</strong> t.o.v. vorig jaar — controleer voor bevestiging.</span>
+        </div>
+      )}
+      <div className="mt-3 border-t border-line pt-3 text-xs text-slate-500">
+        <span className="font-medium text-slate-700">Reconciliatie: </span>
+        {candidate?.reconciliatie_reden || "—"}
+      </div>
+      {editMode && (
+        <textarea
+          className="focus-ring mt-3 min-h-16 w-full rounded-md border border-line px-3 py-2 text-sm"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Reden voor correctie (optioneel)"
+        />
+      )}
+      {error && <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>}
+      {candidate && (
+        <div className="mt-4 border-t border-line pt-3">
+          <IconButton icon={Check} variant="primary" className="w-full justify-center" onClick={bevestigen} disabled={busy || !candidate.wp_kandidaat}>
+            {busy ? "Bezig…" : editMode && correctWp ? "Corrigeren & bevestigen" : "Bevestigen"}
+          </IconButton>
+          {editMode && (
+            <button className="mt-2 w-full text-center text-xs text-slate-500 underline" onClick={() => { setEditMode(false); setCorrectWp(""); setReason(""); }}>
+              Annuleren
+            </button>
+          )}
+        </div>
+      )}
+      {recentHistorie.length > 0 && (
+        <div className="mt-4 border-t border-line pt-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Historie</div>
+          <div className="space-y-2">
+            {recentHistorie.map((r, i) => (
+              <div key={i} className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">{r.wp_jaar}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{r.wp_waarde}</span>
+                  <StatusPill status={r.status} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function OutboundPanel({candidate, api, batchId, companyId, onRefresh}) {
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatResult, setChatResult] = useState(null);
+  const [belBusy, setBelBusy] = useState(false);
+  const [herBusy, setHerBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function stuurChat() {
+    setChatBusy(true); setError("");
+    try {
+      const res = await api.createChatSession(candidate.id);
+      setChatResult({ok: res.email_sent, recipient: res.email_recipient, chatUrl: res.chat_url});
+      await onRefresh();
+    } catch (err) { setError(err.message); }
+    finally { setChatBusy(false); }
+  }
+
+  async function opBellijst() {
+    setBelBusy(true); setError("");
+    try { await api.bellijst(candidate.id, ""); await onRefresh(); }
+    catch (err) { setError(err.message); }
+    finally { setBelBusy(false); }
+  }
+
+  async function herverwerk() {
+    setHerBusy(true); setError("");
+    try { await api.herverwerk(batchId, companyId); await onRefresh(); }
+    catch (err) { setError(err.message); }
+    finally { setHerBusy(false); }
+  }
+
+  return (
+    <Panel title="Outbound">
+      {error && <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>}
+      <div className="space-y-3">
+        {chatResult ? (
+          <div className="space-y-2">
+            {chatResult.ok && (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                <strong>Email verstuurd</strong> naar {chatResult.recipient}
+              </div>
+            )}
+            <div className="rounded-md border border-line bg-panel p-3">
+              <div className="mb-1 text-xs font-medium text-slate-500">Chat-link</div>
+              <a className="block break-all text-sm font-medium text-etil underline" href={chatResult.chatUrl} target="_blank" rel="noreferrer">
+                {chatResult.chatUrl}
+              </a>
+              <button className="mt-2 text-xs text-slate-500 underline" onClick={() => navigator.clipboard.writeText(chatResult.chatUrl)}>
+                Kopieer link
+              </button>
+            </div>
+          </div>
+        ) : (
+          <IconButton icon={Mail} className="w-full justify-center" disabled={!candidate || chatBusy} onClick={stuurChat}>
+            {chatBusy ? "Bezig…" : "Chat-uitnodiging versturen"}
+          </IconButton>
+        )}
+        <IconButton icon={Phone} className="w-full justify-center" disabled={!candidate || belBusy} onClick={opBellijst}>
+          {belBusy ? "Bezig…" : "Op bellijst zetten"}
+        </IconButton>
+        <div className="border-t border-line pt-3">
+          <IconButton icon={RefreshCw} className="w-full justify-center" disabled={herBusy} onClick={herverwerk}>
+            {herBusy ? "Bezig…" : "Herverwerk"}
+          </IconButton>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState("");
-  const [correctWp, setCorrectWp] = useState("");
-  const [reason, setReason] = useState("");
-  const [chatBusy, setChatBusy] = useState(false);
-  const [chatResult, setChatResult] = useState(null);
 
   async function load() {
     setDetail(await api.company(batchId, companyId));
@@ -754,16 +926,6 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
   }, [batchId, companyId]);
 
   const candidate = detail?.candidate;
-
-  async function action(fn) {
-    setError("");
-    try {
-      await fn();
-      await load();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
 
   return (
     <Shell
@@ -784,13 +946,24 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
                 <Info label="SBI" value={detail.company.sbi_code} />
                 <Info label="CB-er" value={detail.company.cb_er || "-"} />
                 <Info label="KvK" value={detail.company.kvk_nummer || "-"} />
+                {detail.enrichment?.locatie_count_nl != null && (
+                  <Info
+                    label="Vestigingen"
+                    value={`${detail.enrichment.locatie_count_lb ?? "?"} in LB / ${detail.enrichment.locatie_count_nl} NL`}
+                  />
+                )}
               </dl>
-              {detail.enrichment ? <EnrichmentStrip enrichment={detail.enrichment} /> : null}
             </Panel>
+            <ContactgegevensKaart
+              enrichment={detail.enrichment}
+              vastgoed={detail?.vastgoed}
+              api={api}
+              batchId={batchId}
+              companyId={companyId}
+            />
             <WpUitsplitsing wp_historie={detail?.wp_historie} />
             <VastgoedKaart api={api} batchId={batchId} companyId={companyId} vastgoed={detail?.vastgoed} />
-            <WpHistorie wp_historie={detail?.wp_historie} />
-            <Panel title="Gevonden bronnen">
+            <Panel title="Gevonden bronnen" collapsible defaultOpen={false}>
               <div className="space-y-3">
                 {detail.agent_results.map((result, index) => (
                   <div key={`${result.agent_type}-${index}`} className="rounded-md border border-line bg-panel p-3">
@@ -823,10 +996,10 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
                 {!detail.agent_results.length ? <div className="text-sm text-slate-500">Geen bronresultaten</div> : null}
               </div>
             </Panel>
-            <Panel title="Score-uitleg">
+            <Panel title="Score-uitleg" collapsible defaultOpen={false}>
               <ScoreBreakdown breakdown={candidate?.score_breakdown} label={candidate?.confidence_label} />
             </Panel>
-            <VorigJaarVergelijking vorig_jaar={detail?.vorig_jaar} huidig_wp={candidate?.wp_kandidaat} />
+            <VorigJaarVergelijking vorig_jaar={detail?.vorig_jaar} huidig_wp={candidate?.wp_kandidaat} collapsible />
             {detail.pipeline_fouten?.length > 0 && (
               <Panel title="Pipeline-fouten">
                 <div className="space-y-2">
@@ -843,93 +1016,20 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
             )}
           </section>
           <aside className="space-y-5">
-            <Panel title="Kandidaat">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-3xl font-semibold">{candidate?.wp_kandidaat ?? "-"}</div>
-                  <div className="text-sm text-slate-500">Werkzame personen</div>
-                </div>
-                <LabelBadge label={candidate?.confidence_label} />
-              </div>
-              <Progress value={pct(candidate?.confidence_score)} total={100} />
-              {candidate?.is_schatting ? (
-                <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                  <AlertTriangle size={17} /> Schatting: niet geschikt voor groen.
-                </div>
-              ) : null}
-              <div className="mt-4 border-t border-line pt-4 text-sm">
-                <div className="mb-1 font-semibold">Reconciliatie</div>
-                <p className="text-slate-700">{candidate?.reconciliatie_reden || "-"}</p>
-              </div>
-            </Panel>
-            <Panel title="Review">
-              <div className="space-y-3">
-                <IconButton icon={Check} variant="primary" className="w-full justify-center" disabled={!candidate?.wp_kandidaat} onClick={() => action(() => api.approve(candidate.id))}>
-                  Goedkeuren
-                </IconButton>
-                <input className="focus-ring h-10 w-full rounded-md border border-line px-3" value={correctWp} onChange={(event) => setCorrectWp(event.target.value)} placeholder="Gecorrigeerde WP" inputMode="numeric" />
-                <textarea className="focus-ring min-h-24 w-full rounded-md border border-line px-3 py-2" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reden" />
-                <div className="grid grid-cols-2 gap-2">
-                  <IconButton icon={Check} disabled={!correctWp || !candidate} onClick={() => action(() => api.correct(candidate.id, correctWp, reason))}>
-                    Corrigeren
-                  </IconButton>
-                  <IconButton icon={Phone} disabled={!candidate} onClick={() => action(() => api.bellijst(candidate.id, reason))}>
-                    Bellijst
-                  </IconButton>
-                </div>
-                {chatResult ? (
-                  <div className="space-y-2">
-                    {chatResult.ok ? (
-                      <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-                        <strong>Email verstuurd</strong> naar {chatResult.recipient}
-                      </div>
-                    ) : null}
-                    <div className="rounded-md border border-line bg-panel p-3">
-                      <div className="mb-1 text-xs font-medium text-slate-500">Chat-link</div>
-                      <a
-                        className="block break-all text-sm font-medium text-etil underline"
-                        href={chatResult.chatUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {chatResult.chatUrl}
-                      </a>
-                      <button
-                        className="mt-2 text-xs text-slate-500 underline"
-                        onClick={() => navigator.clipboard.writeText(chatResult.chatUrl)}
-                      >
-                        Kopieer link
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <IconButton
-                    icon={Mail}
-                    className="w-full justify-center"
-                    disabled={!candidate || chatBusy}
-                    onClick={async () => {
-                      setChatBusy(true);
-                      try {
-                        const res = await api.createChatSession(candidate.id);
-                        setChatResult({ok: res.email_sent, recipient: res.email_recipient, chatUrl: res.chat_url});
-                        await load();
-                      } catch (err) {
-                        setError(err.message);
-                      } finally {
-                        setChatBusy(false);
-                      }
-                    }}
-                  >
-                    {chatBusy ? "Bezig…" : "Verstuur chat-uitnodiging"}
-                  </IconButton>
-                )}
-                <div className="border-t border-line pt-3">
-                  <IconButton icon={RefreshCw} className="w-full justify-center" onClick={() => action(() => api.herverwerk(batchId, companyId))}>
-                    Herverwerk
-                  </IconButton>
-                </div>
-              </div>
-            </Panel>
+            <WpKaart
+              candidate={candidate}
+              wp_historie={detail?.wp_historie}
+              vorig_jaar={detail?.vorig_jaar}
+              api={api}
+              onRefresh={load}
+            />
+            <OutboundPanel
+              candidate={candidate}
+              api={api}
+              batchId={batchId}
+              companyId={companyId}
+              onRefresh={load}
+            />
           </aside>
         </div>
       ) : null}
@@ -937,15 +1037,20 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
   );
 }
 
-function Panel({title, subtitle, children, onEdit, completeness}) {
+function Panel({title, subtitle, children, onEdit, completeness, collapsible = false, defaultOpen = true}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="rounded-lg border border-line bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-line px-5 py-3">
+      <div
+        className={classNames("flex items-center justify-between px-5 py-3", (!collapsible || open) && "border-b border-line")}
+        style={collapsible ? {cursor: "pointer"} : undefined}
+        onClick={collapsible ? () => setOpen((o) => !o) : undefined}
+      >
         <div>
           <h2 className="text-sm font-semibold text-ink">{title}</h2>
           {subtitle && <p className="mt-0.5 text-xs text-slate-400">{subtitle}</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           {completeness && (
             <span className="text-xs tabular-nums text-slate-400">{completeness.gevuld}/{completeness.totaal}</span>
           )}
@@ -958,9 +1063,14 @@ function Panel({title, subtitle, children, onEdit, completeness}) {
               <Pencil size={14} />
             </button>
           )}
+          {collapsible && (
+            <button className="rounded-md p-1.5 text-slate-400 transition hover:bg-panel hover:text-ink" onClick={() => setOpen((o) => !o)}>
+              {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          )}
         </div>
       </div>
-      <div className="px-5 py-4">{children}</div>
+      {open && <div className="px-5 py-4">{children}</div>}
     </section>
   );
 }
@@ -1267,19 +1377,17 @@ function WpUitsplitsing({wp_historie}) {
 }
 
 const VASTGOED_VELDEN = [
-  {key: "perceel_opp",          label: "Perceeloppervlakte",       unit: "m²", type: "number"},
-  {key: "winkel_opp",           label: "Winkeloppervlakte",        unit: "m²", type: "number"},
-  {key: "kantoor_opp",          label: "Kantooroppervlakte",       unit: "m²", type: "number"},
-  {key: "bedrijfs_opp",         label: "Bedrijfsvloeroppervlakte", unit: "m²", type: "number"},
-  {key: "correspondentieadres", label: "Correspondentieadres",     unit: "",   type: "text"},
-  {key: "uitbreidingsruimte",   label: "Uitbreidingsruimte",       unit: "",   type: "bool"},
-  {key: "seizoensverschillen",  label: "Seizoensverschillen",      unit: "",   type: "bool"},
+  {key: "perceel_opp",         label: "Perceeloppervlakte",  unit: "m²", type: "number"},
+  {key: "winkel_opp",          label: "Winkeloppervlakte",   unit: "m²", type: "number"},
+  {key: "kantoor_opp",         label: "Kantooroppervlakte",  unit: "m²", type: "number"},
+  {key: "bedrijfs_opp",        label: "Bedrijfsvloer",       unit: "m²", type: "number"},
+  {key: "uitbreidingsruimte",  label: "Uitbreiding mogelijk",unit: "",   type: "bool"},
+  {key: "seizoensverschillen", label: "Seizoensverschillen", unit: "",   type: "bool"},
 ];
 
 function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
   const leeg = {perceel_opp: "", winkel_opp: "", kantoor_opp: "", bedrijfs_opp: "",
-                uitbreidingsruimte: null, seizoensverschillen: null,
-                seizoen_toelichting: "", correspondentieadres: ""};
+                uitbreidingsruimte: null, seizoensverschillen: null, seizoen_toelichting: ""};
   const [form, setForm] = useState(() => ({...leeg, ...(initVastgoed || {}),
     perceel_opp: initVastgoed?.perceel_opp ?? "",
     winkel_opp: initVastgoed?.winkel_opp ?? "",
@@ -1304,7 +1412,7 @@ function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
         uitbreidingsruimte: form.uitbreidingsruimte,
         seizoensverschillen: form.seizoensverschillen,
         seizoen_toelichting: form.seizoen_toelichting || null,
-        correspondentieadres: form.correspondentieadres || null,
+        correspondentieadres: initVastgoed?.correspondentieadres ?? null,
       });
       setSaved(true); setBewerken(false);
     } catch (err) { setError(err.message); }
@@ -1315,15 +1423,22 @@ function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
   const gevuld = VASTGOED_VELDEN.filter(({key}) => vg[key] != null && vg[key] !== "").length;
 
   return (
-    <Panel title="Vastgoed & locatie">
-      <Volledigheid gevuld={gevuld} totaal={VASTGOED_VELDEN.length} />
+    <Panel
+      title="Vastgoed & locatie"
+      onEdit={() => setBewerken((b) => !b)}
+      completeness={{gevuld, totaal: VASTGOED_VELDEN.length}}
+    >
       {!bewerken ? (
         <>
-          <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-            {VASTGOED_VELDEN.map(({key, label, unit}) => (
-              <KennisVeld key={key} label={label}
+          <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+            {VASTGOED_VELDEN.map(({key, label, unit, type}) => (
+              <KennisVeld
+                key={key}
+                label={label}
                 value={vg[key] != null && vg[key] !== "" ? vg[key] : null}
-                unit={unit} />
+                unit={type !== "bool" ? unit : ""}
+                tooltip={key === "uitbreidingsruimte" ? "Is er ruimte voor uitbreiding op het perceel?" : key === "seizoensverschillen" ? "Fluctueert het aantal WP sterk per seizoen?" : undefined}
+              />
             ))}
           </dl>
           {vg.seizoensverschillen === true && vg.seizoen_toelichting && (
@@ -1332,25 +1447,22 @@ function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
             </div>
           )}
           {initVastgoed?.updated_at && (
-            <div className="mt-2 text-xs text-slate-400">
+            <p className="mt-3 text-xs text-slate-400">
               Bijgewerkt {new Date(initVastgoed.updated_at).toLocaleDateString("nl-NL")} · {initVastgoed.bron || "handmatig"}
-            </div>
+            </p>
           )}
-          <div className="mt-3 border-t border-line pt-3">
-            <button className="text-sm font-medium text-etil underline" onClick={() => setBewerken(true)}>
-              {gevuld === 0 ? "Gegevens invullen" : "Bewerken"}
-            </button>
-          </div>
         </>
       ) : (
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            {VASTGOED_VELDEN.filter(({type}) => type !== "bool").map(({key, label, unit, type}) => (
+            {VASTGOED_VELDEN.filter(({type}) => type !== "bool").map(({key, label, unit}) => (
               <div key={key}>
-                <label className="mb-1 block text-xs font-medium text-slate-500">{label}{unit ? ` (${unit})` : ""}</label>
-                <input className="focus-ring h-9 w-full rounded-md border border-line px-3 text-sm"
-                  type={type === "number" ? "number" : "text"} min="0"
-                  value={form[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder="—" />
+                <label className="mb-1 block text-xs font-medium text-slate-500">{label} ({unit})</label>
+                <input
+                  className="focus-ring h-9 w-full rounded-md border border-line px-3 text-sm"
+                  type="number" min="0"
+                  value={form[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder="—"
+                />
               </div>
             ))}
           </div>
@@ -1358,9 +1470,9 @@ function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
             {["uitbreidingsruimte", "seizoensverschillen"].map((key) => (
               <div key={key}>
                 <div className="mb-1 text-xs font-medium text-slate-500">
-                  {key === "uitbreidingsruimte" ? "Uitbreidingsruimte" : "Seizoensverschillen"}
+                  {key === "uitbreidingsruimte" ? "Uitbreiding mogelijk" : "Seizoensverschillen"}
                 </div>
-                <div className="flex gap-3 text-sm">
+                <div className="flex gap-4 text-sm">
                   {[true, false, null].map((v) => (
                     <label key={String(v)} className="flex cursor-pointer items-center gap-1.5">
                       <input type="radio" checked={form[key] === v} onChange={() => set(key, v)} />
@@ -1374,16 +1486,86 @@ function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
           {form.seizoensverschillen === true && (
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-500">Toelichting seizoen</label>
-              <textarea className="focus-ring min-h-16 w-full rounded-md border border-line px-3 py-2 text-sm"
+              <textarea
+                className="focus-ring min-h-16 w-full rounded-md border border-line px-3 py-2 text-sm"
                 value={form.seizoen_toelichting || ""} onChange={(e) => set("seizoen_toelichting", e.target.value)}
-                placeholder="Bijv. zomer +30% door terrasmedewerkers" />
+                placeholder="Bijv. zomer +30% door terrasmedewerkers"
+              />
             </div>
           )}
           {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
           <div className="flex items-center gap-3 border-t border-line pt-3">
             <IconButton icon={Check} variant="primary" onClick={save} disabled={saving}>{saving ? "Opslaan…" : "Opslaan"}</IconButton>
             <button className="text-sm text-slate-500 underline" onClick={() => setBewerken(false)}>Annuleren</button>
-            {saved && <span className="text-sm font-medium text-emerald-700"><Check size={14} className="inline" /> Opgeslagen</span>}
+            {saved && <span className="text-sm font-medium text-emerald-700"><Check size={14} className="inline mr-0.5" />Opgeslagen</span>}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function ContactgegevensKaart({enrichment, vastgoed: initVastgoed, api, batchId, companyId}) {
+  const e = enrichment || {};
+  const [bewerken, setBewerken] = useState(false);
+  const [correspondentie, setCorrespondentie] = useState(initVastgoed?.correspondentieadres || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    setSaving(true); setError("");
+    try {
+      const vg = initVastgoed || {};
+      await api.saveVastgoed(batchId, companyId, {
+        perceel_opp: vg.perceel_opp ?? null,
+        winkel_opp: vg.winkel_opp ?? null,
+        kantoor_opp: vg.kantoor_opp ?? null,
+        bedrijfs_opp: vg.bedrijfs_opp ?? null,
+        uitbreidingsruimte: vg.uitbreidingsruimte ?? null,
+        seizoensverschillen: vg.seizoensverschillen ?? null,
+        seizoen_toelichting: vg.seizoen_toelichting ?? null,
+        correspondentieadres: correspondentie || null,
+      });
+      setBewerken(false);
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
+  }
+
+  const gevuld = [e.website_url, e.telefoonnummer, e.email, initVastgoed?.correspondentieadres].filter(Boolean).length;
+
+  return (
+    <Panel
+      title="Contactgegevens"
+      onEdit={() => setBewerken((b) => !b)}
+      completeness={{gevuld, totaal: 4}}
+    >
+      {!bewerken ? (
+        <dl className="grid gap-4 text-sm sm:grid-cols-2">
+          <KennisVeld label="Website" value={e.website_url} type="link" />
+          <KennisVeld label="Telefoon" value={e.telefoonnummer} />
+          <KennisVeld label="E-mail" value={e.email} type="email" />
+          <KennisVeld label="Correspondentieadres" value={initVastgoed?.correspondentieadres} tooltip="Postadres indien afwijkend van vestigingsadres" />
+        </dl>
+      ) : (
+        <div className="space-y-3">
+          <dl className="grid gap-4 text-sm sm:grid-cols-2">
+            <KennisVeld label="Website" value={e.website_url} type="link" />
+            <KennisVeld label="Telefoon" value={e.telefoonnummer} />
+            <KennisVeld label="E-mail" value={e.email} type="email" />
+          </dl>
+          <div className="border-t border-line pt-3">
+            <label className="mb-1 block text-xs font-medium text-slate-500">Correspondentieadres</label>
+            <input
+              className="focus-ring h-9 w-full rounded-md border border-line px-3 text-sm"
+              value={correspondentie}
+              onChange={(ev) => setCorrespondentie(ev.target.value)}
+              placeholder="Postadres indien afwijkend van vestigingsadres"
+            />
+          </div>
+          {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
+          <div className="flex items-center gap-3">
+            <IconButton icon={Check} variant="primary" onClick={save} disabled={saving}>{saving ? "Opslaan…" : "Opslaan"}</IconButton>
+            <button className="text-sm text-slate-500 underline" onClick={() => setBewerken(false)}>Annuleren</button>
           </div>
         </div>
       )}
@@ -1395,27 +1577,27 @@ function WpHistorie({wp_historie}) {
   return (
     <Panel title="WP-historie">
       {!wp_historie?.length ? (
-        <div className="text-sm text-slate-400">Nog geen goedgekeurde records</div>
+        <p className="text-sm text-slate-400">Nog geen goedgekeurde records.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left text-sm">
-            <thead className="text-xs uppercase text-slate-400">
-              <tr>
-                <th className="pb-2 pr-4">Jaar</th>
-                <th className="pb-2 pr-4">WP</th>
-                <th className="pb-2 pr-4">Bron</th>
-                <th className="pb-2 pr-4">Status</th>
+            <thead>
+              <tr className="border-b border-line text-xs font-semibold uppercase tracking-wide text-slate-400">
+                <th className="pb-2 pr-5">Jaar</th>
+                <th className="pb-2 pr-5">WP</th>
+                <th className="pb-2 pr-5">Bron</th>
+                <th className="pb-2 pr-5">Status</th>
                 <th className="pb-2">Goedgekeurd</th>
               </tr>
             </thead>
             <tbody>
               {wp_historie.map((r, i) => (
-                <tr key={i} className="border-t border-line">
-                  <td className="py-2 pr-4 font-semibold">{r.wp_jaar}</td>
-                  <td className="py-2 pr-4 font-semibold text-etil">{r.wp_waarde}</td>
-                  <td className="py-2 pr-4 text-slate-500">{r.bron_type || "—"}</td>
-                  <td className="py-2 pr-4"><StatusPill status={r.status} /></td>
-                  <td className="py-2 text-xs text-slate-400">
+                <tr key={i} className="border-b border-line last:border-0">
+                  <td className="py-2.5 pr-5 font-semibold">{r.wp_jaar}</td>
+                  <td className="py-2.5 pr-5 font-bold text-etil">{r.wp_waarde}</td>
+                  <td className="py-2.5 pr-5 text-slate-500">{r.bron_type || "—"}</td>
+                  <td className="py-2.5 pr-5"><StatusPill status={r.status} /></td>
+                  <td className="py-2.5 text-xs text-slate-400">
                     {r.goedgekeurd_op ? new Date(r.goedgekeurd_op).toLocaleDateString("nl-NL") : "—"}
                   </td>
                 </tr>
@@ -1428,7 +1610,7 @@ function WpHistorie({wp_historie}) {
   );
 }
 
-function VorigJaarVergelijking({vorig_jaar, huidig_wp}) {
+function VorigJaarVergelijking({vorig_jaar, huidig_wp, collapsible}) {
   if (!vorig_jaar) return null;
   const {wp_jaar, wp_waarde, verschil_abs, verschil_pct, signaal} = vorig_jaar;
   const isHoog = signaal === "hoog";
@@ -1439,7 +1621,7 @@ function VorigJaarVergelijking({vorig_jaar, huidig_wp}) {
     : null;
 
   return (
-    <Panel title="Vergelijking vorig jaar">
+    <Panel title="Vergelijking vorig jaar" collapsible={collapsible}>
       {isHoog ? (
         <div className="mb-4 flex items-start gap-2 rounded-md border border-orange-300 bg-orange-50 p-3 text-sm text-orange-900">
           <AlertTriangle size={17} className="mt-0.5 shrink-0" />
