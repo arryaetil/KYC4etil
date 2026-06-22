@@ -110,4 +110,7 @@ async def chat_message(token: str, body: ChatMessageRequest,
             session.antwoorden = result["antwoorden"]
 
     db.commit()
-    return {"reply": result["reply"], "done": result["done"]}
+    response_data = {"reply": result["reply"], "done": result["done"]}
+    if result.get("gegevens") is not None:
+        response_data["gegevens"] = result["gegevens"]
+    return response_data

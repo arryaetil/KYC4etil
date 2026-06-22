@@ -55,9 +55,12 @@ def _parse_response(raw: str) -> dict:
 
 
 _FORMAT_RULES = """ANTWOORDFORMAAT:
-- Antwoord ALTIJD als één geldig JSON-object: {"reply": "<uw bericht>", "done": false}
-- Bij de LAATSTE beurt (als u alle benodigde informatie heeft): {"reply": "<afsluitend bericht>", "done": true, "antwoorden": {<alle verzamelde data>}}
-- GEEN code fences, GEEN markdown, GEEN emojis, GEEN tekst buiten het JSON-object.
+- Antwoord ALTIJD als één geldig JSON-object: {"reply": "<uw bericht>", "done": false, "gegevens": {<alle tot nu toe bekende waarden>}}
+- Het "gegevens" object bevat ALTIJD alle velden uit het schema, met null voor nog onbekende waarden. Werk het bij na elke beurt.
+- Bij de LAATSTE beurt (als de gebruiker het overzicht heeft bevestigd): {"reply": "<afsluitend bericht>", "done": true, "gegevens": {<finale data>}, "antwoorden": {<finale data>}}
+- GEEN code fences, GEEN emojis, GEEN tekst buiten het JSON-object.
+- Je MAG **vetgedrukt** (dubbele sterretjes) gebruiken in de reply-waarde.
+- Gebruik komma's als scheidingsteken tussen waarden wanneer je gegevens samenvat in de reply-tekst.
 - Gebruik \\n voor nieuwe regels in de reply-waarde.
 - Stel maximaal één groep gerelateerde vragen per beurt (max 3-4 vragen per groep).
 - Spreek de gebruiker formeel maar vriendelijk aan (u).
@@ -121,10 +124,14 @@ GESPREKSVERLOOP:
 1. Begroeting + transparantie (wie, waarvoor, review). Vraag bevestiging bedrijfsnaam en rol invuller.
 2. Presenteer de geschatte WP-waarde en vraag: "Klopt dit aantal, of wilt u het corrigeren?"
 3. Vraag of de gebruiker nog een toelichting wil toevoegen.
-4. Bedank en sluit af met done: true.
+4. BEVESTIGINGSSTAP: Verwijs naar het overzicht dat de gebruiker links in beeld ziet. Vraag: "Controleer het overzicht hiernaast. Klopt alles? Zo ja, dan sla ik het op."
+5. Als de gebruiker "ja" zegt: bedank en sluit af met done: true. Als "nee": corrigeer en vraag opnieuw.
 
 Bij de laatste beurt, voeg een "antwoorden" object toe met:
 {{"wp_totaal": <bevestigd of gecorrigeerd getal>, "opmerking": <toelichting of null>}}
+
+GEGEVENS-SCHEMA (gebruik dit voor het "gegevens" object in elke beurt):
+{_ANTWOORDEN_SCHEMA}
 
 {_FORMAT_RULES}"""
 
@@ -143,13 +150,14 @@ GESPREKSVERLOOP (groepeer in ~5-6 beurten):
 3. Man/vrouw, voltijd/deeltijd, percentage werkzaam op locatie (≥60% van de tijd).
 4. Oppervlaktes: perceel, winkel, kantoor, bedrijfsvloer. Uitbreidingsruimte.
 5. Seizoensverschillen en eventuele opmerkingen.
-6. Samenvatting en afsluiting.
+6. BEVESTIGINGSSTAP: Verwijs naar het overzicht dat de gebruiker links in beeld ziet. Vraag: "Controleer het overzicht hiernaast. Klopt alles? Zo ja, dan sla ik het op."
+7. Als de gebruiker "ja" zegt: bedank en sluit af met done: true. Als "nee": corrigeer en vraag opnieuw.
 
 BELANGRIJK:
 - Als de gebruiker een veld niet weet of het is niet van toepassing, accepteer dat en ga door.
-- Zet null voor onbekende velden in het antwoorden-object.
+- Zet null voor onbekende velden in het gegevens/antwoorden-object.
 
-Bij de laatste beurt, voeg een "antwoorden" object toe met dit schema:
+GEGEVENS-SCHEMA (gebruik dit voor het "gegevens" object in elke beurt EN voor "antwoorden" bij de laatste beurt):
 {_ANTWOORDEN_SCHEMA}
 
 {_FORMAT_RULES}"""
@@ -168,15 +176,21 @@ async def get_chat_reply(messages: list[dict], session: ChatSession,
 
     response = await client.chat.completions.create(
         model=settings.openai_model,
-        max_tokens=600,
+        max_tokens=900,
         messages=[{"role": "system", "content": system_text}] + messages,
     )
 
     raw = response.choices[0].message.content.strip()
     parsed = _parse_response(raw)
 
+    gegevens = parsed.get("gegevens")
+    antwoorden = parsed.get("antwoorden")
+    if not antwoorden and parsed.get("done") and gegevens:
+        antwoorden = gegevens
+
     return {
         "reply": parsed.get("reply", raw),
         "done": bool(parsed.get("done", False)),
-        "antwoorden": parsed.get("antwoorden"),
+        "antwoorden": antwoorden,
+        "gegevens": gegevens,
     }
