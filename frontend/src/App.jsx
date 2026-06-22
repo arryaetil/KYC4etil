@@ -1541,8 +1541,8 @@ function ChatForm({token}) {
             const g = gegevens || {};
             const wpTotaal = typeof g.wp_totaal === "number" ? g.wp_totaal : null;
             const preWp = session?.pre_fill_wp;
-            const heeftChat = messages.some((m) => m.role === "assistant");
-            const toonWpBevestiging = heeftChat && preWp && wpTotaal == null;
+            const aantalUserBerichten = messages.filter((m) => m.role === "user").length;
+            const toonWpBevestiging = aantalUserBerichten >= 1 && preWp && wpTotaal == null;
             const toonDienstverband = heeftChat && wpTotaal != null && g.eigen_personeel == null;
             const toonVerdeling = heeftChat && wpTotaal != null && g.eigen_personeel != null && g.man == null;
 
