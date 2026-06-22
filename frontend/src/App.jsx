@@ -32,12 +32,6 @@ const LABELS = {
   laag: {text: "Rood", dot: "bg-red-500", bg: "bg-red-50", textColor: "text-red-800"},
 };
 
-const STRATEGIE_LABELS = {
-  auto: "Auto",
-  gerichte_chat: "Gerichte chat",
-  volledige_chat_of_bellijst: "Volledige chat of bellijst",
-  bellijst: "Bellijst",
-};
 
 function pct(value) {
   if (!value) return 0;
@@ -339,7 +333,6 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
   const [batch, setBatch] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [label, setLabel] = useState("");
-  const [strategie, setStrategie] = useState("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -362,10 +355,9 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
 
   const filtered = useMemo(() => companies.filter((company) => {
     if (label === "fouten") return !!company.pipeline_error;
-    const matchesStrategie = !strategie || company.strategie === strategie;
     const text = `${company.naam || ""} ${company.gemeente || ""}`.toLowerCase();
-    return matchesStrategie && text.includes(search.toLowerCase());
-  }), [companies, label, strategie, search]);
+    return text.includes(search.toLowerCase());
+  }), [companies, label, search]);
 
   async function approveAll() {
     try {
@@ -470,10 +462,6 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
           <option value="laag">Rood</option>
           <option value="fouten">{batch?.fouten > 0 ? `Fouten (${batch.fouten})` : "Fouten"}</option>
         </select>
-        <select className="focus-ring h-11 rounded-md border border-line bg-white px-3" value={strategie} onChange={(event) => setStrategie(event.target.value)}>
-          <option value="">Alle strategieen</option>
-          {Object.entries(STRATEGIE_LABELS).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-        </select>
       </div>
       {batch ? (
         <div className="mb-4 grid gap-3 md:grid-cols-3">
@@ -498,7 +486,6 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
               <th className="px-4 py-3">Vestiging</th>
               <th className="px-4 py-3">WP</th>
               <th className="px-4 py-3">Confidence</th>
-              <th className="px-4 py-3">Strategie</th>
               <th className="px-4 py-3">Status</th>
             </tr>
           </thead>
@@ -524,7 +511,6 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
                     <span className="text-xs text-slate-500">{pct(company.confidence_score)}%</span>
                   </div>
                 </td>
-                <td className="px-4 py-3">{STRATEGIE_LABELS[company.strategie] || company.strategie || "-"}</td>
                 <td className="px-4 py-3"><StatusPill status={company.status} /></td>
               </tr>
             ))}
