@@ -314,18 +314,34 @@ class CompanyUpdateBody(BaseModel):
     sbi_code: str | None = None
     cb_er: str | None = None
     kvk_nummer: str | None = None
+    website_url: str | None = None
+    telefoonnummer: str | None = None
+    email: str | None = None
+
+
+_COMPANY_FIELDS = {"naam", "gemeente", "adres", "sbi_code", "cb_er", "kvk_nummer"}
+_ENRICHMENT_FIELDS = {"website_url", "telefoonnummer", "email"}
 
 
 @router.patch("/{batch_id}/companies/{company_id}")
 def update_company(batch_id: str, company_id: str, body: CompanyUpdateBody,
                    db: Session = Depends(get_db),
                    current_user=Depends(get_current_user)):
-    """Werkt vaste vestigingsgegevens bij (naam, adres, SBI, etc.)."""
+    """Werkt vestigingsgegevens en contactvelden bij."""
     comp = db.get(Company, company_id)
     if not comp or comp.batch_id != batch_id:
         raise HTTPException(404, "company niet gevonden")
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(comp, field, value)
+    data = body.model_dump(exclude_unset=True)
+    for field in _COMPANY_FIELDS & data.keys():
+        setattr(comp, field, data[field])
+    contact = {f: data[f] for f in _ENRICHMENT_FIELDS if f in data}
+    if contact:
+        enr = comp.enrichment
+        if enr is None:
+            enr = Enrichment(company_id=company_id)
+            db.add(enr)
+        for field, value in contact.items():
+            setattr(enr, field, value)
     db.commit()
     return {"company_id": company_id}
 
