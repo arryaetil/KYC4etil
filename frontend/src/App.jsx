@@ -1146,7 +1146,7 @@ function OverzichtPanel({gegevens}) {
   }, [gegevens]);
 
   return (
-    <div className="flex flex-col gap-4 overflow-y-auto rounded-lg border border-line bg-white p-4 shadow-sm" style={{maxHeight: "85vh"}}>
+    <div className="flex flex-col gap-4 overflow-y-auto rounded-lg border border-line bg-white p-4 shadow-sm max-h-[40vh] md:max-h-[85vh]">
       <div>
         <div className="mb-2 flex items-center justify-between text-sm">
           <span className="font-semibold text-slate-700">Voortgang</span>
@@ -1308,7 +1308,7 @@ function ChatForm({token}) {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#eef2f5] px-4 py-8">
-      <div className="grid w-full gap-4" style={{maxWidth: "1000px", gridTemplateColumns: "320px 1fr"}}>
+      <div className="mx-auto grid w-full max-w-[1000px] gap-4 md:grid-cols-[320px_1fr]">
         <OverzichtPanel gegevens={gegevens} />
 
         <div className="flex flex-col rounded-lg border border-line bg-white shadow-sm" style={{maxHeight: "90vh"}}>
