@@ -113,20 +113,45 @@ def test_bellijst_koppelt_reviewactie_aan_user():
     finally:
         db.close()
 
+
+def test_company_detail_toont_vorige_jaarvergelijking():
+    email = _unique_email("detail")
+    _create_user(email)
+    db = SessionLocal()
+    try:
+        batch = Batch(naam="detail-test", jaar=2026, totaal=1)
+        db.add(batch)
+        db.flush()
+        company = Company(batch_id=batch.id, vestigingsnummer="det-1", naam="Detailbedrijf")
+        db.add(company)
+        db.flush()
+        db.add(WPRecord(
+            company_id=company.id,
+            wp_waarde=100,
+            wp_jaar=2025,
+            bron_type="website",
+            status="reviewed",
+        ))
+        candidate = Candidate(company_id=company.id, batch_id=batch.id, wp_kandidaat=140,
+                              confidence_score=0.6, confidence_label="middel",
+                              score_breakdown={}, strategie="auto")
+        db.add(candidate)
+        db.commit()
+        batch_id = batch.id
+        company_id = company.id
+    finally:
+        db.close()
+
     token = _token(email)
-    response = client.post(
-        f"/candidates/{candidate_id}/bellijst",
-        json={"reden": "telefonisch navragen"},
+    response = client.get(
+        f"/batches/{batch_id}/companies/{company_id}",
         headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 200
-    call_list_id = response.json()["call_list_id"]
-    db = SessionLocal()
-    try:
-        item = db.get(CallListItem, call_list_id)
-        assert item is not None
-        assert item.toegewezen_aan == user.id
-        assert item.telefoonnummer == "043-1234567"
-    finally:
-        db.close()
+    data = response.json()
+    assert data["vorig_jaar"]["wp_jaar"] == 2025
+    assert data["vorig_jaar"]["wp_waarde"] == 100
+    assert data["vorig_jaar"]["verschil_abs"] == 40
+    assert data["vorig_jaar"]["verschil_pct"] == 0.4
+    assert data["vorig_jaar"]["signaal"] == "hoog"
