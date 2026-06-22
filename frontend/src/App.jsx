@@ -786,6 +786,9 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
               </dl>
               {detail.enrichment ? <EnrichmentStrip enrichment={detail.enrichment} /> : null}
             </Panel>
+            <WpUitsplitsing wp_historie={detail?.wp_historie} />
+            <VastgoedKaart api={api} batchId={batchId} companyId={companyId} vastgoed={detail?.vastgoed} />
+            <WpHistorie wp_historie={detail?.wp_historie} />
             <Panel title="Gevonden bronnen">
               <div className="space-y-3">
                 {detail.agent_results.map((result, index) => (
@@ -1123,6 +1126,250 @@ function ScoreBreakdown({breakdown, label}) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function KennisVeld({label, value, unit}) {
+  const isEmpty = value === null || value === undefined || value === "";
+  return (
+    <div>
+      <dt className="text-xs font-medium uppercase text-slate-400">{label}</dt>
+      <dd className={classNames("mt-0.5 font-medium", isEmpty ? "text-slate-300" : "text-slate-800")}>
+        {isEmpty ? "—" : (unit ? `${value} ${unit}` : String(value))}
+      </dd>
+    </div>
+  );
+}
+
+function WpUitsplitsing({wp_historie}) {
+  const record = wp_historie?.[0];
+  if (!record) return null;
+
+  const heeftUitsplitsing = [record.man, record.vrouw, record.voltijd, record.deeltijd,
+    record.eigen_personeel, record.uitzend, record.detachering, record.wsw].some((v) => v != null);
+
+  if (!heeftUitsplitsing) return (
+    <Panel title="WP-uitsplitsing">
+      <div className="text-sm text-slate-400">Uitsplitsing nog niet beschikbaar voor {record.wp_jaar} — komt via chat of belactie.</div>
+    </Panel>
+  );
+
+  return (
+    <Panel title={`WP-uitsplitsing ${record.wp_jaar}`}>
+      <div className="space-y-4 text-sm">
+        {(record.man != null || record.vrouw != null) && (
+          <div>
+            <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Man / vrouw</div>
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <KennisVeld label="Man" value={record.man} />
+              <KennisVeld label="Vrouw" value={record.vrouw} />
+            </dl>
+          </div>
+        )}
+        {(record.voltijd != null || record.deeltijd != null) && (
+          <div>
+            <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Voltijd / deeltijd</div>
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <KennisVeld label="Voltijd (≥12u)" value={record.voltijd} />
+              <KennisVeld label="Deeltijd (&lt;12u)" value={record.deeltijd} />
+              {record.pct_op_locatie != null && (
+                <KennisVeld label="% op locatie" value={Math.round(record.pct_op_locatie * 100)} unit="%" />
+              )}
+            </dl>
+          </div>
+        )}
+        {(record.eigen_personeel != null || record.uitzend != null) && (
+          <div>
+            <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Type personeel</div>
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <KennisVeld label="Eigen personeel" value={record.eigen_personeel} />
+              <KennisVeld label="Uitzend" value={record.uitzend} />
+              <KennisVeld label="Detachering" value={record.detachering} />
+              <KennisVeld label="WSW" value={record.wsw} />
+            </dl>
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+const VASTGOED_VELDEN = [
+  {key: "perceel_opp",     label: "Perceeloppervlakte",          unit: "m²", type: "number"},
+  {key: "winkel_opp",      label: "Winkeloppervlakte",           unit: "m²", type: "number"},
+  {key: "kantoor_opp",     label: "Kantooroppervlakte",          unit: "m²", type: "number"},
+  {key: "bedrijfs_opp",    label: "Bedrijfsvloeroppervlakte",    unit: "m²", type: "number"},
+  {key: "correspondentieadres", label: "Correspondentieadres",  unit: "",   type: "text"},
+];
+
+function VastgoedKaart({api, batchId, companyId, vastgoed: initVastgoed}) {
+  const leeg = {perceel_opp: "", winkel_opp: "", kantoor_opp: "", bedrijfs_opp: "",
+                uitbreidingsruimte: null, seizoensverschillen: null,
+                seizoen_toelichting: "", correspondentieadres: ""};
+  const [form, setForm] = useState(() => ({...leeg, ...(initVastgoed || {}),
+    perceel_opp: initVastgoed?.perceel_opp ?? "",
+    winkel_opp: initVastgoed?.winkel_opp ?? "",
+    kantoor_opp: initVastgoed?.kantoor_opp ?? "",
+    bedrijfs_opp: initVastgoed?.bedrijfs_opp ?? "",
+  }));
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(!!initVastgoed);
+
+  function set(key, value) {
+    setForm((prev) => ({...prev, [key]: value}));
+    setSaved(false);
+  }
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      const body = {
+        perceel_opp: form.perceel_opp !== "" ? Number(form.perceel_opp) : null,
+        winkel_opp: form.winkel_opp !== "" ? Number(form.winkel_opp) : null,
+        kantoor_opp: form.kantoor_opp !== "" ? Number(form.kantoor_opp) : null,
+        bedrijfs_opp: form.bedrijfs_opp !== "" ? Number(form.bedrijfs_opp) : null,
+        uitbreidingsruimte: form.uitbreidingsruimte,
+        seizoensverschillen: form.seizoensverschillen,
+        seizoen_toelichting: form.seizoen_toelichting || null,
+        correspondentieadres: form.correspondentieadres || null,
+      };
+      await api.saveVastgoed(batchId, companyId, body);
+      setSaved(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const heeftData = initVastgoed && Object.values(initVastgoed).some((v) => v != null && v !== "");
+
+  return (
+    <Panel title="Vastgoed & locatie">
+      {!open ? (
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-slate-400">Nog geen vastgoedgegevens ingevuld</span>
+          <button className="text-sm font-medium text-etil underline" onClick={() => setOpen(true)}>Invullen</button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {heeftData && initVastgoed?.updated_at ? (
+            <div className="text-xs text-slate-400">
+              Laatst bijgewerkt: {new Date(initVastgoed.updated_at).toLocaleString("nl-NL", {day: "2-digit", month: "2-digit", year: "numeric"})}
+              {initVastgoed.bron ? ` · bron: ${initVastgoed.bron}` : ""}
+            </div>
+          ) : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {VASTGOED_VELDEN.map(({key, label, unit, type}) => (
+              <div key={key}>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  {label}{unit ? ` (${unit})` : ""}
+                </label>
+                {type === "number" ? (
+                  <input
+                    className="focus-ring h-9 w-full rounded-md border border-line px-3 text-sm"
+                    type="number" min="0"
+                    value={form[key] ?? ""}
+                    onChange={(e) => set(key, e.target.value)}
+                    placeholder="—"
+                  />
+                ) : (
+                  <input
+                    className="focus-ring h-9 w-full rounded-md border border-line px-3 text-sm"
+                    value={form[key] ?? ""}
+                    onChange={(e) => set(key, e.target.value)}
+                    placeholder="—"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <div className="mb-1 text-xs font-medium text-slate-500">Uitbreidingsruimte</div>
+              <div className="flex gap-3 text-sm">
+                {[true, false, null].map((v) => (
+                  <label key={String(v)} className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" checked={form.uitbreidingsruimte === v}
+                      onChange={() => set("uitbreidingsruimte", v)} />
+                    {v === true ? "Ja" : v === false ? "Nee" : "Onbekend"}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-xs font-medium text-slate-500">Seizoensverschillen</div>
+              <div className="flex gap-3 text-sm">
+                {[true, false, null].map((v) => (
+                  <label key={String(v)} className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" checked={form.seizoensverschillen === v}
+                      onChange={() => set("seizoensverschillen", v)} />
+                    {v === true ? "Ja" : v === false ? "Nee" : "Onbekend"}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          {form.seizoensverschillen === true && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">Toelichting seizoensverschillen</label>
+              <textarea
+                className="focus-ring min-h-16 w-full rounded-md border border-line px-3 py-2 text-sm"
+                value={form.seizoen_toelichting || ""}
+                onChange={(e) => set("seizoen_toelichting", e.target.value)}
+                placeholder="Bijv. zomer +30% door terrasmedewerkers"
+              />
+            </div>
+          )}
+          {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
+          <div className="flex items-center gap-3 border-t border-line pt-3">
+            <IconButton icon={Check} variant="primary" onClick={save} disabled={saving}>
+              {saving ? "Opslaan…" : "Opslaan"}
+            </IconButton>
+            {saved ? <span className="text-sm font-medium text-emerald-700"><Check size={14} className="inline" /> Opgeslagen</span> : null}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function WpHistorie({wp_historie}) {
+  if (!wp_historie?.length) return null;
+  return (
+    <Panel title="WP-historie">
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-sm">
+          <thead className="text-xs uppercase text-slate-400">
+            <tr>
+              <th className="pb-2 pr-4">Jaar</th>
+              <th className="pb-2 pr-4">WP</th>
+              <th className="pb-2 pr-4">Bron</th>
+              <th className="pb-2 pr-4">Status</th>
+              <th className="pb-2">Goedgekeurd</th>
+            </tr>
+          </thead>
+          <tbody>
+            {wp_historie.map((r, i) => (
+              <tr key={i} className="border-t border-line">
+                <td className="py-2 pr-4 font-semibold">{r.wp_jaar}</td>
+                <td className="py-2 pr-4 font-semibold text-etil">{r.wp_waarde}</td>
+                <td className="py-2 pr-4 text-slate-500">{r.bron_type || "—"}</td>
+                <td className="py-2 pr-4"><StatusPill status={r.status} /></td>
+                <td className="py-2 text-slate-400 text-xs">
+                  {r.goedgekeurd_op
+                    ? new Date(r.goedgekeurd_op).toLocaleDateString("nl-NL", {day: "2-digit", month: "2-digit", year: "numeric"})
+                    : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   );
 }
 

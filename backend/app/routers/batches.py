@@ -4,12 +4,13 @@ import asyncio
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import SessionLocal, get_db
 from ..models import (AgentResult, Batch, CallListItem, Candidate, ChatSession,
-                      Company, Enrichment, PipelineRun, WPRecord)
+                      Company, Enrichment, PipelineRun, VastgoedRecord, WPRecord)
 from ..pipeline.runner import run_batch, verwerk_company
 
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
@@ -280,4 +281,64 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
             "score_breakdown": cand.score_breakdown,
             "strategie": cand.strategie, "status": cand.status},
         "vorig_jaar": vorige,
+        "wp_historie": [{
+            "wp_jaar": r.wp_jaar, "wp_waarde": r.wp_waarde,
+            "bron_type": r.bron_type, "status": r.status,
+            "eigen_personeel": r.eigen_personeel, "uitzend": r.uitzend,
+            "detachering": r.detachering, "wsw": r.wsw,
+            "man": r.man, "vrouw": r.vrouw,
+            "voltijd": r.voltijd, "deeltijd": r.deeltijd,
+            "pct_op_locatie": r.pct_op_locatie,
+            "goedgekeurd_op": r.goedgekeurd_op.isoformat() + "Z" if r.goedgekeurd_op else None,
+        } for r in db.query(WPRecord).filter_by(company_id=company_id)
+                       .order_by(WPRecord.wp_jaar.desc()).all()],
+        "vastgoed": comp.vastgoed and {
+            "perceel_opp": comp.vastgoed.perceel_opp,
+            "winkel_opp": comp.vastgoed.winkel_opp,
+            "kantoor_opp": comp.vastgoed.kantoor_opp,
+            "bedrijfs_opp": comp.vastgoed.bedrijfs_opp,
+            "uitbreidingsruimte": comp.vastgoed.uitbreidingsruimte,
+            "seizoensverschillen": comp.vastgoed.seizoensverschillen,
+            "seizoen_toelichting": comp.vastgoed.seizoen_toelichting,
+            "correspondentieadres": comp.vastgoed.correspondentieadres,
+            "bron": comp.vastgoed.bron,
+            "updated_at": comp.vastgoed.updated_at.isoformat() + "Z" if comp.vastgoed.updated_at else None,
+        },
     }
+
+
+class VastgoedBody(BaseModel):
+    perceel_opp: int | None = None
+    winkel_opp: int | None = None
+    kantoor_opp: int | None = None
+    bedrijfs_opp: int | None = None
+    uitbreidingsruimte: bool | None = None
+    seizoensverschillen: bool | None = None
+    seizoen_toelichting: str | None = None
+    correspondentieadres: str | None = None
+
+
+@router.put("/{batch_id}/companies/{company_id}/vastgoed")
+def upsert_vastgoed(batch_id: str, company_id: str, body: VastgoedBody,
+                    db: Session = Depends(get_db),
+                    current_user=Depends(get_current_user)):
+    """Maakt een vastgoed-record aan of overschrijft het bestaande (upsert)."""
+    comp = db.get(Company, company_id)
+    if not comp or comp.batch_id != batch_id:
+        raise HTTPException(404, "company niet gevonden")
+
+    vg = comp.vastgoed
+    if vg is None:
+        vg = VastgoedRecord(company_id=company_id, bron="handmatig",
+                            ingevoerd_door=current_user.id)
+        db.add(vg)
+    else:
+        vg.bron = "handmatig"
+        vg.ingevoerd_door = current_user.id
+
+    for field, value in body.model_dump(exclude_unset=False).items():
+        setattr(vg, field, value)
+    vg.updated_at = datetime.utcnow()
+    db.commit()
+    return {"company_id": company_id, "bron": vg.bron,
+            "updated_at": vg.updated_at.isoformat() + "Z"}

@@ -59,6 +59,7 @@ class Company(Base):
     enrichment: Mapped["Enrichment | None"] = relationship(back_populates="company", uselist=False)
     agent_results: Mapped[list["AgentResult"]] = relationship(back_populates="company")
     candidate: Mapped["Candidate | None"] = relationship(back_populates="company", uselist=False)
+    vastgoed: Mapped["VastgoedRecord | None"] = relationship(back_populates="company", uselist=False)
 
 
 class Enrichment(Base):
@@ -182,6 +183,26 @@ class CallListItem(Base):
     notities: Mapped[str | None] = mapped_column(Text)
     resultaat_wp: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class VastgoedRecord(Base):
+    __tablename__ = "vastgoed_records"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), unique=True)
+    perceel_opp: Mapped[int | None] = mapped_column(Integer)       # m²
+    winkel_opp: Mapped[int | None] = mapped_column(Integer)        # m²
+    kantoor_opp: Mapped[int | None] = mapped_column(Integer)       # m²
+    bedrijfs_opp: Mapped[int | None] = mapped_column(Integer)      # m²
+    uitbreidingsruimte: Mapped[bool | None] = mapped_column(Boolean)
+    seizoensverschillen: Mapped[bool | None] = mapped_column(Boolean)
+    seizoen_toelichting: Mapped[str | None] = mapped_column(Text)
+    correspondentieadres: Mapped[str | None] = mapped_column(Text)
+    bron: Mapped[str | None] = mapped_column(String(50))  # chat|handmatig|import
+    ingevoerd_door: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    company: Mapped["Company"] = relationship(back_populates="vastgoed")
 
 
 class PipelineRun(Base):
