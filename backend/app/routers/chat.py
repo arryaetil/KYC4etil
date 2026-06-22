@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..chat_utils import lookup_session
 from ..database import get_db
 from ..models import ChatSession, Company
 
@@ -31,11 +32,12 @@ DEFAULT_VRAGEN = [
 @router.get("/{token}")
 def get_chat_session(token: str, db: Session = Depends(get_db)):
     """Haalt chat-sessie op op basis van token. Geen auth vereist."""
-    session = db.query(ChatSession).filter_by(token_hash=token).first()
-    if not session:
-        raise HTTPException(404, "Chat-sessie niet gevonden of verlopen")
+    session = lookup_session(token, db)
     if session.status == "completed":
         return {"status": "completed"}
+    if session.status in ("created", "sent"):
+        session.status = "opened"
+        db.commit()
     comp = db.get(Company, session.company_id)
     return {
         "bedrijfsnaam": comp.naam if comp else "Onbekend bedrijf",
@@ -44,6 +46,7 @@ def get_chat_session(token: str, db: Session = Depends(get_db)):
         "pre_fill_wp": session.pre_fill_wp,
         "status": session.status,
         "vragen": session.vragen if session.vragen else DEFAULT_VRAGEN,
+        "messages": session.messages or [],
     }
 
 
@@ -53,10 +56,8 @@ class ChatSubmit(BaseModel):
 
 @router.post("/{token}/submit")
 def submit_chat(token: str, body: ChatSubmit, db: Session = Depends(get_db)):
-    """Slaat antwoorden op en markeert de sessie als afgerond."""
-    session = db.query(ChatSession).filter_by(token_hash=token).first()
-    if not session:
-        raise HTTPException(404, "Chat-sessie niet gevonden of verlopen")
+    """Slaat antwoorden op en markeert de sessie als afgerond (fallback voor formulier)."""
+    session = lookup_session(token, db)
     if session.status == "completed":
         raise HTTPException(409, "Deze link is al gebruikt")
 
