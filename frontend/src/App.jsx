@@ -1038,8 +1038,8 @@ function DetailView({api, user, onLogout, batchId, companyId, openBatch}) {
   );
 }
 
-function Panel({title, subtitle, children, onEdit, completeness, collapsible = false, defaultOpen = true}) {
-  const [open, setOpen] = useState(defaultOpen);
+function Panel({title, subtitle, children, onEdit, completeness, collapsible = false, defaultOpen}) {
+  const [open, setOpen] = useState(defaultOpen !== undefined ? defaultOpen : !collapsible);
   return (
     <section className="rounded-lg border border-line bg-white shadow-sm">
       <div
