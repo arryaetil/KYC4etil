@@ -1386,6 +1386,44 @@ function VerdelingFormulier({wpTotaal, onSubmit, disabled}) {
   );
 }
 
+function CorrespondentieadresFormulier({vestigingsadres, onSubmit, disabled}) {
+  const [keuze, setKeuze] = useState(null);
+  const [adres, setAdres] = useState("");
+
+  return (
+    <div className="rounded-lg border border-etil/30 bg-etil/5 p-3">
+      <div className="mb-2 text-xs font-semibold uppercase text-etil">Correspondentieadres</div>
+      <div className="mb-2 text-sm text-slate-700">Is het correspondentieadres hetzelfde als het vestigingsadres{vestigingsadres ? ` (${vestigingsadres})` : ""}?</div>
+      {keuze === null && (
+        <div className="flex gap-2">
+          <button type="button" disabled={disabled}
+            onClick={() => { setKeuze("ja"); onSubmit("Correspondentieadres: zelfde als vestigingsadres"); }}
+            className="focus-ring flex-1 rounded-md bg-etil px-3 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40">
+            Ja, zelfde adres
+          </button>
+          <button type="button" disabled={disabled} onClick={() => setKeuze("nee")}
+            className="focus-ring flex-1 rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-panel disabled:opacity-40">
+            Nee, ander adres
+          </button>
+        </div>
+      )}
+      {keuze === "nee" && (
+        <div className="flex gap-2">
+          <input type="text"
+            className="focus-ring h-10 flex-1 rounded-md border border-line px-3 text-sm"
+            value={adres} onChange={(e) => setAdres(e.target.value)}
+            placeholder="Correspondentieadres" autoFocus disabled={disabled} />
+          <button type="button" disabled={!adres.trim() || disabled}
+            onClick={() => onSubmit(`Correspondentieadres: ${adres.trim()}`)}
+            className="focus-ring rounded-md bg-etil px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40">
+            Verstuur
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChatForm({token}) {
   const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
   const [session, setSession] = useState(null);
@@ -1544,7 +1582,8 @@ function ChatForm({token}) {
             const aantalUserBerichten = messages.filter((m) => m.role === "user").length;
             const toonWpDienst = !typing && aantalUserBerichten >= 1 && preWp && g.eigen_personeel == null;
             const toonVerdeling = !typing && aantalUserBerichten >= 1 && wpTotaal != null && g.eigen_personeel != null && g.man == null;
-            const toonFormulier = toonWpDienst || toonVerdeling;
+            const toonCorrespondentie = !typing && aantalUserBerichten >= 1 && g.man != null && g.correspondentieadres == null;
+            const toonFormulier = toonWpDienst || toonVerdeling || toonCorrespondentie;
 
             async function sendText(text) {
               const updated = [...messages, {role: "user", content: text}];
@@ -1562,6 +1601,11 @@ function ChatForm({token}) {
                 {toonVerdeling && (
                   <div className="p-3">
                     <VerdelingFormulier wpTotaal={wpTotaal} disabled={typing} onSubmit={sendText} />
+                  </div>
+                )}
+                {toonCorrespondentie && (
+                  <div className="p-3">
+                    <CorrespondentieadresFormulier vestigingsadres={g.adres} disabled={typing} onSubmit={sendText} />
                   </div>
                 )}
                 {!toonFormulier && (
