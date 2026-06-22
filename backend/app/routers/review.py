@@ -1,10 +1,12 @@
-import csv
 import io
 import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -205,32 +207,126 @@ def doorvoeren_bellijst(item_id: str, db: Session = Depends(get_db),
     return {"wp_record_id": rec.id, "wp_waarde": rec.wp_waarde}
 
 
-@router.get("/batches/{batch_id}/export.csv")
-def export_csv(batch_id: str, db: Session = Depends(get_db)):
-    """Export van goedgekeurde records voor het Vestigingsregister."""
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["vestigingsnummer", "naam", "wp_waarde", "wp_jaar", "bron_type",
-                "bron_url", "status"])
-    for rec in (db.query(WPRecord).join(Company, WPRecord.company_id == Company.id)
-                .filter(Company.batch_id == batch_id)):
-        comp = db.get(Company, rec.company_id)
-        w.writerow([comp.vestigingsnummer, comp.naam, rec.wp_waarde, rec.wp_jaar,
-                    rec.bron_type, rec.bron_url, rec.status])
-    buf.seek(0)
-    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
-                             headers={"Content-Disposition": f"attachment; filename=export_{batch_id}.csv"})
+_ETIL_TEAL = "115E59"
+_HEADER_FONT = Font(bold=True, color="FFFFFF", name="Calibri", size=11)
+_BODY_FONT = Font(name="Calibri", size=11)
+_STRIPE = PatternFill("solid", fgColor="F0FAFA")
+_THIN = Side(style="thin", color="D1D5DB")
+_BORDER = Border(bottom=_THIN)
 
 
-@router.get("/batches/{batch_id}/bellijst.csv")
-def export_bellijst(batch_id: str, db: Session = Depends(get_db)):
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["naam", "gemeente", "telefoonnummer", "reden", "status"])
-    for item in (db.query(CallListItem).join(Company, CallListItem.company_id == Company.id)
-                 .filter(Company.batch_id == batch_id)):
-        comp = db.get(Company, item.company_id)
-        w.writerow([comp.naam, comp.gemeente, item.telefoonnummer, item.reden, item.status])
+def _style_sheet(ws, headers: list[str], col_widths: list[int]) -> None:
+    fill = PatternFill("solid", fgColor=_ETIL_TEAL)
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = _HEADER_FONT
+        cell.fill = fill
+        cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=False)
+        ws.column_dimensions[get_column_letter(col_idx)].width = col_widths[col_idx - 1]
+    ws.row_dimensions[1].height = 20
+    ws.freeze_panes = "A2"
+
+
+def _style_row(ws, row_idx: int, n_cols: int) -> None:
+    stripe = row_idx % 2 == 0
+    for col_idx in range(1, n_cols + 1):
+        cell = ws.cell(row=row_idx, column=col_idx)
+        cell.font = _BODY_FONT
+        cell.alignment = Alignment(vertical="center")
+        if stripe:
+            cell.fill = _STRIPE
+        cell.border = _BORDER
+
+
+def _wb_response(wb: Workbook, filename: str) -> StreamingResponse:
+    buf = io.BytesIO()
+    wb.save(buf)
     buf.seek(0)
-    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
-                             headers={"Content-Disposition": f"attachment; filename=bellijst_{batch_id}.csv"})
+    media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return StreamingResponse(iter([buf.getvalue()]), media_type=media,
+                             headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+_CONF_LABELS = {"hoog": "Groen", "middel": "Geel", "laag": "Rood"}
+
+
+@router.get("/batches/{batch_id}/export.xlsx")
+def export_xlsx(batch_id: str, db: Session = Depends(get_db)):
+    """Export van alle WP-records voor het Vestigingsregister als Excel."""
+    batch = db.get(Batch, batch_id)
+    naam = (batch.naam or batch_id) if batch else batch_id
+
+    headers = [
+        "Vestigingsnummer", "Naam", "Gemeente", "Adres", "SBI-code", "CB-er", "KvK",
+        "WP", "Jaar", "Bron", "Bron-URL", "Status", "Betrouwbaarheid",
+        "Man", "Vrouw", "Voltijd", "Deeltijd",
+        "Eigen personeel", "Uitzend", "Detachering", "WSW",
+        "% op locatie",
+    ]
+    widths = [18, 34, 18, 28, 10, 10, 14, 7, 6, 14, 40, 14, 14,
+              7, 7, 8, 8, 16, 9, 13, 7, 12]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Vestigingsregister"
+    ws.sheet_properties.tabColor = _ETIL_TEAL
+    _style_sheet(ws, headers, widths)
+
+    rows = (db.query(WPRecord, Company, Candidate)
+            .join(Company, WPRecord.company_id == Company.id)
+            .outerjoin(Candidate, Candidate.company_id == Company.id)
+            .filter(Company.batch_id == batch_id)
+            .order_by(Company.naam)
+            .all())
+
+    for row_idx, (rec, comp, cand) in enumerate(rows, 2):
+        pct = f"{round(rec.pct_op_locatie * 100)}%" if rec.pct_op_locatie is not None else None
+        values = [
+            comp.vestigingsnummer, comp.naam, comp.gemeente, comp.adres,
+            comp.sbi_code, comp.cb_er, comp.kvk_nummer,
+            rec.wp_waarde, rec.wp_jaar, rec.bron_type, rec.bron_url, rec.status,
+            _CONF_LABELS.get(cand.confidence_label, "") if cand else "",
+            rec.man, rec.vrouw, rec.voltijd, rec.deeltijd,
+            rec.eigen_personeel, rec.uitzend, rec.detachering, rec.wsw,
+            pct,
+        ]
+        for col_idx, val in enumerate(values, 1):
+            ws.cell(row=row_idx, column=col_idx, value=val)
+        _style_row(ws, row_idx, len(headers))
+
+    return _wb_response(wb, f"vestigingsregister_{naam}.xlsx")
+
+
+@router.get("/batches/{batch_id}/bellijst.xlsx")
+def export_bellijst_xlsx(batch_id: str, db: Session = Depends(get_db)):
+    """Export van de bellijst als Excel."""
+    batch = db.get(Batch, batch_id)
+    naam = (batch.naam or batch_id) if batch else batch_id
+
+    headers = ["Naam", "Gemeente", "Telefoonnummer", "WP-kandidaat", "Reden", "Status", "Resultaat WP"]
+    widths = [34, 18, 18, 14, 50, 14, 12]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Bellijst"
+    ws.sheet_properties.tabColor = _ETIL_TEAL
+    _style_sheet(ws, headers, widths)
+
+    rows = (db.query(CallListItem, Company, Candidate)
+            .join(Company, CallListItem.company_id == Company.id)
+            .outerjoin(Candidate, Candidate.company_id == Company.id)
+            .filter(Company.batch_id == batch_id)
+            .order_by(Company.naam)
+            .all())
+
+    for row_idx, (item, comp, cand) in enumerate(rows, 2):
+        values = [
+            comp.naam, comp.gemeente, item.telefoonnummer,
+            cand.wp_kandidaat if cand else None,
+            item.reden, item.status, item.resultaat_wp,
+        ]
+        for col_idx, val in enumerate(values, 1):
+            ws.cell(row=row_idx, column=col_idx, value=val)
+        _style_row(ws, row_idx, len(headers))
+
+    return _wb_response(wb, f"bellijst_{naam}.xlsx")

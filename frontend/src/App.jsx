@@ -447,7 +447,7 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
             <IconButton icon={Play} variant="primary" onClick={runBatch} disabled={busy}>Run</IconButton>
           )}
           <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Groen goedkeuren</IconButton>
-          <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.csv`, "export.csv")}>Export</IconButton>
+          <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.xlsx`, "export.xlsx")}>Export</IconButton>
           <IconButton icon={Phone} onClick={() => openBellijst(batchId)}>Bellijst</IconButton>
           <IconButton icon={MessageSquare} onClick={() => openChatSessies(batchId)}>Chat-sessies</IconButton>
           <IconButton icon={Trash2} variant="quiet" onClick={deleteBatch} disabled={busy || isRunning} title="Batch verwijderen" />
@@ -618,7 +618,7 @@ function BellijstView({api, user, onLogout, batchId, openBatch}) {
       actions={
         <>
           <IconButton icon={ListChecks} onClick={() => openBatch(batchId)}>Batchoverzicht</IconButton>
-          <IconButton icon={Download} onClick={() => api.download(`/batches/${batchId}/bellijst.csv`, "bellijst.csv")}>Exporteren</IconButton>
+          <IconButton icon={Download} onClick={() => api.download(`/batches/${batchId}/bellijst.xlsx`, "bellijst.xlsx")}>Exporteren</IconButton>
         </>
       }
     >
