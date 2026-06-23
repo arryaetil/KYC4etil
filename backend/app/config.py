@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     jaarverslag_web_fallback: bool = False     # Fase C fallback: extra OpenAI-call als PDF mislukt
     max_website_pages: int = 3                 # max pagina's per bedrijf voor website-agent (kostenbeheersing)
     playwright_enabled: bool = False  # zet op true in Railway nadat Chromium getest is
-    frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173"
+    frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174"
     frontend_url: str = "http://localhost:5173"  # publieke URL voor chat-links in emails
     resend_api_key: str = ""
     email_from: str = "onboarding@resend.dev"
