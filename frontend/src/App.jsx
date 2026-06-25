@@ -1880,22 +1880,31 @@ function ChatForm({token}) {
     await callMessage(newMsgs);
   }
 
-  // Widgets verschijnen op basis van wat gegevens al heeft — nooit vóór de relevante AI-vraag
+  // Widgets: primair op gegevens-voortgang, keyword als fallback
+  // Nooit tonen voordat de gebruiker iets heeft getypt (userMsgCount >= 1)
   function currentWidget() {
     if (!session || done || busy) return null;
+    const userMsgCount = messages.filter((m) => m.role === "user").length;
+    if (userMsgCount < 1) return null;
     const lastAI = [...messages].reverse().find((m) => m.role === "assistant")?.content?.toLowerCase() || "";
     const aiMentions = (kws) => kws.some((k) => lastAI.includes(k));
-    // Dienstverband: pas tonen nadat wp_totaal bekend is via gegevens
-    if (!widgetDone.wp && gegevens.wp_totaal != null && gegevens.eigen_personeel == null)
-      return "wp";
-    // Verdeling: pas tonen nadat dienstverband is ingevuld
-    if (!widgetDone.verdeling && gegevens.eigen_personeel != null && gegevens.man == null)
-      return "verdeling";
-    // Correspondentie + oppervlakte: tonen als AI er om vraagt
-    if (!widgetDone.correspondentie && gegevens.wp_totaal != null && gegevens.correspondentieadres == null
+
+    // WP dienstverband: gegevens.wp_totaal gezet ÓÓFF AI vraagt uitdrukkelijk om uitsplitsing
+    if (!widgetDone.wp && gegevens.eigen_personeel == null) {
+      if (gegevens.wp_totaal != null || aiMentions(["uitsplitsing", "dienstverband", "invulformulier"]))
+        return "wp";
+    }
+    // Verdeling: gegevens.eigen_personeel gezet ÓÓFF AI vraagt om geslacht/arbeidsduur
+    if (!widgetDone.verdeling && gegevens.man == null) {
+      if (gegevens.eigen_personeel != null || aiMentions(["geslacht", "arbeidsduur", "voltijd"]))
+        return "verdeling";
+    }
+    // Correspondentie: AI vraagt ernaar
+    if (!widgetDone.correspondentie && gegevens.correspondentieadres == null
         && aiMentions(["correspondentieadres", "hetzelfde als het vestigingsadres"]))
       return "correspondentie";
-    if (!widgetDone.oppervlakte && gegevens.eigen_personeel != null && gegevens.perceeloppervlakte == null
+    // Oppervlakte: AI vraagt ernaar
+    if (!widgetDone.oppervlakte && gegevens.perceeloppervlakte == null
         && aiMentions(["oppervlakte", "perceeloppervlakte", "m²", "vloeroppervlakte"]))
       return "oppervlakte";
     return null;
