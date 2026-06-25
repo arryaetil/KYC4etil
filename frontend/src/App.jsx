@@ -1820,58 +1820,78 @@ function Alert({message}) {
 function ChatForm({token}) {
   const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
   const [session, setSession] = useState(null);
-  const [answers, setAnswers] = useState({});
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [gegevens, setGegevens] = useState({});
+  const [widgetDone, setWidgetDone] = useState({wp: false, verdeling: false, correspondentie: false, oppervlakte: false});
+  const bottomRef = useRef(null);
 
-  useEffect(() => {
-    fetch(`${API_URL}/chat/${token}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.status === "completed") {
-          setDone(true);
-        } else {
-          setSession(data);
-          if (data.pre_fill_wp) {
-            setAnswers((prev) => ({...prev, wp_count: String(data.pre_fill_wp)}));
-          }
-        }
-      })
-      .catch(() => setError("Chat-sessie niet gevonden of verlopen."));
-  }, [token]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({behavior: "smooth"}); }, [messages, busy]);
 
-  function setAnswer(id, value) {
-    setAnswers((prev) => ({...prev, [id]: value}));
-  }
-
-  async function submit(e) {
-    e.preventDefault();
-    const vragen = session?.vragen || [];
-    for (const v of vragen) {
-      if (v.verplicht && !answers[v.id] && answers[v.id] !== 0) {
-        setError(`Vul "${v.label}" in.`); return;
-      }
-    }
-    const wpRaw = answers["wp_count"];
-    const n = parseInt(wpRaw, 10);
-    if (isNaN(n) || n < 0) { setError("Vul een geldig aantal werkzame personen in."); return; }
+  async function callMessage(msgs) {
     setBusy(true);
-    setError("");
     try {
-      const r = await fetch(`${API_URL}/chat/${token}/submit`, {
+      const r = await fetch(`${API_URL}/chat/${token}/message`, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({antwoorden: {...answers, wp_count: n}}),
+        body: JSON.stringify({messages: msgs}),
       });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.detail || "Inzenden mislukt.");
-      setDone(true);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "Fout bij versturen");
+      const updated = [...msgs, {role: "assistant", content: data.reply}];
+      setMessages(updated);
+      if (data.gegevens) setGegevens((prev) => ({...prev, ...data.gegevens}));
+      if (data.done) setDone(true);
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  useEffect(() => {
+    fetch(`${API_URL}/chat/${token}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.status === "completed") { setDone(true); return; }
+        setSession(data);
+        const initMsgs = data.messages || [];
+        setMessages(initMsgs);
+        if (initMsgs.length === 0) callMessage([]);
+      })
+      .catch(() => setError("Chat-sessie niet gevonden of verlopen."));
+  }, [token]);
+
+  async function sendText(text) {
+    if (!text.trim() || busy) return;
+    const newMsgs = [...messages, {role: "user", content: text.trim()}];
+    setMessages(newMsgs);
+    setInput("");
+    await callMessage(newMsgs);
+  }
+
+  async function sendWidget(text, widgetKey) {
+    setWidgetDone((prev) => ({...prev, [widgetKey]: true}));
+    const newMsgs = [...messages, {role: "user", content: text}];
+    setMessages(newMsgs);
+    await callMessage(newMsgs);
+  }
+
+  // Determine which widget to show based on what's still missing in gegevens
+  function currentWidget() {
+    if (!session || done) return null;
+    if (!widgetDone.wp && (gegevens.wp_totaal == null || gegevens.eigen_personeel == null))
+      return "wp";
+    if (!widgetDone.verdeling && gegevens.wp_totaal != null && (gegevens.man == null || gegevens.voltijd == null))
+      return "verdeling";
+    if (!widgetDone.correspondentie && gegevens.wp_totaal != null && gegevens.correspondentieadres == null)
+      return "correspondentie";
+    if (!widgetDone.oppervlakte && gegevens.wp_totaal != null && gegevens.perceeloppervlakte == null)
+      return "oppervlakte";
+    return null;
   }
 
   if (error && !session) return (
@@ -1895,94 +1915,115 @@ function ChatForm({token}) {
     </main>
   );
 
-  if (!session) return (
+  if (!session && !error) return (
     <main className="flex min-h-screen items-center justify-center bg-[#eef2f5]">
       <div className="text-slate-500">Laden…</div>
     </main>
   );
 
-  const vragen = session.vragen || [];
+  const widget = currentWidget();
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#eef2f5] px-4 py-8">
-      <div className="w-full max-w-lg rounded-lg border border-line bg-white shadow-sm">
-        <div className="rounded-t-lg bg-etil px-6 py-4">
-          <div className="flex items-center gap-3">
-            <ShieldCheck className="text-white/80" size={22} />
-            <div>
-              <div className="text-sm font-semibold text-white">Vestigingsregister AI</div>
-              <div className="text-xs text-white/70">Etil Research Group — Provincie Limburg</div>
-            </div>
+    <main className="flex min-h-screen flex-col bg-[#eef2f5]">
+      {/* Header */}
+      <div className="bg-etil px-4 py-3 shadow-sm">
+        <div className="mx-auto flex max-w-5xl items-center gap-3">
+          <ShieldCheck className="text-white/80" size={20} />
+          <div>
+            <div className="text-sm font-semibold text-white">Vestigingsregister AI — {session?.bedrijfsnaam || ""}</div>
+            <div className="text-xs text-white/70">Etil Research Group · Provincie Limburg</div>
           </div>
         </div>
-        <div className="p-6">
-          <h1 className="mb-1 text-xl font-semibold">Gegevenscontrole</h1>
-          <p className="mb-5 text-sm text-slate-600">
-            Provincie Limburg vraagt u de personeelsgegevens van{" "}
-            <strong>{session.bedrijfsnaam}</strong>
-            {session.gemeente ? ` (${session.gemeente})` : ""} te controleren.
-          </p>
-          {session.variant === "gericht" && session.pre_fill_wp ? (
-            <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              Onze gegevens tonen <strong>{session.pre_fill_wp} werkzame personen</strong>.
-              Klopt dit, of wilt u het corrigeren?
-            </div>
-          ) : null}
-          <form onSubmit={submit} className="space-y-5">
-            {vragen.map((vraag) => (
-              <div key={vraag.id}>
-                <label className="mb-1 block text-sm font-medium">
-                  {vraag.label}
-                  {!vraag.verplicht && <span className="ml-1 font-normal text-slate-500">(optioneel)</span>}
-                </label>
-                {vraag.hint ? <p className="mb-2 text-xs text-slate-500">{vraag.hint}</p> : null}
-                {vraag.type === "wp_count" ? (
-                  <input
-                    className="focus-ring h-12 w-full rounded-md border border-line px-3 text-lg font-semibold"
-                    type="number" min="0"
-                    value={answers[vraag.id] ?? ""}
-                    onChange={(e) => setAnswer(vraag.id, e.target.value)}
-                    placeholder="bijv. 250"
-                    required={vraag.verplicht}
-                  />
-                ) : vraag.type === "text" ? (
-                  <textarea
-                    className="focus-ring min-h-20 w-full rounded-md border border-line px-3 py-2 text-sm"
-                    value={answers[vraag.id] ?? ""}
-                    onChange={(e) => setAnswer(vraag.id, e.target.value)}
-                    placeholder={vraag.hint || ""}
-                    required={vraag.verplicht}
-                  />
-                ) : vraag.type === "boolean" ? (
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={!!answers[vraag.id]}
-                      onChange={(e) => setAnswer(vraag.id, e.target.checked)}
-                    />
-                    {vraag.label}
-                  </label>
-                ) : (
-                  <input
-                    className="focus-ring h-10 w-full rounded-md border border-line px-3 text-sm"
-                    value={answers[vraag.id] ?? ""}
-                    onChange={(e) => setAnswer(vraag.id, e.target.value)}
-                    required={vraag.verplicht}
-                  />
-                )}
+      </div>
+
+      {/* Body: chat + overview panel */}
+      <div className="mx-auto flex w-full max-w-5xl flex-1 gap-4 p-4">
+        {/* Chat column */}
+        <div className="flex flex-1 flex-col gap-3">
+          {/* Messages */}
+          <div className="flex flex-col gap-3">
+            {messages.map((msg, i) => (
+              <div key={i} className={classNames("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
+                <div className={classNames(
+                  "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
+                  msg.role === "user"
+                    ? "rounded-br-sm bg-etil text-white"
+                    : "rounded-bl-sm border border-line bg-white text-slate-800 shadow-sm"
+                )}>
+                  {msg.content}
+                </div>
               </div>
             ))}
-            {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
+            {busy && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl rounded-bl-sm border border-line bg-white px-4 py-2.5 shadow-sm">
+                  <span className="flex gap-1">
+                    <span className="animate-bounce text-slate-400" style={{animationDelay: "0ms"}}>●</span>
+                    <span className="animate-bounce text-slate-400" style={{animationDelay: "150ms"}}>●</span>
+                    <span className="animate-bounce text-slate-400" style={{animationDelay: "300ms"}}>●</span>
+                  </span>
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Contextual form widget */}
+          {!busy && widget === "wp" && (
+            <WpEnDienstverbandFormulier
+              wpSchatting={session?.pre_fill_wp || gegevens.wp_totaal || 0}
+              onSubmit={(txt) => sendWidget(txt, "wp")}
+              disabled={busy}
+            />
+          )}
+          {!busy && widget === "verdeling" && (
+            <VerdelingFormulier
+              wpTotaal={gegevens.wp_totaal || 0}
+              onSubmit={(txt) => sendWidget(txt, "verdeling")}
+              disabled={busy}
+            />
+          )}
+          {!busy && widget === "correspondentie" && (
+            <CorrespondentieadresFormulier
+              vestigingsadres={session?.adres || ""}
+              onSubmit={(txt) => sendWidget(txt, "correspondentie")}
+              disabled={busy}
+            />
+          )}
+          {!busy && widget === "oppervlakte" && (
+            <OppervlakteFormulier
+              onSubmit={(txt) => sendWidget(txt, "oppervlakte")}
+              disabled={busy}
+            />
+          )}
+
+          {/* Text input */}
+          {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
+          <div className="flex gap-2">
+            <input
+              className="focus-ring flex-1 rounded-xl border border-line bg-white px-4 py-2.5 text-sm shadow-sm"
+              placeholder={busy ? "Bezig…" : "Typ uw antwoord…"}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(input); }}}
+              disabled={busy || done}
+            />
             <button
-              type="submit" disabled={busy}
-              className="focus-ring flex w-full items-center justify-center gap-2 rounded-md bg-etil px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              onClick={() => sendText(input)}
+              disabled={!input.trim() || busy || done}
+              className="focus-ring rounded-xl bg-etil px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
             >
-              <Check size={16} />{busy ? "Bezig…" : "Gegevens bevestigen"}
+              Stuur
             </button>
-          </form>
-          <p className="mt-4 text-center text-xs text-slate-400">
+          </div>
+          <p className="text-center text-xs text-slate-400">
             Uw gegevens worden uitsluitend gebruikt voor het Vestigingsregister van Provincie Limburg.
           </p>
+        </div>
+
+        {/* Overview panel (desktop only) */}
+        <div className="hidden w-64 lg:block">
+          <OverzichtPanel gegevens={gegevens} />
         </div>
       </div>
     </main>
