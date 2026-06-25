@@ -1880,16 +1880,19 @@ function ChatForm({token}) {
     await callMessage(newMsgs);
   }
 
-  // Determine which widget to show based on what's still missing in gegevens
+  // Toon widget alleen als het laatste AI-bericht er expliciet om vraagt
   function currentWidget() {
-    if (!session || done) return null;
-    if (!widgetDone.wp && (gegevens.wp_totaal == null || gegevens.eigen_personeel == null))
+    if (!session || done || busy) return null;
+    const lastAI = [...messages].reverse().find((m) => m.role === "assistant")?.content?.toLowerCase() || "";
+    if (!lastAI) return null;
+    const mentions = (keywords) => keywords.some((k) => lastAI.includes(k));
+    if (!widgetDone.wp && mentions(["dienstverband", "uitsplitsing", "eigen personeel", "uitzend", "formulier", "invulform"]))
       return "wp";
-    if (!widgetDone.verdeling && gegevens.wp_totaal != null && (gegevens.man == null || gegevens.voltijd == null))
+    if (!widgetDone.verdeling && mentions(["geslacht", "arbeidsduur", "voltijd", "deeltijd", "verdeling", "% werkzaam"]))
       return "verdeling";
-    if (!widgetDone.correspondentie && gegevens.wp_totaal != null && gegevens.correspondentieadres == null)
+    if (!widgetDone.correspondentie && mentions(["correspondentieadres", "postadres", "hetzelfde als het vestigingsadres"]))
       return "correspondentie";
-    if (!widgetDone.oppervlakte && gegevens.wp_totaal != null && gegevens.perceeloppervlakte == null)
+    if (!widgetDone.oppervlakte && mentions(["oppervlakte", "perceeloppervlakte", "m²", "vloeroppervlakte"]))
       return "oppervlakte";
     return null;
   }
