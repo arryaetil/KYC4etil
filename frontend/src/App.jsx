@@ -1880,19 +1880,23 @@ function ChatForm({token}) {
     await callMessage(newMsgs);
   }
 
-  // Toon widget alleen als het laatste AI-bericht er expliciet om vraagt
+  // Widgets verschijnen op basis van wat gegevens al heeft — nooit vóór de relevante AI-vraag
   function currentWidget() {
     if (!session || done || busy) return null;
     const lastAI = [...messages].reverse().find((m) => m.role === "assistant")?.content?.toLowerCase() || "";
-    if (!lastAI) return null;
-    const mentions = (keywords) => keywords.some((k) => lastAI.includes(k));
-    if (!widgetDone.wp && mentions(["dienstverband", "uitsplitsing", "eigen personeel", "uitzend", "formulier", "invulform"]))
+    const aiMentions = (kws) => kws.some((k) => lastAI.includes(k));
+    // Dienstverband: pas tonen nadat wp_totaal bekend is via gegevens
+    if (!widgetDone.wp && gegevens.wp_totaal != null && gegevens.eigen_personeel == null)
       return "wp";
-    if (!widgetDone.verdeling && mentions(["geslacht", "arbeidsduur", "voltijd", "deeltijd", "verdeling", "% werkzaam"]))
+    // Verdeling: pas tonen nadat dienstverband is ingevuld
+    if (!widgetDone.verdeling && gegevens.eigen_personeel != null && gegevens.man == null)
       return "verdeling";
-    if (!widgetDone.correspondentie && mentions(["correspondentieadres", "postadres", "hetzelfde als het vestigingsadres"]))
+    // Correspondentie + oppervlakte: tonen als AI er om vraagt
+    if (!widgetDone.correspondentie && gegevens.wp_totaal != null && gegevens.correspondentieadres == null
+        && aiMentions(["correspondentieadres", "hetzelfde als het vestigingsadres"]))
       return "correspondentie";
-    if (!widgetDone.oppervlakte && mentions(["oppervlakte", "perceeloppervlakte", "m²", "vloeroppervlakte"]))
+    if (!widgetDone.oppervlakte && gegevens.eigen_personeel != null && gegevens.perceeloppervlakte == null
+        && aiMentions(["oppervlakte", "perceeloppervlakte", "m²", "vloeroppervlakte"]))
       return "oppervlakte";
     return null;
   }
@@ -1974,7 +1978,8 @@ function ChatForm({token}) {
           {/* Contextual form widget */}
           {!busy && widget === "wp" && (
             <WpEnDienstverbandFormulier
-              wpSchatting={session?.pre_fill_wp || gegevens.wp_totaal || 0}
+              wpSchatting={gegevens.wp_totaal || session?.pre_fill_wp || 0}
+              skipBevestiging
               onSubmit={(txt) => sendWidget(txt, "wp")}
               disabled={busy}
             />
@@ -2156,9 +2161,9 @@ function SomRij({velden, wpTotaal, values, onUpdate, disabled}) {
   );
 }
 
-function WpEnDienstverbandFormulier({wpSchatting, onSubmit, disabled}) {
-  const [stap, setStap] = useState(0);
-  const [wpKeuze, setWpKeuze] = useState(null);
+function WpEnDienstverbandFormulier({wpSchatting, onSubmit, disabled, skipBevestiging}) {
+  const [stap, setStap] = useState(skipBevestiging ? 1 : 0);
+  const [wpKeuze, setWpKeuze] = useState(skipBevestiging ? "ja" : null);
   const [wpCorrectie, setWpCorrectie] = useState("");
   const [values, setValues] = useState({});
   const wpTotaal = wpKeuze === "nee" ? Number(wpCorrectie) || 0 : wpSchatting;
