@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
+from ..chat_utils import hash_token
 from ..config import get_settings
 from ..database import get_db
 from ..models import AgentResult, Batch, CallListItem, Candidate, ChatSession, ChatTemplate, Company, User, WPRecord
@@ -102,7 +103,7 @@ async def create_chat_session(candidate_id: str, db: Session = Depends(get_db),
     vragen = default_template.vragen if default_template else None
 
     token = secrets.token_urlsafe(32)
-    session = ChatSession(company_id=cand.company_id, token_hash=token,
+    session = ChatSession(company_id=cand.company_id, token_hash=hash_token(token),
                           variant="gericht", pre_fill_wp=cand.wp_kandidaat, vragen=vragen)
     db.add(session)
     cand.status = "to_chat"
