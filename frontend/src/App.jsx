@@ -1931,7 +1931,7 @@ function ChatForm({token}) {
   const widget = currentWidget();
 
   return (
-    <main className="flex min-h-screen flex-col bg-[#eef2f5]">
+    <main className="flex h-screen flex-col overflow-hidden bg-[#eef2f5]">
       {/* Header */}
       <div className="bg-etil px-4 py-3 shadow-sm">
         <div className="mx-auto flex max-w-5xl items-center gap-3">
@@ -1944,11 +1944,11 @@ function ChatForm({token}) {
       </div>
 
       {/* Body: chat + overview panel */}
-      <div className="mx-auto flex w-full max-w-5xl flex-1 gap-4 p-4">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 gap-4 overflow-hidden p-4">
         {/* Chat column */}
-        <div className="flex flex-1 flex-col gap-3">
-          {/* Messages */}
-          <div className="flex flex-col gap-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          {/* Messages — scrollt intern */}
+          <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
             {messages.map((msg, i) => (
               <div key={i} className={classNames("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
                 <div className={classNames(
@@ -2029,8 +2029,8 @@ function ChatForm({token}) {
           </p>
         </div>
 
-        {/* Overview panel (desktop only) */}
-        <div className="hidden w-64 lg:block">
+        {/* Overview panel (desktop only) — plakt aan de rechterkant */}
+        <div className="hidden w-64 overflow-y-auto lg:block">
           <OverzichtPanel gegevens={gegevens} />
         </div>
       </div>
