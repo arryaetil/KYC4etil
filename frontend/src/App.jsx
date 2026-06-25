@@ -873,20 +873,26 @@ function OutboundPanel({candidate, api, batchId, companyId, onRefresh}) {
                 <strong>Email verstuurd</strong> naar {chatResult.recipient}
               </div>
             )}
-            <div className="rounded-md border border-line bg-panel p-3">
-              <div className="mb-1 text-xs font-medium text-slate-500">Chat-link</div>
-              <p className="mb-2 break-all text-xs text-slate-500">{chatResult.chatUrl}</p>
-              <div className="flex gap-2">
-                <button className="focus-ring flex-1 rounded-md bg-etil px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90"
-                  onClick={() => { window.location.href = chatResult.chatUrl; }}>
-                  Open chat
-                </button>
-                <button className="focus-ring rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-panel"
-                  onClick={() => navigator.clipboard.writeText(chatResult.chatUrl)}>
-                  Kopieer link
-                </button>
-              </div>
-            </div>
+            {(() => {
+              const token = new URL(chatResult.chatUrl, window.location.origin).searchParams.get("chat") || chatResult.chatUrl;
+              const publicUrl = `${window.location.origin}/?chat=${token}`;
+              return (
+                <div className="rounded-md border border-line bg-panel p-3">
+                  <div className="mb-1 text-xs font-medium text-slate-500">Chat-link</div>
+                  <p className="mb-2 break-all text-xs text-slate-500">{publicUrl}</p>
+                  <div className="flex gap-2">
+                    <button className="focus-ring flex-1 rounded-md bg-etil px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90"
+                      onClick={() => { window.location.href = `/?chat=${token}`; }}>
+                      Open chat
+                    </button>
+                    <button className="focus-ring rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-panel"
+                      onClick={() => navigator.clipboard.writeText(publicUrl)}>
+                      Kopieer link
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         ) : (
           <IconButton icon={Mail} className="w-full justify-center" disabled={!candidate || chatBusy} onClick={stuurChat}>
