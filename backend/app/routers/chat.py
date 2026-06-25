@@ -1,163 +1,22 @@
-"""Publieke chat-endpoints — geen auth vereist. Bedrijven vullen hier hun WP-gegevens in."""
+﻿"""Publieke chat-endpoints — geen auth vereist. Bedrijven vullen hier hun WP-gegevens in."""
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..chat_service import get_chat_reply
+from ..chat_utils import lookup_session
 from ..database import get_db
 from ..models import ChatSession, Company
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# Volledige vragenlijst conform ADO #1413 (Roger Vaessens)
-VRAGEN_VOLLEDIG = [
-    # --- Adresgegevens ---
+DEFAULT_VRAGEN = [
     {
-        "id": "adres",
-        "label": "Adres vestiging",
-        "type": "text",
-        "verplicht": True,
-        "hint": "Straat, huisnummer, postcode, plaats",
-    },
-    {
-        "id": "correspondentie_adres",
-        "label": "Correspondentieadres",
-        "type": "text",
-        "verplicht": False,
-        "hint": "Alleen invullen als dit afwijkt van het vestigingsadres",
-    },
-    # --- Werkzame personen ---
-    {
-        "id": "wp_totaal",
-        "label": "Aantal werkzame personen (totaal)",
-        "type": "number",
-        "verplicht": True,
-        "hint": "Headcount (niet FTE), peildatum 31 december vorig jaar",
-    },
-    {
-        "id": "wp_eigen",
-        "label": "Waarvan eigen personeel",
-        "type": "number",
-        "verplicht": False,
-        "hint": "Medewerkers direct in dienst bij uw organisatie",
-    },
-    {
-        "id": "wp_uitzend",
-        "label": "Waarvan uitzendkrachten",
-        "type": "number",
-        "verplicht": False,
-        "hint": "",
-    },
-    {
-        "id": "wp_detachering",
-        "label": "Waarvan gedetacheerd personeel",
-        "type": "number",
-        "verplicht": False,
-        "hint": "",
-    },
-    {
-        "id": "wp_wsw",
-        "label": "Waarvan WSW-medewerkers",
-        "type": "number",
-        "verplicht": False,
-        "hint": "Wet Sociale Werkvoorziening",
-    },
-    {
-        "id": "wp_man",
-        "label": "Waarvan man",
-        "type": "number",
-        "verplicht": False,
-        "hint": "",
-    },
-    {
-        "id": "wp_vrouw",
-        "label": "Waarvan vrouw",
-        "type": "number",
-        "verplicht": False,
-        "hint": "",
-    },
-    {
-        "id": "wp_voltijd",
-        "label": "Waarvan voltijd (≥12 uur per week)",
-        "type": "number",
-        "verplicht": False,
-        "hint": "",
-    },
-    {
-        "id": "wp_deeltijd",
-        "label": "Waarvan deeltijd (<12 uur per week)",
-        "type": "number",
-        "verplicht": False,
-        "hint": "",
-    },
-    {
-        "id": "wp_op_locatie",
-        "label": "Werkzame personen ≥60% op locatie",
-        "type": "number",
-        "verplicht": False,
-        "hint": "Aantal medewerkers dat minimaal 60% van de werktijd fysiek aanwezig is op deze vestiging",
-    },
-    # --- Bedrijfsvastgoed ---
-    {
-        "id": "opp_perceel",
-        "label": "Perceeloppervlakte (m²)",
-        "type": "number",
-        "verplicht": False,
-        "hint": "",
-    },
-    {
-        "id": "opp_winkel",
-        "label": "Winkelvloeroppervlakte (m²)",
-        "type": "number",
-        "verplicht": False,
-        "hint": "Alleen invullen indien van toepassing",
-    },
-    {
-        "id": "opp_kantoor",
-        "label": "Kantoorvloeroppervlakte (m²)",
-        "type": "number",
-        "verplicht": False,
-        "hint": "Alleen invullen indien van toepassing",
-    },
-    {
-        "id": "opp_bedrijf",
-        "label": "Bedrijfsvloeroppervlakte (m²)",
-        "type": "number",
-        "verplicht": False,
-        "hint": "Alleen invullen indien van toepassing",
-    },
-    {
-        "id": "uitbreidingsruimte",
-        "label": "Gewenste uitbreidingsruimte (m²)",
-        "type": "number",
-        "verplicht": False,
-        "hint": "Hoeveel extra ruimte heeft u nodig als u zou willen uitbreiden?",
-    },
-    # --- Seizoen ---
-    {
-        "id": "seizoen_verschil",
-        "label": "Verschil hoog- en laagseizoen",
-        "type": "text",
-        "verplicht": False,
-        "hint": "Bijv. 'In de zomer 20 extra medewerkers' of 'geen seizoensverschil'",
-    },
-    # --- Toelichting ---
-    {
-        "id": "opmerking",
-        "label": "Overige toelichting",
-        "type": "text",
-        "verplicht": False,
-        "hint": "",
-    },
-]
-
-# Gerichte variant (🟡): alleen WP-bevestiging + opmerkingen
-VRAGEN_GERICHT = [
-    {
-        "id": "wp_totaal",
-        "label": "Aantal werkzame personen (totaal)",
-        "type": "number",
+        "id": "wp_count",
+        "label": "Aantal werkzame personen",
+        "type": "wp_count",
         "verplicht": True,
         "hint": "Headcount (niet FTE), peildatum 31 december vorig jaar",
     },
@@ -170,28 +29,26 @@ VRAGEN_GERICHT = [
     },
 ]
 
-# Fallback voor sessies zonder expliciete variant
-DEFAULT_VRAGEN = VRAGEN_VOLLEDIG
-
 
 @router.get("/{token}")
 def get_chat_session(token: str, db: Session = Depends(get_db)):
     """Haalt chat-sessie op op basis van token. Geen auth vereist."""
-    session = db.query(ChatSession).filter_by(token_hash=token).first()
-    if not session:
-        raise HTTPException(404, "Chat-sessie niet gevonden of verlopen")
+    session = lookup_session(token, db)
     if session.status == "completed":
         return {"status": "completed"}
+    if session.status in ("created", "sent"):
+        session.status = "opened"
+        db.commit()
     comp = db.get(Company, session.company_id)
     return {
         "bedrijfsnaam": comp.naam if comp else "Onbekend bedrijf",
         "gemeente": comp.gemeente if comp else None,
+        "adres": comp.adres if comp else None,
         "variant": session.variant,
         "pre_fill_wp": session.pre_fill_wp,
         "status": session.status,
-        "vragen": session.vragen if session.vragen else (
-            VRAGEN_GERICHT if session.variant == "gericht" else VRAGEN_VOLLEDIG
-        ),
+        "vragen": session.vragen if session.vragen else DEFAULT_VRAGEN,
+        "messages": session.messages or [],
     }
 
 
@@ -201,10 +58,8 @@ class ChatSubmit(BaseModel):
 
 @router.post("/{token}/submit")
 def submit_chat(token: str, body: ChatSubmit, db: Session = Depends(get_db)):
-    """Slaat antwoorden op en markeert de sessie als afgerond."""
-    session = db.query(ChatSession).filter_by(token_hash=token).first()
-    if not session:
-        raise HTTPException(404, "Chat-sessie niet gevonden of verlopen")
+    """Slaat antwoorden op en markeert de sessie als afgerond (fallback voor formulier)."""
+    session = lookup_session(token, db)
     if session.status == "completed":
         raise HTTPException(409, "Deze link is al gebruikt")
 
@@ -223,3 +78,40 @@ def submit_chat(token: str, body: ChatSubmit, db: Session = Depends(get_db)):
     session.completed_at = datetime.utcnow()
     db.commit()
     return {"status": "completed", "wp_opgegeven": wp}
+
+
+class ChatMessageRequest(BaseModel):
+    messages: list[dict]
+
+
+@router.post("/{token}/message")
+async def chat_message(token: str, body: ChatMessageRequest,
+                       db: Session = Depends(get_db)):
+    """Conversational chat endpoint — stuurt berichtgeschiedenis naar OpenAI."""
+    session = lookup_session(token, db)
+    if session.status == "completed":
+        raise HTTPException(409, "Deze chat-sessie is al afgerond")
+
+    if session.status in ("created", "sent"):
+        session.status = "opened"
+
+    comp = db.get(Company, session.company_id)
+    enrichment = comp.enrichment if comp else None
+
+    result = await get_chat_reply(body.messages, session, comp, enrichment)
+
+    all_messages = list(body.messages)
+    all_messages.append({"role": "assistant", "content": result["reply"]})
+    session.messages = all_messages
+
+    if result["done"]:
+        session.status = "completed"
+        session.completed_at = datetime.utcnow()
+        if result.get("antwoorden"):
+            session.antwoorden = result["antwoorden"]
+
+    db.commit()
+    response_data = {"reply": result["reply"], "done": result["done"]}
+    if result.get("gegevens") is not None:
+        response_data["gegevens"] = result["gegevens"]
+    return response_data

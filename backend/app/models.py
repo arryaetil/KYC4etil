@@ -155,6 +155,7 @@ class ChatSession(Base):
     pre_fill_wp: Mapped[int | None] = mapped_column(Integer)
     vragen: Mapped[dict | None] = mapped_column(JSON)
     antwoorden: Mapped[dict | None] = mapped_column(JSON)
+    messages: Mapped[list | None] = mapped_column(JSON)
     verwerkt: Mapped[bool] = mapped_column(Boolean, default=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
