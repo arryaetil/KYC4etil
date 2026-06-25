@@ -62,3 +62,7 @@ def ensure_lightweight_migrations() -> None:
                 conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN vragen JSON"))
             if "antwoorden" not in existing_cs:
                 conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN antwoorden JSON"))
+            if "messages" not in existing_cs:
+                conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN messages JSON"))
+            if "expires_at" not in existing_cs:
+                conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN expires_at TIMESTAMP"))
