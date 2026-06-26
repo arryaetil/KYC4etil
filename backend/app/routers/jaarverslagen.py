@@ -2,6 +2,7 @@ import fitz  # PyMuPDF
 from datetime import datetime
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -9,6 +10,8 @@ from ..database import get_db
 from ..models import JaarverslagUpload, JaarverslagChatMessage, WPRecord
 
 router = APIRouter(prefix="/jaarverslagen", tags=["jaarverslagen"])
+
+MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
 class ChatVraag(BaseModel):
@@ -18,7 +21,6 @@ class ChatVraag(BaseModel):
 class WPOpslaanBody(BaseModel):
     wp_waarde: int
     wp_jaar: int
-    reden: str | None = None
 
 
 SYSTEM_PROMPT = """Je bent een data-assistent voor het Vestigingsregister Limburg.
@@ -38,7 +40,7 @@ async def _openai_chat(
     vraag: str,
     settings,
 ) -> str:
-    from openai import AsyncOpenAI
+    from openai import AsyncOpenAI, OpenAIError
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     messages = [
@@ -46,11 +48,15 @@ async def _openai_chat(
         *[{"role": b["rol"], "content": b["inhoud"]} for b in berichten],
         {"role": "user", "content": vraag},
     ]
-    response = await client.chat.completions.create(
-        model=settings.openai_model,
-        messages=messages,
-    )
-    return response.choices[0].message.content
+    try:
+        response = await client.chat.completions.create(
+            model=settings.openai_model,
+            messages=messages,
+            max_tokens=2048,
+        )
+    except OpenAIError as e:
+        raise HTTPException(status_code=502, detail="AI-service tijdelijk niet beschikbaar")
+    return response.choices[0].message.content or ""
 
 
 @router.post("/upload")
@@ -64,6 +70,9 @@ async def upload_jaarverslag(
         raise HTTPException(status_code=422, detail="Bestand moet een PDF zijn (.pdf)")
 
     content = await file.read()
+    if len(content) > MAX_PDF_BYTES:
+        raise HTTPException(status_code=413, detail="PDF te groot (max 20 MB)")
+
     try:
         doc = fitz.open(stream=content, filetype="pdf")
     except Exception:
@@ -88,9 +97,15 @@ async def upload_jaarverslag(
 
 @router.get("")
 def lijst_uploads(company_id: str | None = None, db: Session = Depends(get_db)):
-    query = db.query(JaarverslagUpload)
+    count_subq = (
+        select(func.count())
+        .where(JaarverslagChatMessage.upload_id == JaarverslagUpload.id)
+        .correlate(JaarverslagUpload)
+        .scalar_subquery()
+    )
+    query = db.query(JaarverslagUpload, count_subq.label("aantal_berichten"))
     if company_id:
-        query = query.filter_by(company_id=company_id)
+        query = query.filter(JaarverslagUpload.company_id == company_id)
     return [
         {
             "upload_id": u.id,
@@ -98,9 +113,9 @@ def lijst_uploads(company_id: str | None = None, db: Session = Depends(get_db)):
             "jaar": u.jaar,
             "company_id": u.company_id,
             "uploaded_at": u.uploaded_at.isoformat(),
-            "aantal_berichten": len(u.berichten),
+            "aantal_berichten": count,
         }
-        for u in query.all()
+        for u, count in query.all()
     ]
 
 
@@ -134,6 +149,8 @@ async def chat(upload_id: str, body: ChatVraag, db: Session = Depends(get_db)):
     berichten = [{"rol": b.rol, "inhoud": b.inhoud} for b in upload.berichten]
 
     antwoord = await _openai_chat(upload.pdf_tekst, berichten, body.vraag, settings)
+    if not antwoord:
+        raise HTTPException(status_code=502, detail="Model gaf geen antwoord")
 
     db.add(JaarverslagChatMessage(upload_id=upload.id, rol="user", inhoud=body.vraag))
     msg = JaarverslagChatMessage(upload_id=upload.id, rol="assistant", inhoud=antwoord)
