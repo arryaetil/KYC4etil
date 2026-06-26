@@ -63,3 +63,38 @@ def test_upload_met_company_id_opgeslagen(client, pdf_bytes):
     assert resp.status_code == 200
     upload_id = resp.json()["upload_id"]
     assert upload_id is not None
+
+
+def test_lijst_leeg(client):
+    resp = client.get("/jaarverslagen")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_lijst_toont_uploads(client, pdf_bytes):
+    client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("rapport.pdf", pdf_bytes, "application/pdf")},
+    )
+    resp = client.get("/jaarverslagen")
+    assert len(resp.json()) == 1
+    assert resp.json()[0]["bestandsnaam"] == "rapport.pdf"
+    assert "aantal_berichten" in resp.json()[0]
+
+
+def test_detail_bestaat(client, pdf_bytes):
+    upload_id = client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("rapport.pdf", pdf_bytes, "application/pdf")},
+    ).json()["upload_id"]
+
+    resp = client.get(f"/jaarverslagen/{upload_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["upload"]["upload_id"] == upload_id
+    assert data["berichten"] == []
+
+
+def test_detail_404(client):
+    resp = client.get("/jaarverslagen/bestaat-niet")
+    assert resp.status_code == 404
