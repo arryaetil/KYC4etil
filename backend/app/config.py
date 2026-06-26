@@ -9,11 +9,9 @@ class Settings(BaseSettings):
 
     provider_mode: str = "mock"  # mock | live
     database_url: str = ""       # leeg -> SQLite
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-6"
     openai_api_key: str = ""
-    google_places_api_key: str = ""
-    kvk_api_key: str = ""
-    jwt_secret: str = "change-me"
-    register_peildatum: str = "2026-04-01"
     openai_model: str = "gpt-4o-mini"         # hoofd-model; overschrijfbaar via OPENAI_MODEL
     openai_model_extraction: str = ""          # leeg = fallback naar openai_model
     jaarverslag_web_fallback: bool = False     # Fase C fallback: extra OpenAI-call als PDF mislukt
@@ -24,6 +22,10 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     email_from: str = "onboarding@resend.dev"
     email_demo_recipient: str = "a.willems@etil.nl"  # leegmaken voor productie
+    google_places_api_key: str = ""
+    kvk_api_key: str = ""
+    jwt_secret: str = "change-me"
+    register_peildatum: str = "2026-04-01"
 
     # Confidence-gewichten (som = 1.0) — zie documentatie §9
     w_locatie: float = 0.30

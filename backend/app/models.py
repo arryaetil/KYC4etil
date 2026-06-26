@@ -219,3 +219,30 @@ class PipelineRun(Base):
     kosten_cents: Mapped[int | None] = mapped_column(Integer)
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class JaarverslagUpload(Base):
+    __tablename__ = "jaarverslag_uploads"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    company_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"), index=True)
+    bestandsnaam: Mapped[str] = mapped_column(String(255))
+    pdf_tekst: Mapped[str] = mapped_column(Text)
+    jaar: Mapped[int | None] = mapped_column(Integer)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    berichten: Mapped[list["JaarverslagChatMessage"]] = relationship(
+        back_populates="upload", order_by="JaarverslagChatMessage.created_at"
+    )
+
+
+class JaarverslagChatMessage(Base):
+    __tablename__ = "jaarverslag_chat_messages"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    upload_id: Mapped[str] = mapped_column(
+        ForeignKey("jaarverslag_uploads.id"), index=True
+    )
+    rol: Mapped[str] = mapped_column(String(10))   # 'user' | 'assistant'
+    inhoud: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    upload: Mapped[JaarverslagUpload] = relationship(back_populates="berichten")
