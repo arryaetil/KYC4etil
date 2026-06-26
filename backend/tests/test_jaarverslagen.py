@@ -157,3 +157,54 @@ def test_chat_stuurt_geschiedenis_mee(client, pdf_bytes):
 
     # Bij de tweede aanroep moeten de eerste user+assistant berichten erin zitten
     assert any(m["rol"] == "user" and m["inhoud"] == "vraag 1" for m in captured_messages)
+
+
+def test_opslaan_wp_zonder_company_geeft_422(client, pdf_bytes):
+    upload_id = client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("rapport.pdf", pdf_bytes, "application/pdf")},
+    ).json()["upload_id"]
+
+    resp = client.post(
+        f"/jaarverslagen/{upload_id}/opslaan-wp",
+        json={"wp_waarde": 138, "wp_jaar": 2024},
+    )
+    assert resp.status_code == 422
+    assert "bedrijf" in resp.json()["detail"].lower()
+
+
+def test_opslaan_wp_404_bij_onbekende_upload(client):
+    resp = client.post(
+        "/jaarverslagen/bestaat-niet/opslaan-wp",
+        json={"wp_waarde": 138, "wp_jaar": 2024},
+    )
+    assert resp.status_code == 404
+
+
+def test_opslaan_wp_met_company(client, pdf_bytes):
+    # Maak een batch + company aan via de API
+    csv_content = "naam,gemeente\nTestbedrijf BV,Maastricht\n"
+    resp = client.post(
+        "/batches/upload",
+        files={"file": ("test.csv", csv_content.encode(), "text/csv")},
+        data={"jaar": "2024"},
+    )
+    assert resp.status_code == 200
+    batch_id = resp.json()["batch_id"]
+    company_id = client.get(f"/batches/{batch_id}/companies").json()[0]["company_id"]
+
+    # Upload jaarverslag gekoppeld aan dit bedrijf
+    upload_id = client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("rapport.pdf", pdf_bytes, "application/pdf")},
+        data={"company_id": company_id, "jaar": "2024"},
+    ).json()["upload_id"]
+
+    resp = client.post(
+        f"/jaarverslagen/{upload_id}/opslaan-wp",
+        json={"wp_waarde": 138, "wp_jaar": 2024, "reden": "Gevonden in chatbot"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["wp_waarde"] == 138
+    assert "wp_record_id" in data

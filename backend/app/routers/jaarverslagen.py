@@ -1,17 +1,24 @@
 import fitz  # PyMuPDF
+from datetime import datetime
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..database import get_db
-from ..models import JaarverslagUpload, JaarverslagChatMessage
+from ..models import JaarverslagUpload, JaarverslagChatMessage, WPRecord
 
 router = APIRouter(prefix="/jaarverslagen", tags=["jaarverslagen"])
 
 
 class ChatVraag(BaseModel):
     vraag: str
+
+
+class WPOpslaanBody(BaseModel):
+    wp_waarde: int
+    wp_jaar: int
+    reden: str | None = None
 
 
 SYSTEM_PROMPT = """Je bent een data-assistent voor het Vestigingsregister Limburg.
@@ -134,3 +141,26 @@ async def chat(upload_id: str, body: ChatVraag, db: Session = Depends(get_db)):
     db.commit()
 
     return {"antwoord": antwoord, "message_id": msg.id}
+
+
+@router.post("/{upload_id}/opslaan-wp")
+def opslaan_wp(upload_id: str, body: WPOpslaanBody, db: Session = Depends(get_db)):
+    upload = db.get(JaarverslagUpload, upload_id)
+    if not upload:
+        raise HTTPException(404, "Upload niet gevonden")
+    if not upload.company_id:
+        raise HTTPException(
+            422, "Upload is niet gekoppeld aan een bedrijf — geef company_id mee bij de upload"
+        )
+
+    rec = WPRecord(
+        company_id=upload.company_id,
+        wp_waarde=body.wp_waarde,
+        wp_jaar=body.wp_jaar,
+        bron_type="jaarverslag_chat",
+        status="corrected",
+        goedgekeurd_op=datetime.utcnow(),
+    )
+    db.add(rec)
+    db.commit()
+    return {"wp_record_id": rec.id, "wp_waarde": rec.wp_waarde}
