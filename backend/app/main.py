@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .database import Base, SessionLocal, engine, ensure_lightweight_migrations
 from .models import Batch, ChatTemplate, PipelineRun
-from .routers import auth, batches, chat, chat_admin, review
+from .routers import auth, batches, chat, chat_admin, review, jaarverslagen
 
 settings = get_settings()
 
@@ -22,6 +22,7 @@ app.include_router(batches.router)
 app.include_router(review.router)
 app.include_router(chat.router)
 app.include_router(chat_admin.router)
+app.include_router(jaarverslagen.router)
 
 
 DEFAULT_TEMPLATE_VRAGEN = [

@@ -19,3 +19,32 @@ def test_jaarverslag_tabellen_bestaan():
     namen = inspect(engine).get_table_names()
     assert "jaarverslag_uploads" in namen
     assert "jaarverslag_chat_messages" in namen
+
+
+def test_upload_pdf_gelukt(client, pdf_bytes):
+    resp = client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("rapport.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "upload_id" in data
+    assert data["bestandsnaam"] == "rapport.pdf"
+    assert data["paginas"] == 1
+
+
+def test_upload_geen_pdf_geeft_422(client):
+    resp = client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("data.csv", b"naam,wp\ntest,10", "text/csv")},
+    )
+    assert resp.status_code == 422
+
+
+def test_upload_met_company_id(client, pdf_bytes):
+    resp = client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("rapport.pdf", pdf_bytes, "application/pdf")},
+        data={"jaar": "2024"},
+    )
+    assert resp.status_code == 200
