@@ -1,5 +1,6 @@
 """Tests voor de Jaarverslag Chat Module."""
 import pytest
+from unittest.mock import patch, MagicMock
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
@@ -98,3 +99,61 @@ def test_detail_bestaat(client, pdf_bytes):
 def test_detail_404(client):
     resp = client.get("/jaarverslagen/bestaat-niet")
     assert resp.status_code == 404
+
+
+def test_chat_antwoord_opgeslagen(client, pdf_bytes):
+    upload_id = client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("rapport.pdf", pdf_bytes, "application/pdf")},
+    ).json()["upload_id"]
+
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = "Er zijn 138 werkzame personen."
+
+    with patch("app.routers.jaarverslagen._openai_chat", return_value="Er zijn 138 werkzame personen."):
+        resp = client.post(
+            f"/jaarverslagen/{upload_id}/chat",
+            json={"vraag": "Hoeveel medewerkers zijn er?"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["antwoord"] == "Er zijn 138 werkzame personen."
+    assert "message_id" in data
+
+    # Controleer dat de geschiedenis is opgeslagen
+    detail = client.get(f"/jaarverslagen/{upload_id}").json()
+    assert len(detail["berichten"]) == 2  # user + assistant
+    assert detail["berichten"][0]["rol"] == "user"
+    assert detail["berichten"][1]["rol"] == "assistant"
+
+
+def test_chat_404_bij_onbekende_upload(client):
+    with patch("app.routers.jaarverslagen._openai_chat", return_value="antwoord"):
+        resp = client.post(
+            "/jaarverslagen/bestaat-niet/chat",
+            json={"vraag": "test"},
+        )
+    assert resp.status_code == 404
+
+
+def test_chat_stuurt_geschiedenis_mee(client, pdf_bytes):
+    upload_id = client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("rapport.pdf", pdf_bytes, "application/pdf")},
+    ).json()["upload_id"]
+
+    captured_messages = []
+
+    async def mock_chat(pdf_tekst, berichten, vraag, settings):
+        captured_messages.extend(berichten)
+        return "antwoord"
+
+    with patch("app.routers.jaarverslagen._openai_chat", side_effect=mock_chat):
+        client.post(f"/jaarverslagen/{upload_id}/chat", json={"vraag": "vraag 1"})
+
+    with patch("app.routers.jaarverslagen._openai_chat", side_effect=mock_chat):
+        client.post(f"/jaarverslagen/{upload_id}/chat", json={"vraag": "vraag 2"})
+
+    # Bij de tweede aanroep moeten de eerste user+assistant berichten erin zitten
+    assert any(m["rol"] == "user" and m["inhoud"] == "vraag 1" for m in captured_messages)
