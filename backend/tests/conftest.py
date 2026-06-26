@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from sqlite3 import Connection as SQLite3Connection
 
 from app.database import get_db, Base
@@ -14,7 +15,7 @@ import app.models  # Ensure all models are loaded
 _engine = create_engine(
     "sqlite:///:memory:",
     connect_args={"check_same_thread": False},
-    poolclass=__import__('sqlalchemy.pool', fromlist=['StaticPool']).StaticPool
+    poolclass=StaticPool
 )
 
 @event.listens_for(_engine, "connect")
@@ -43,7 +44,7 @@ def reset_db():
 
 
 @pytest.fixture
-def client(reset_db):
+def client():
     fastapi_app.dependency_overrides[get_db] = _override_db
     with TestClient(fastapi_app) as c:
         yield c
