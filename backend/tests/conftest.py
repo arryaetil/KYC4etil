@@ -7,9 +7,18 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlite3 import Connection as SQLite3Connection
 
+from app.auth import get_current_user
 from app.database import get_db, Base
 from app.main import app as fastapi_app
+from app.models import User
 import app.models  # Ensure all models are loaded
+
+_TEST_USER = User(id="test-user-id", naam="Test User", email="test@etil.nl",
+                  rol="admin", password_hash="")
+
+
+def _override_auth():
+    return _TEST_USER
 
 # Use a single connection for in-memory SQLite to avoid multiple databases
 _engine = create_engine(
@@ -46,6 +55,7 @@ def reset_db():
 @pytest.fixture
 def client():
     fastapi_app.dependency_overrides[get_db] = _override_db
+    fastapi_app.dependency_overrides[get_current_user] = _override_auth
     with TestClient(fastapi_app) as c:
         yield c
     fastapi_app.dependency_overrides.clear()
