@@ -80,6 +80,20 @@ export function createApi(token, onUnauthorized) {
     createTemplate: (body) => request("/chat-templates", {method: "POST", json: body}),
     updateTemplate: (id, body) => request(`/chat-templates/${id}`, {method: "PUT", json: body}),
     deleteTemplate: (id) => request(`/chat-templates/${id}`, {method: "DELETE"}),
+    uploadJaarverslag: (file, jaar, companyId) => {
+      const body = new FormData();
+      body.append("file", file);
+      if (jaar) body.append("jaar", String(jaar));
+      if (companyId) body.append("company_id", companyId);
+      return request("/jaarverslagen/upload", {method: "POST", body});
+    },
+    jaarverslagen: () => request("/jaarverslagen"),
+    jaarverslag: (id) => request(`/jaarverslagen/${id}`),
+    chatJaarverslag: (id, vraag) => request(`/jaarverslagen/${id}/chat`, {method: "POST", json: {vraag}}),
+    opslaanWP: (id, wpWaarde, wpJaar) => request(`/jaarverslagen/${id}/opslaan-wp`, {
+      method: "POST",
+      json: {wp_waarde: wpWaarde, wp_jaar: wpJaar},
+    }),
     download: async (path, filename) => {
       const headers = new Headers();
       if (token) headers.set("Authorization", `Bearer ${token}`);
