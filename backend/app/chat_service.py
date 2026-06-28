@@ -265,8 +265,12 @@ async def get_chat_reply(messages: list[dict], session: ChatSession,
     if not antwoorden and parsed.get("done") and gegevens:
         antwoorden = gegevens
 
+    reply = parsed.get("reply") or ""
+    if not reply.strip() or reply.strip() in ("{}", "null"):
+        reply = "Bedankt voor uw antwoord. We gaan verder."
+
     return {
-        "reply": parsed.get("reply", raw),
+        "reply": reply,
         "done": bool(parsed.get("done", False)),
         "antwoorden": antwoorden,
         "gegevens": gegevens,
