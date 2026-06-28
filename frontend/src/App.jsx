@@ -917,7 +917,7 @@ function OutboundPanel({candidate, api, batchId, companyId, onRefresh}) {
                   <p className="mb-2 break-all text-xs text-slate-500">{publicUrl}</p>
                   <div className="flex gap-2">
                     <button className="focus-ring flex-1 rounded-md bg-etil px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90"
-                      onClick={() => { window.location.href = `/?chat=${token}`; }}>
+                      onClick={() => { window.open(`/?chat=${token}`, '_blank'); }}>
                       Open chat
                     </button>
                     <button className="focus-ring rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-panel"
@@ -2206,8 +2206,11 @@ function SomRij({velden, wpTotaal, values, onUpdate, disabled}) {
 }
 
 function WpEnDienstverbandFormulier({wpSchatting, onSubmit, disabled, skipBevestiging}) {
-  const [stap, setStap] = useState(skipBevestiging ? 1 : 0);
-  const [wpKeuze, setWpKeuze] = useState(skipBevestiging ? "ja" : null);
+  const heeftSchatting = wpSchatting > 0;
+  const [stap, setStap] = useState(skipBevestiging && heeftSchatting ? 1 : 0);
+  const [wpKeuze, setWpKeuze] = useState(
+    skipBevestiging && heeftSchatting ? "ja" : skipBevestiging ? "nee" : null
+  );
   const [wpCorrectie, setWpCorrectie] = useState("");
   const [values, setValues] = useState({});
   const wpTotaal = wpKeuze === "nee" ? Number(wpCorrectie) || 0 : wpSchatting;
@@ -2220,7 +2223,11 @@ function WpEnDienstverbandFormulier({wpSchatting, onSubmit, disabled, skipBevest
   const som = dienstVelden.reduce((s, v) => s + (Number(values[v.key]) || 0), 0);
   function verstuur() {
     if (som !== wpTotaal) return;
-    const wpTekst = wpKeuze === "nee" ? `WP totaal: ${wpTotaal} (gecorrigeerd van ${wpSchatting})` : `WP totaal: ${wpTotaal} (bevestigd)`;
+    const wpTekst = wpKeuze === "nee" && heeftSchatting
+      ? `WP totaal: ${wpTotaal} (gecorrigeerd van ${wpSchatting})`
+      : wpKeuze === "nee"
+      ? `WP totaal: ${wpTotaal}`
+      : `WP totaal: ${wpTotaal} (bevestigd)`;
     const dienstTekst = dienstVelden.map((v) => `${v.label}: ${values[v.key] || 0}`).join(", ");
     onSubmit(`${wpTekst}, ${dienstTekst}`);
   }
@@ -2228,8 +2235,12 @@ function WpEnDienstverbandFormulier({wpSchatting, onSubmit, disabled, skipBevest
     <div className="rounded-lg border border-etil/30 bg-etil/5 p-3">
       {stap === 0 && (
         <>
-          <div className="mb-2 text-xs font-semibold uppercase text-etil">WP-getal bevestigen</div>
-          <div className="mb-2 text-sm text-slate-700">Geschat aantal werkzame personen: <strong>{wpSchatting}</strong></div>
+          <div className="mb-2 text-xs font-semibold uppercase text-etil">
+            {heeftSchatting ? "WP-getal bevestigen" : "WP-totaal invoeren"}
+          </div>
+          {heeftSchatting && (
+            <div className="mb-2 text-sm text-slate-700">Geschat aantal werkzame personen: <strong>{wpSchatting}</strong></div>
+          )}
           {wpKeuze === null && (
             <div className="flex gap-2">
               <button type="button" disabled={disabled} onClick={() => { setWpKeuze("ja"); setStap(1); }}
@@ -2241,7 +2252,8 @@ function WpEnDienstverbandFormulier({wpSchatting, onSubmit, disabled, skipBevest
           {wpKeuze === "nee" && (
             <div className="flex gap-2">
               <input type="number" min="1" className="focus-ring h-10 flex-1 rounded-md border border-line px-3 text-sm"
-                value={wpCorrectie} onChange={(e) => setWpCorrectie(e.target.value)} placeholder="Juiste aantal WP" autoFocus disabled={disabled} />
+                value={wpCorrectie} onChange={(e) => setWpCorrectie(e.target.value)}
+                placeholder={heeftSchatting ? "Juiste aantal WP" : "Totaal aantal WP"} autoFocus disabled={disabled} />
               <button type="button" disabled={!wpCorrectie || disabled} onClick={() => setStap(1)}
                 className="focus-ring rounded-md bg-etil px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40">Volgende</button>
             </div>
