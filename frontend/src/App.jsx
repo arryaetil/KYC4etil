@@ -154,9 +154,12 @@ function Shell({user, onLogout, children, title, actions}) {
     <div className="min-h-screen bg-[#eef2f5]">
       <header className="bg-[#C8102E]">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
-          <div>
-            <div className="text-xs font-medium uppercase tracking-wide text-white/60">Etil Research Group · Provincie Limburg</div>
-            <h1 className="text-xl font-semibold text-white">{title}</h1>
+          <div className="flex items-center gap-4">
+            <img src="/logo-etil.png" alt="Etil Research Group" className="h-10 w-auto rounded" />
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wide text-white/60">Provincie Limburg</div>
+              <h1 className="text-xl font-semibold text-white">{title}</h1>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden text-right text-sm sm:block">
@@ -1953,12 +1956,12 @@ function ChatForm({token}) {
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-[#eef2f5]">
       {/* Header */}
-      <div className="bg-etil px-4 py-3 shadow-sm">
-        <div className="mx-auto flex max-w-5xl items-center gap-3">
-          <ShieldCheck className="text-white/80" size={20} />
+      <div className="bg-white border-b border-line px-4 py-3 shadow-sm">
+        <div className="mx-auto flex max-w-5xl items-center gap-4">
+          <img src="/logo-limburg.png" alt="Provincie Limburg" className="h-10 w-auto" />
           <div>
-            <div className="text-sm font-semibold text-white">Vestigingsregister AI — {session?.bedrijfsnaam || ""}</div>
-            <div className="text-xs text-white/70">Etil Research Group · Provincie Limburg</div>
+            <div className="text-sm font-semibold text-ink">Vestigingsregister — {session?.bedrijfsnaam || ""}</div>
+            <div className="text-xs text-slate-500">Provincie Limburg · Etil Research Group</div>
           </div>
         </div>
       </div>
