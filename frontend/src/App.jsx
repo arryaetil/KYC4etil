@@ -155,7 +155,11 @@ function Shell({user, onLogout, children, title, actions}) {
       <header className="bg-[#C8102E]">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-4">
-            <img src="/logo-etil.png" alt="Etil Research Group" className="h-10 w-auto rounded" />
+            <div className="flex flex-col leading-none">
+              <span className="text-2xl font-black italic text-white tracking-tight">Etil</span>
+              <span className="text-[10px] font-medium text-white/70 tracking-wide">research group</span>
+            </div>
+            <div className="h-8 w-px bg-white/20" />
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-white/60">Provincie Limburg</div>
               <h1 className="text-xl font-semibold text-white">{title}</h1>
