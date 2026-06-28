@@ -1,6 +1,6 @@
 import io
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -42,7 +42,7 @@ def _maak_wp_record(db: Session, cand: Candidate, wp: int, status: str, user: Us
                    wp_jaar=batch.jaar, bron_type=(ar.bron_type if ar else "handmatig"),
                    bron_url=(ar.bron_url if ar else None), status=status,
                    goedgekeurd_door=user.id,
-                   goedgekeurd_op=datetime.utcnow())
+                   goedgekeurd_op=datetime.now(timezone.utc).replace(tzinfo=None))
     db.add(rec)
     return rec
 

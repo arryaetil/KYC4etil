@@ -1,7 +1,7 @@
 """Pipeline-orchestratie: verrijking -> agents -> reconciliatie -> scoring.
 Elke stap logt naar pipeline_runs (observability + kosten, doc §5)."""
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -160,6 +160,6 @@ async def run_batch(db: Session, batch_id: str) -> Batch:
             return batch
 
     batch.status = "done"
-    batch.completed_at = datetime.utcnow()
+    batch.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     return batch

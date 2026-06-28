@@ -87,6 +87,7 @@ export function createApi(token, onUnauthorized) {
       if (companyId) body.append("company_id", companyId);
       return request("/jaarverslagen/upload", {method: "POST", body});
     },
+    zoekCompanies: (q) => request(`/batches/companies/zoeken${q ? `?q=${encodeURIComponent(q)}` : ""}`),
     jaarverslagen: () => request("/jaarverslagen"),
     jaarverslag: (id) => request(`/jaarverslagen/${id}`),
     chatJaarverslag: (id, vraag) => request(`/jaarverslagen/${id}/chat`, {method: "POST", json: {vraag}}),

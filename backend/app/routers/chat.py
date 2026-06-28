@@ -1,5 +1,5 @@
 ﻿"""Publieke chat-endpoints — geen auth vereist. Bedrijven vullen hier hun WP-gegevens in."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -75,7 +75,7 @@ def submit_chat(token: str, body: ChatSubmit, db: Session = Depends(get_db)):
 
     session.antwoorden = body.antwoorden
     session.status = "completed"
-    session.completed_at = datetime.utcnow()
+    session.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     return {"status": "completed", "wp_opgegeven": wp}
 
@@ -106,7 +106,7 @@ async def chat_message(token: str, body: ChatMessageRequest,
 
     if result["done"]:
         session.status = "completed"
-        session.completed_at = datetime.utcnow()
+        session.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if result.get("antwoorden"):
             session.antwoorden = result["antwoorden"]
 

@@ -1,7 +1,11 @@
 """SQLAlchemy-modellen — gecorrigeerd schema uit documentatie §6.
 UUID's als String(36) zodat SQLite (lokaal) en PostgreSQL (Railway) beide werken."""
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 from sqlalchemy import (JSON, Boolean, DateTime, Float, ForeignKey, Integer,
                         String, Text, UniqueConstraint)
@@ -21,7 +25,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True)
     rol: Mapped[str] = mapped_column(String(50), default="reviewer")
     password_hash: Mapped[str] = mapped_column(String(255), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class Batch(Base):
@@ -32,7 +36,7 @@ class Batch(Base):
     status: Mapped[str] = mapped_column(String(50), default="pending")
     totaal: Mapped[int | None] = mapped_column(Integer)
     verwerkt: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     companies: Mapped[list["Company"]] = relationship(back_populates="batch")
@@ -53,7 +57,7 @@ class Company(Base):
     kvk_nummer: Mapped[str | None] = mapped_column(String(20))
     website_url: Mapped[str | None] = mapped_column(Text)
     telefoonnummer: Mapped[str | None] = mapped_column(String(50))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     batch: Mapped[Batch] = relationship(back_populates="companies")
     enrichment: Mapped["Enrichment | None"] = relationship(back_populates="company", uselist=False)
@@ -76,7 +80,7 @@ class Enrichment(Base):
     adres_validated: Mapped[bool] = mapped_column(Boolean, default=False)
     lookup_failed: Mapped[bool] = mapped_column(Boolean, default=False)
     raw_data: Mapped[dict | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     company: Mapped[Company] = relationship(back_populates="enrichment")
 
@@ -96,7 +100,7 @@ class AgentResult(Base):
     bron_type: Mapped[str | None] = mapped_column(String(50))  # website|jaarverslag|media
     raw_output: Mapped[dict | None] = mapped_column(JSON)
     llm_zekerheid: Mapped[str | None] = mapped_column(String(10))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     company: Mapped[Company] = relationship(back_populates="agent_results")
 
@@ -116,7 +120,7 @@ class Candidate(Base):
     score_breakdown: Mapped[dict | None] = mapped_column(JSON)
     strategie: Mapped[str | None] = mapped_column(String(30))
     status: Mapped[str] = mapped_column(String(30), default="pending")  # pending|approved|corrected|to_chat|to_call
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     company: Mapped[Company] = relationship(back_populates="candidate")
 
@@ -142,7 +146,7 @@ class WPRecord(Base):
     status: Mapped[str] = mapped_column(String(50))  # auto|reviewed|corrected|pending_chat
     goedgekeurd_door: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     goedgekeurd_op: Mapped[datetime | None] = mapped_column(DateTime)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class ChatSession(Base):
@@ -170,7 +174,7 @@ class ChatTemplate(Base):
     vragen: Mapped[dict | None] = mapped_column(JSON)  # runtime: list van vraag-objecten
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     aangemaakt_door: Mapped[str | None] = mapped_column(String(36))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class CallListItem(Base):
@@ -183,7 +187,7 @@ class CallListItem(Base):
     toegewezen_aan: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     notities: Mapped[str | None] = mapped_column(Text)
     resultaat_wp: Mapped[int | None] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class VastgoedRecord(Base):
@@ -200,7 +204,7 @@ class VastgoedRecord(Base):
     correspondentieadres: Mapped[str | None] = mapped_column(Text)
     bron: Mapped[str | None] = mapped_column(String(50))  # chat|handmatig|import
     ingevoerd_door: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     company: Mapped["Company"] = relationship(back_populates="vastgoed")
@@ -218,7 +222,7 @@ class PipelineRun(Base):
     tokens_out: Mapped[int | None] = mapped_column(Integer)
     kosten_cents: Mapped[int | None] = mapped_column(Integer)
     error: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class JaarverslagUpload(Base):
@@ -228,10 +232,11 @@ class JaarverslagUpload(Base):
     bestandsnaam: Mapped[str] = mapped_column(String(255))
     pdf_tekst: Mapped[str] = mapped_column(Text)
     jaar: Mapped[int | None] = mapped_column(Integer)
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     berichten: Mapped[list["JaarverslagChatMessage"]] = relationship(
-        back_populates="upload", order_by="JaarverslagChatMessage.created_at"
+        back_populates="upload", order_by="JaarverslagChatMessage.created_at",
+        cascade="all, delete-orphan",
     )
 
 
@@ -243,6 +248,6 @@ class JaarverslagChatMessage(Base):
     )
     rol: Mapped[str] = mapped_column(String(10))   # 'user' | 'assistant'
     inhoud: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     upload: Mapped[JaarverslagUpload] = relationship(back_populates="berichten")

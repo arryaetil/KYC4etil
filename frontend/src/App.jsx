@@ -2787,10 +2787,15 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
 function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
   const fileRef = useRef(null);
   const [uploads, setUploads] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [companyZoek, setCompanyZoek] = useState("");
+  const [selectedCompany, setSelectedCompany] = useState(null);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(null);
   const [error, setError] = useState("");
+  const [zoek, setZoek] = useState("");
   const [jaar, setJaar] = useState(String(new Date().getFullYear()));
+  const [uploadInfo, setUploadInfo] = useState(null);
 
   async function load() {
     const data = await api.jaarverslagen();
@@ -2799,13 +2804,25 @@ function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, []);
 
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const data = await api.zoekCompanies(companyZoek);
+        setCompanies(data);
+      } catch {}
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [companyZoek]);
+
   async function upload(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     setBusy(true);
     setError("");
+    setUploadInfo(null);
     try {
-      const result = await api.uploadJaarverslag(file, jaar || null);
+      const result = await api.uploadJaarverslag(file, jaar || null, selectedCompany?.id || null);
+      setUploadInfo({paginas: result.paginas, naam: result.bestandsnaam});
       await load();
       openChat(result.upload_id);
     } catch (e) {
@@ -2830,6 +2847,12 @@ function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
     }
   }
 
+  const gefilterd = useMemo(() =>
+    uploads.filter((u) => {
+      if (!zoek) return true;
+      return (u.bestandsnaam + (u.company_naam || "")).toLowerCase().includes(zoek.toLowerCase());
+    }), [uploads, zoek]);
+
   return (
     <Shell
       user={user}
@@ -2838,13 +2861,6 @@ function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
       actions={
         <>
           <IconButton icon={ListChecks} onClick={openDashboard}>Dashboard</IconButton>
-          <input
-            className="focus-ring h-10 w-24 rounded-md border border-line bg-white px-3 text-sm"
-            value={jaar}
-            onChange={(e) => setJaar(e.target.value)}
-            placeholder="Jaar"
-            inputMode="numeric"
-          />
           <input ref={fileRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={upload} />
           <IconButton icon={FileUp} variant="primary" onClick={() => fileRef.current?.click()} disabled={busy}>
             {busy ? "Uploaden…" : "PDF uploaden"}
@@ -2853,11 +2869,71 @@ function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
       }
     >
       {error ? <Alert message={error} /> : null}
+
+      {/* Upload-opties */}
+      <div className="mb-4 flex flex-wrap gap-3 rounded-lg border border-line bg-white p-4">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500">Peiljaar</label>
+          <input
+            className="focus-ring h-10 w-24 rounded-md border border-line bg-white px-3 text-sm"
+            value={jaar}
+            onChange={(e) => setJaar(e.target.value)}
+            placeholder="Jaar"
+            inputMode="numeric"
+          />
+        </div>
+        <div className="flex-1 min-w-48">
+          <label className="mb-1 block text-xs font-medium text-slate-500">Koppel aan bedrijf (optioneel)</label>
+          <div className="relative">
+            <input
+              className="focus-ring h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
+              value={selectedCompany ? selectedCompany.naam : companyZoek}
+              onChange={(e) => { setCompanyZoek(e.target.value); setSelectedCompany(null); }}
+              placeholder="Zoek op bedrijfsnaam…"
+            />
+            {!selectedCompany && companies.length > 0 && companyZoek && (
+              <div className="absolute z-10 mt-1 w-full rounded-md border border-line bg-white shadow-lg">
+                {companies.map((c) => (
+                  <button
+                    key={c.id}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-panel"
+                    onClick={() => { setSelectedCompany(c); setCompanyZoek(""); setCompanies([]); }}
+                  >
+                    <span className="font-medium">{c.naam}</span>
+                    <span className="text-xs text-slate-400">{c.gemeente} · {c.batch_naam}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {selectedCompany && (
+            <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+              <span className="font-medium text-etil">{selectedCompany.naam}</span>
+              <button className="text-slate-400 hover:text-red-500" onClick={() => setSelectedCompany(null)}>
+                <X size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Zoekbalk */}
+      <div className="mb-4 relative">
+        <Search className="pointer-events-none absolute left-3 top-3 text-slate-400" size={17} />
+        <input
+          className="focus-ring h-11 w-full rounded-md border border-line bg-white pl-9 pr-3"
+          value={zoek}
+          onChange={(e) => setZoek(e.target.value)}
+          placeholder="Zoek op bestandsnaam of bedrijf…"
+        />
+      </div>
+
       <div className="overflow-hidden rounded-lg border border-line bg-white">
         <table className="w-full border-collapse text-left text-sm">
           <thead className="bg-panel text-xs uppercase text-slate-500">
             <tr>
               <th className="px-4 py-3">Bestand</th>
+              <th className="px-4 py-3">Bedrijf</th>
               <th className="px-4 py-3">Jaar</th>
               <th className="px-4 py-3">Berichten</th>
               <th className="px-4 py-3">Geüpload</th>
@@ -2865,9 +2941,10 @@ function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
             </tr>
           </thead>
           <tbody>
-            {uploads.map((u) => (
+            {gefilterd.map((u) => (
               <tr key={u.upload_id} className="cursor-pointer border-t border-line hover:bg-panel" onClick={() => openChat(u.upload_id)}>
                 <td className="px-4 py-3 font-semibold text-etil">{u.bestandsnaam}</td>
+                <td className="px-4 py-3 text-slate-500">{u.company_naam || "—"}</td>
                 <td className="px-4 py-3">{u.jaar || "—"}</td>
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2 py-1 text-xs">
@@ -2887,8 +2964,10 @@ function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
                 </td>
               </tr>
             ))}
-            {!uploads.length ? (
-              <tr><td className="px-4 py-8 text-center text-slate-500" colSpan="4">Geen jaarverslagen geüpload — upload een PDF om te beginnen</td></tr>
+            {!gefilterd.length ? (
+              <tr><td className="px-4 py-8 text-center text-slate-500" colSpan="6">
+                {uploads.length ? "Geen resultaten voor deze zoekopdracht" : "Geen jaarverslagen geüpload — kies een peiljaar en klik PDF uploaden"}
+              </td></tr>
             ) : null}
           </tbody>
         </table>
@@ -2967,7 +3046,7 @@ function JaarverslagChatView({api, user, onLogout, uploadId, openJaarverslagen})
                   Stel een vraag over dit jaarverslag, bijv. "Hoeveel medewerkers had dit bedrijf in {u?.jaar || "dit jaar"}?"
                 </div>
               ) : berichten.map((b, i) => (
-                <div key={i} className={classNames("flex", b.rol === "user" ? "justify-end" : "justify-start")}>
+                <div key={i} className={classNames("flex flex-col gap-0.5", b.rol === "user" ? "items-end" : "items-start")}>
                   <div className={classNames(
                     "max-w-prose rounded-lg px-4 py-2.5 text-sm",
                     b.rol === "user"
@@ -2976,6 +3055,11 @@ function JaarverslagChatView({api, user, onLogout, uploadId, openJaarverslagen})
                   )}>
                     {b.inhoud}
                   </div>
+                  {b.created_at && (
+                    <span className="text-xs text-slate-400">
+                      {new Date(b.created_at).toLocaleTimeString("nl-NL", {hour: "2-digit", minute: "2-digit"})}
+                    </span>
+                  )}
                 </div>
               ))}
               {busy ? (
@@ -3037,9 +3121,13 @@ function JaarverslagChatView({api, user, onLogout, uploadId, openJaarverslagen})
                 {wpBusy ? "Opslaan…" : "Opslaan in register"}
               </IconButton>
             )}
-            {!u?.company_id && (
+            {u?.company_naam ? (
+              <div className="mt-3 border-t border-line pt-3 text-xs text-slate-500">
+                Bedrijf: <span className="font-medium text-ink">{u.company_naam}</span>
+              </div>
+            ) : (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Upload is niet gekoppeld aan een bedrijf — opslaan in register niet mogelijk
+                Niet gekoppeld aan een bedrijf — opslaan in register niet mogelijk
               </div>
             )}
           </div>

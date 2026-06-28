@@ -1,17 +1,22 @@
 import fitz  # PyMuPDF
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..auth import get_current_user
 from ..config import get_settings
 from ..database import get_db
-from ..models import JaarverslagUpload, JaarverslagChatMessage, WPRecord
+from ..models import Company, JaarverslagUpload, JaarverslagChatMessage, User, WPRecord
 
 router = APIRouter(prefix="/jaarverslagen", tags=["jaarverslagen"])
 
 MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
+
+CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 class ChatVraag(BaseModel):
@@ -42,6 +47,9 @@ async def _openai_chat(
 ) -> str:
     from openai import AsyncOpenAI, OpenAIError
 
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is niet geconfigureerd")
+
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT.format(pdf_tekst=pdf_tekst[:60000])},
@@ -54,13 +62,14 @@ async def _openai_chat(
             messages=messages,
             max_tokens=2048,
         )
-    except OpenAIError as e:
+    except OpenAIError:
         raise HTTPException(status_code=502, detail="AI-service tijdelijk niet beschikbaar")
     return response.choices[0].message.content or ""
 
 
 @router.post("/upload")
 async def upload_jaarverslag(
+    _: CurrentUser,
     file: UploadFile,
     company_id: str | None = Form(None),
     jaar: int | None = Form(None),
@@ -96,14 +105,17 @@ async def upload_jaarverslag(
 
 
 @router.get("")
-def lijst_uploads(company_id: str | None = None, db: Session = Depends(get_db)):
+def lijst_uploads(_: CurrentUser, company_id: str | None = None, db: Session = Depends(get_db)):
     count_subq = (
         select(func.count())
         .where(JaarverslagChatMessage.upload_id == JaarverslagUpload.id)
         .correlate(JaarverslagUpload)
         .scalar_subquery()
     )
-    query = db.query(JaarverslagUpload, count_subq.label("aantal_berichten"))
+    query = (
+        db.query(JaarverslagUpload, count_subq.label("aantal_berichten"))
+        .outerjoin(Company, Company.id == JaarverslagUpload.company_id)
+    )
     if company_id:
         query = query.filter(JaarverslagUpload.company_id == company_id)
     return [
@@ -112,6 +124,7 @@ def lijst_uploads(company_id: str | None = None, db: Session = Depends(get_db)):
             "bestandsnaam": u.bestandsnaam,
             "jaar": u.jaar,
             "company_id": u.company_id,
+            "company_naam": db.get(Company, u.company_id).naam if u.company_id else None,
             "uploaded_at": u.uploaded_at.isoformat(),
             "aantal_berichten": count,
         }
@@ -120,16 +133,18 @@ def lijst_uploads(company_id: str | None = None, db: Session = Depends(get_db)):
 
 
 @router.get("/{upload_id}")
-def detail_upload(upload_id: str, db: Session = Depends(get_db)):
+def detail_upload(_: CurrentUser, upload_id: str, db: Session = Depends(get_db)):
     upload = db.get(JaarverslagUpload, upload_id)
     if not upload:
         raise HTTPException(404, "Upload niet gevonden")
+    company = db.get(Company, upload.company_id) if upload.company_id else None
     return {
         "upload": {
             "upload_id": upload.id,
             "bestandsnaam": upload.bestandsnaam,
             "jaar": upload.jaar,
             "company_id": upload.company_id,
+            "company_naam": company.naam if company else None,
             "uploaded_at": upload.uploaded_at.isoformat(),
         },
         "berichten": [
@@ -140,7 +155,7 @@ def detail_upload(upload_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{upload_id}/chat")
-async def chat(upload_id: str, body: ChatVraag, db: Session = Depends(get_db)):
+async def chat(_: CurrentUser, upload_id: str, body: ChatVraag, db: Session = Depends(get_db)):
     upload = db.get(JaarverslagUpload, upload_id)
     if not upload:
         raise HTTPException(404, "Upload niet gevonden")
@@ -161,7 +176,7 @@ async def chat(upload_id: str, body: ChatVraag, db: Session = Depends(get_db)):
 
 
 @router.delete("/{upload_id}")
-def verwijder_upload(upload_id: str, db: Session = Depends(get_db)):
+def verwijder_upload(_: CurrentUser, upload_id: str, db: Session = Depends(get_db)):
     upload = db.get(JaarverslagUpload, upload_id)
     if not upload:
         raise HTTPException(404, "Upload niet gevonden")
@@ -171,7 +186,7 @@ def verwijder_upload(upload_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{upload_id}/opslaan-wp")
-def opslaan_wp(upload_id: str, body: WPOpslaanBody, db: Session = Depends(get_db)):
+def opslaan_wp(_: CurrentUser, upload_id: str, body: WPOpslaanBody, db: Session = Depends(get_db)):
     upload = db.get(JaarverslagUpload, upload_id)
     if not upload:
         raise HTTPException(404, "Upload niet gevonden")
@@ -186,7 +201,7 @@ def opslaan_wp(upload_id: str, body: WPOpslaanBody, db: Session = Depends(get_db
         wp_jaar=body.wp_jaar,
         bron_type="jaarverslag_chat",
         status="corrected",
-        goedgekeurd_op=datetime.utcnow(),
+        goedgekeurd_op=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(rec)
     db.commit()

@@ -1,7 +1,7 @@
 import csv
 import io
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -54,7 +54,7 @@ async def upload_batch(file: UploadFile, naam: str | None = None,
     if not rows or not CSV_VELDEN.issubset({k.strip().lower() for k in rows[0]}):
         raise HTTPException(422, "CSV mist verplichte kolom 'naam'")
 
-    batch = Batch(naam=naam or file.filename, jaar=jaar or datetime.utcnow().year,
+    batch = Batch(naam=naam or file.filename, jaar=jaar or datetime.now(timezone.utc).replace(tzinfo=None).year,
                   totaal=len(rows))
     db.add(batch)
     db.flush()
@@ -141,6 +141,19 @@ def delete_batch(batch_id: str, db: Session = Depends(get_db)):
     db.delete(batch)
     db.commit()
     return {"deleted": batch_id}
+
+
+@router.get("/companies/zoeken")
+def zoek_companies(q: str = "", db: Session = Depends(get_db)):
+    """Globale bedrijvenzoek voor dropdowns — zoekt op naam over alle batches."""
+    query = db.query(Company, Batch.naam.label("batch_naam")).join(Batch, Batch.id == Company.batch_id)
+    if q:
+        query = query.filter(Company.naam.ilike(f"%{q}%"))
+    rows = query.order_by(Company.naam).limit(50).all()
+    return [
+        {"id": c.id, "naam": c.naam, "gemeente": c.gemeente, "batch_naam": batch_naam}
+        for c, batch_naam in rows
+    ]
 
 
 @router.get("")
@@ -411,7 +424,7 @@ def upsert_vastgoed(batch_id: str, company_id: str, body: VastgoedBody,
 
     for field, value in body.model_dump(exclude_unset=False).items():
         setattr(vg, field, value)
-    vg.updated_at = datetime.utcnow()
+    vg.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     return {"company_id": company_id, "bron": vg.bron,
             "updated_at": vg.updated_at.isoformat() + "Z"}

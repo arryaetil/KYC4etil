@@ -1,6 +1,6 @@
 """Beheer-endpoints voor chat-templates en chat-sessies — auth vereist."""
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -162,12 +162,12 @@ def doorvoeren_chat(session_id: str, db: Session = Depends(get_db),
         company_id=comp.id,
         candidate_id=cand.id,
         wp_waarde=int(wp),
-        wp_jaar=b.jaar if b else datetime.utcnow().year,
+        wp_jaar=b.jaar if b else datetime.now(timezone.utc).replace(tzinfo=None).year,
         bron_type="chat",
         bron_url=None,
         status="reviewed",
         goedgekeurd_door=current_user.id,
-        goedgekeurd_op=datetime.utcnow(),
+        goedgekeurd_op=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(rec)
     session.verwerkt = True

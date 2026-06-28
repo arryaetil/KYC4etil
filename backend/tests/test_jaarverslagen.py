@@ -181,6 +181,43 @@ def test_opslaan_wp_404_bij_onbekende_upload(client):
     assert resp.status_code == 404
 
 
+def test_verwijder_upload(client, pdf_bytes):
+    upload_id = client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("rapport.pdf", pdf_bytes, "application/pdf")},
+    ).json()["upload_id"]
+
+    # Upload is zichtbaar in lijst
+    assert len(client.get("/jaarverslagen").json()) == 1
+
+    resp = client.delete(f"/jaarverslagen/{upload_id}")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] is True
+
+    # Upload en berichten zijn weg
+    assert client.get(f"/jaarverslagen/{upload_id}").status_code == 404
+    assert client.get("/jaarverslagen").json() == []
+
+
+def test_verwijder_upload_cascade_berichten(client, pdf_bytes):
+    upload_id = client.post(
+        "/jaarverslagen/upload",
+        files={"file": ("rapport.pdf", pdf_bytes, "application/pdf")},
+    ).json()["upload_id"]
+
+    with patch("app.routers.jaarverslagen._openai_chat", return_value="antwoord"):
+        client.post(f"/jaarverslagen/{upload_id}/chat", json={"vraag": "test"})
+
+    # Verwijder — cascade moet chatberichten meenemen (geen FK-fout)
+    resp = client.delete(f"/jaarverslagen/{upload_id}")
+    assert resp.status_code == 200
+
+
+def test_verwijder_upload_404(client):
+    resp = client.delete("/jaarverslagen/bestaat-niet")
+    assert resp.status_code == 404
+
+
 def test_opslaan_wp_met_company(client, pdf_bytes):
     # Maak een batch + company aan via de API
     csv_content = "naam,gemeente\nTestbedrijf BV,Maastricht\n"

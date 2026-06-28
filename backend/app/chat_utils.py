@@ -17,6 +17,6 @@ def lookup_session(token: str, db: Session) -> ChatSession:
     session = db.query(ChatSession).filter_by(token_hash=hashed).first()
     if not session:
         raise HTTPException(404, "Chat-sessie niet gevonden of verlopen")
-    if session.expires_at and session.expires_at.replace(tzinfo=None) < datetime.utcnow():
+    if session.expires_at and session.expires_at.replace(tzinfo=None) < datetime.now(timezone.utc).replace(tzinfo=None):
         raise HTTPException(410, "Deze chat-link is verlopen")
     return session
