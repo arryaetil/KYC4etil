@@ -43,6 +43,20 @@ DEFAULT_TEMPLATE_CONFIG = {
 @app.on_event("startup")
 def reset_stuck_batches() -> None:
     """Zet batches die 'running' waren bij herstart terug naar 'error'. Seeded standaard chat-template."""
+    import logging
+    _log = logging.getLogger("startup")
+    if settings.jwt_secret == "change-me":
+        _log.critical(
+            "BEVEILIGINGSWAARSCHUWING: JWT_SECRET staat op de standaardwaarde 'change-me'. "
+            "Stel JWT_SECRET in als omgevingsvariabele voor productie."
+        )
+    if settings.email_demo_recipient:
+        _log.warning(
+            "email_demo_recipient is ingesteld op '%s'. "
+            "Alle chat-uitnodigingen gaan naar dit adres i.p.v. het bedrijf. "
+            "Leeghalen voor productie via EMAIL_DEMO_RECIPIENT=",
+            settings.email_demo_recipient,
+        )
     db = SessionLocal()
     try:
         stuck = db.query(Batch).filter_by(status="running").all()

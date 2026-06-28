@@ -115,11 +115,14 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
         )
     db.add(candidate)
 
-    # 🔴 zonder data -> bellijst (alleen als er nog geen item staat — voorkom duplicaten)
+    # 🔴 zonder data -> bellijst; bij herverwerk reden bijwerken zodat die actueel blijft
     existing_cli = db.query(CallListItem).filter_by(company_id=company.id).first()
-    if candidate.confidence_label == "laag" and enrichment.telefoonnummer and not existing_cli:
-        db.add(CallListItem(company_id=company.id, telefoonnummer=enrichment.telefoonnummer,
-                            reden=candidate.reconciliatie_reden or "lage confidence"))
+    if candidate.confidence_label == "laag" and enrichment.telefoonnummer:
+        if existing_cli:
+            existing_cli.reden = candidate.reconciliatie_reden or "lage confidence"
+        else:
+            db.add(CallListItem(company_id=company.id, telefoonnummer=enrichment.telefoonnummer,
+                                reden=candidate.reconciliatie_reden or "lage confidence"))
     return candidate
 
 

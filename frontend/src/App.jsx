@@ -47,9 +47,10 @@ function classNames(...items) {
 function IconButton({children, icon: Icon, variant = "default", ...props}) {
   const styles = {
     default: "border-line bg-white text-ink hover:bg-panel",
-    primary: "border-etil bg-etil text-white hover:bg-teal-800",
+    primary: "border-etil bg-etil text-white hover:opacity-90",
     danger: "border-red-600 bg-red-600 text-white hover:bg-red-700",
     quiet: "border-transparent bg-transparent text-slate-600 hover:bg-panel",
+    ghost: "border-transparent bg-transparent text-white hover:bg-white/10",
   };
   return (
     <button
@@ -114,12 +115,12 @@ function Login({api, onLogin}) {
     <main className="flex min-h-screen items-center justify-center bg-[#eef2f5] px-4">
       <form onSubmit={submit} className="w-full max-w-sm rounded-lg border border-line bg-white p-6 shadow-sm">
         <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-etil text-white">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[#C8102E] text-white">
             <ShieldCheck size={22} />
           </div>
           <div>
             <h1 className="text-xl font-semibold">Vestigingsregister</h1>
-            <p className="text-sm text-slate-500">Reviewomgeving</p>
+            <p className="text-sm text-slate-500">Etil Research Group · Provincie Limburg</p>
           </div>
         </div>
         <label className="mb-2 block text-sm font-medium" htmlFor="email">E-mail</label>
@@ -151,18 +152,18 @@ function Login({api, onLogin}) {
 function Shell({user, onLogout, children, title, actions}) {
   return (
     <div className="min-h-screen bg-[#eef2f5]">
-      <header className="border-b border-line bg-white">
+      <header className="bg-[#C8102E]">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
           <div>
-            <div className="text-sm font-semibold text-etil">Vestigingsregister AI</div>
-            <h1 className="text-xl font-semibold">{title}</h1>
+            <div className="text-xs font-medium uppercase tracking-wide text-white/60">Etil Research Group · Provincie Limburg</div>
+            <h1 className="text-xl font-semibold text-white">{title}</h1>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden text-right text-sm sm:block">
-              <div className="font-medium">{user?.naam}</div>
-              <div className="text-slate-500">{user?.rol}</div>
+              <div className="font-medium text-white">{user?.naam}</div>
+              <div className="text-white/60">{user?.rol}</div>
             </div>
-            <IconButton icon={LogOut} variant="quiet" onClick={onLogout} title="Uitloggen" />
+            <IconButton icon={LogOut} variant="ghost" onClick={onLogout} title="Uitloggen" />
           </div>
         </div>
       </header>
@@ -444,7 +445,14 @@ function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, op
           <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Groen goedkeuren</IconButton>
           <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.xlsx`, "export.xlsx")}>Export</IconButton>
           <IconButton icon={Phone} onClick={() => openBellijst(batchId)}>Bellijst</IconButton>
-          <IconButton icon={MessageSquare} onClick={() => openChatSessies(batchId)}>Chat-sessies</IconButton>
+          <div className="relative inline-flex">
+            <IconButton icon={MessageSquare} onClick={() => openChatSessies(batchId)}>Chat-sessies</IconButton>
+            {batch?.chat_sessies_open > 0 && (
+              <span className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                {batch.chat_sessies_open}
+              </span>
+            )}
+          </div>
           <IconButton icon={Trash2} variant="quiet" onClick={deleteBatch} disabled={busy || isRunning} title="Batch verwijderen" />
         </>
       }

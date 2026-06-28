@@ -30,7 +30,7 @@ button:disabled {
 }
 
 @keyframes fieldPulse {
-  0% { background-color: rgba(15, 118, 110, 0.15); }
+  0% { background-color: rgba(30, 58, 95, 0.15); }
   100% { background-color: transparent; }
 }
 .field-pulse {

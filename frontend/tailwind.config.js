@@ -9,7 +9,7 @@ export default {
         ink: "#1f2933",
         line: "#d7dde5",
         panel: "#f7f8fa",
-        etil: "#0f766e",
+        etil: "#1e3a5f",
         signal: "#b45309",
       },
     },

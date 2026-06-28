@@ -175,8 +175,17 @@ def get_batch(batch_id: str, db: Session = Depends(get_db)):
         if c.confidence_label in labels:
             labels[c.confidence_label] += 1
     fouten = db.query(PipelineRun).filter_by(batch_id=batch_id, status="error").count()
+    company_ids = [c.id for c in db.query(Company.id).filter_by(batch_id=batch_id)]
+    chat_sessies_open = (
+        db.query(ChatSession)
+        .filter(ChatSession.company_id.in_(company_ids),
+                ChatSession.status == "completed",
+                ChatSession.verwerkt == False)  # noqa: E712
+        .count()
+    ) if company_ids else 0
     return {"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
             "totaal": b.totaal, "verwerkt": b.verwerkt, "labels": labels, "fouten": fouten,
+            "chat_sessies_open": chat_sessies_open,
             "created_at": b.created_at.isoformat() + "Z" if b.created_at else None,
             "completed_at": b.completed_at.isoformat() + "Z" if b.completed_at else None}
 
