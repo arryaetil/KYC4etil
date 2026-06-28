@@ -25,12 +25,19 @@ app.include_router(chat_admin.router)
 app.include_router(jaarverslagen.router)
 
 
-DEFAULT_TEMPLATE_VRAGEN = [
-    {"id": "wp_count", "label": "Aantal werkzame personen", "type": "wp_count",
-     "verplicht": True, "hint": "Headcount (niet FTE), peildatum 31 december vorig jaar"},
-    {"id": "opmerking", "label": "Toelichting (optioneel)", "type": "text",
-     "verplicht": False, "hint": "Bijv. deeltijdwerkers, seizoenspersoneel, uitzendkrachten…"},
-]
+DEFAULT_TEMPLATE_CONFIG = {
+    "veld_config": {
+        "wp_totaal": "verplicht", "eigen_personeel": "verplicht", "uitzend": "verplicht",
+        "detachering": "verplicht", "wsw": "verplicht", "man": "verplicht", "vrouw": "verplicht",
+        "voltijd": "verplicht", "deeltijd": "verplicht", "pct_op_locatie": "optioneel",
+        "adres": "verplicht", "correspondentieadres": "optioneel",
+        "perceeloppervlakte": "verplicht", "winkeloppervlakte": "optioneel",
+        "kantooroppervlakte": "optioneel", "bedrijfsvloeroppervlakte": "verplicht",
+        "uitbreidingsruimte": "optioneel", "seizoensverschil": "optioneel", "opmerking": "optioneel",
+    },
+    "intro_tekst": "",
+    "extra_vragen": [],
+}
 
 
 @app.on_event("startup")
@@ -51,10 +58,19 @@ def reset_stuck_batches() -> None:
             db.add(ChatTemplate(
                 naam="Standaard vragenlijst",
                 beschrijving="Basisvragenlijst voor gerichte WP-uitvraag bij bedrijven",
-                vragen=DEFAULT_TEMPLATE_VRAGEN,
+                vragen=DEFAULT_TEMPLATE_CONFIG,
                 is_default=True,
             ))
             db.commit()
+        else:
+            # Migreer bestaande templates met oud lijstformaat naar nieuw dict-formaat
+            for tmpl in db.query(ChatTemplate).all():
+                if isinstance(tmpl.vragen, list) or tmpl.vragen is None:
+                    tmpl.vragen = DEFAULT_TEMPLATE_CONFIG
+            db.commit()
+    except Exception as exc:
+        import logging
+        logging.getLogger("startup").error("Startup event fout: %s", exc)
     finally:
         db.close()
 
