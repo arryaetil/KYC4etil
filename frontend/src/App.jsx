@@ -160,10 +160,7 @@ function Shell({user, onLogout, children, title, actions}) {
               <span className="text-[10px] font-medium text-white/70 tracking-wide">research group</span>
             </div>
             <div className="h-8 w-px bg-white/20" />
-            <div>
-              <div className="text-xs font-medium uppercase tracking-wide text-white/60">Provincie Limburg</div>
-              <h1 className="text-xl font-semibold text-white">{title}</h1>
-            </div>
+            <h1 className="text-xl font-semibold text-white">{title}</h1>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden text-right text-sm sm:block">
