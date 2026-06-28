@@ -53,45 +53,62 @@ router = APIRouter(tags=["chat-admin"], dependencies=[Depends(get_current_user)]
 class TemplateBody(BaseModel):
     naam: str
     beschrijving: str | None = None
-    vragen: list
+    veld_config: dict[str, str] | None = None   # veld -> "verplicht"|"optioneel"|"skip"
+    intro_tekst: str | None = None
+    extra_vragen: list[str] | None = None
     is_default: bool = False
+
+
+def _template_config(body: TemplateBody) -> dict:
+    return {
+        "veld_config": body.veld_config or {},
+        "intro_tekst": body.intro_tekst or "",
+        "extra_vragen": [v for v in (body.extra_vragen or []) if v.strip()],
+    }
+
+
+def _template_response(t: ChatTemplate) -> dict:
+    cfg = t.vragen if isinstance(t.vragen, dict) else {}
+    n_verplicht = sum(1 for v in cfg.get("veld_config", {}).values() if v == "verplicht")
+    n_optioneel = sum(1 for v in cfg.get("veld_config", {}).values() if v == "optioneel")
+    return {
+        "id": t.id,
+        "naam": t.naam,
+        "beschrijving": t.beschrijving,
+        "veld_config": cfg.get("veld_config", {}),
+        "intro_tekst": cfg.get("intro_tekst", ""),
+        "extra_vragen": cfg.get("extra_vragen", []),
+        "is_default": t.is_default,
+        "aangemaakt_door": t.aangemaakt_door,
+        "created_at": t.created_at.isoformat() + "Z" if t.created_at else None,
+        "n_verplicht": n_verplicht,
+        "n_optioneel": n_optioneel,
+    }
 
 
 @router.get("/chat-templates")
 def list_templates(db: Session = Depends(get_db)):
     templates = db.query(ChatTemplate).order_by(ChatTemplate.created_at).all()
-    return [
-        {
-            "id": t.id,
-            "naam": t.naam,
-            "beschrijving": t.beschrijving,
-            "vragen": t.vragen or [],
-            "is_default": t.is_default,
-            "aangemaakt_door": t.aangemaakt_door,
-            "created_at": t.created_at.isoformat() + "Z" if t.created_at else None,
-        }
-        for t in templates
-    ]
+    return [_template_response(t) for t in templates]
 
 
 @router.post("/chat-templates")
 def create_template(body: TemplateBody, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
     if body.is_default:
-        # Verwijder is_default van alle andere templates
         for t in db.query(ChatTemplate).filter_by(is_default=True).all():
             t.is_default = False
     template = ChatTemplate(
         id=str(uuid.uuid4()),
         naam=body.naam,
         beschrijving=body.beschrijving,
-        vragen=body.vragen,
+        vragen=_template_config(body),
         is_default=body.is_default,
         aangemaakt_door=current_user.id,
     )
     db.add(template)
     db.commit()
-    return {"id": template.id, "naam": template.naam, "is_default": template.is_default}
+    return _template_response(template)
 
 
 @router.put("/chat-templates/{template_id}")
@@ -104,10 +121,10 @@ def update_template(template_id: str, body: TemplateBody, db: Session = Depends(
             t.is_default = False
     template.naam = body.naam
     template.beschrijving = body.beschrijving
-    template.vragen = body.vragen
+    template.vragen = _template_config(body)
     template.is_default = body.is_default
     db.commit()
-    return {"id": template.id, "naam": template.naam}
+    return _template_response(template)
 
 
 @router.delete("/chat-templates/{template_id}")

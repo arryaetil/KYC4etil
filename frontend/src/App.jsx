@@ -2504,16 +2504,85 @@ function ChatSessiesView({api, user, onLogout, batchId, openBatch}) {
   );
 }
 
-const VRAAG_TYPES = [
-  {value: "wp_count", label: "WP-getal"},
-  {value: "text", label: "Tekstveld"},
-  {value: "boolean", label: "Ja/Nee"},
-  {value: "number", label: "Getal"},
+// Alle velden van de AI-chatflow met label en groepering
+const CHAT_VELDEN = [
+  {groep: "Personeel — totaal & type", velden: [
+    {key: "wp_totaal", label: "Totaal werkzame personen (wp_totaal)"},
+    {key: "eigen_personeel", label: "Eigen personeel in loondienst"},
+    {key: "uitzend", label: "Uitzendkrachten"},
+    {key: "detachering", label: "Gedetacheerden"},
+    {key: "wsw", label: "WSW-personeel"},
+  ]},
+  {groep: "Personeel — geslacht & arbeidsduur", velden: [
+    {key: "man", label: "Mannen"},
+    {key: "vrouw", label: "Vrouwen"},
+    {key: "voltijd", label: "Voltijd"},
+    {key: "deeltijd", label: "Deeltijd"},
+    {key: "pct_op_locatie", label: "% werkzaam op dit vestigingsadres"},
+  ]},
+  {groep: "Locatie & adres", velden: [
+    {key: "adres", label: "Vestigingsadres"},
+    {key: "correspondentieadres", label: "Correspondentieadres"},
+  ]},
+  {groep: "Vastgoed & ruimte", velden: [
+    {key: "perceeloppervlakte", label: "Perceeloppervlakte (m²)"},
+    {key: "winkeloppervlakte", label: "Winkeloppervlakte (m²)"},
+    {key: "kantooroppervlakte", label: "Kantooroppervlakte (m²)"},
+    {key: "bedrijfsvloeroppervlakte", label: "Bedrijfsvloeroppervlakte (m²)"},
+    {key: "uitbreidingsruimte", label: "Uitbreidingsruimte beschikbaar"},
+  ]},
+  {groep: "Overig", velden: [
+    {key: "seizoensverschil", label: "Seizoensverschillen in personeel"},
+    {key: "opmerking", label: "Overige opmerkingen / toelichting"},
+  ]},
 ];
+
+const STANDAARD_VELD_CONFIG = {
+  wp_totaal: "verplicht", eigen_personeel: "verplicht", uitzend: "verplicht",
+  detachering: "verplicht", wsw: "verplicht", man: "verplicht", vrouw: "verplicht",
+  voltijd: "verplicht", deeltijd: "verplicht", pct_op_locatie: "optioneel",
+  adres: "verplicht", correspondentieadres: "optioneel",
+  perceeloppervlakte: "verplicht", winkeloppervlakte: "optioneel",
+  kantooroppervlakte: "optioneel", bedrijfsvloeroppervlakte: "verplicht",
+  uitbreidingsruimte: "optioneel", seizoensverschil: "optioneel", opmerking: "optioneel",
+};
+
+function leegTemplate() {
+  return {
+    naam: "Nieuw template",
+    beschrijving: "",
+    veld_config: {...STANDAARD_VELD_CONFIG},
+    intro_tekst: "",
+    extra_vragen: ["", "", ""],
+    is_default: false,
+  };
+}
+
+function templateNaarEditor(t) {
+  const cfg = {...STANDAARD_VELD_CONFIG, ...(t.veld_config || {})};
+  const eq = t.extra_vragen || [];
+  return {
+    ...t,
+    veld_config: cfg,
+    intro_tekst: t.intro_tekst || "",
+    extra_vragen: [eq[0] || "", eq[1] || "", eq[2] || ""],
+  };
+}
+
+function editorNaarBody(sel) {
+  return {
+    naam: sel.naam,
+    beschrijving: sel.beschrijving,
+    veld_config: sel.veld_config,
+    intro_tekst: sel.intro_tekst || "",
+    extra_vragen: (sel.extra_vragen || []).filter((v) => v.trim()),
+    is_default: sel.is_default,
+  };
+}
 
 function ChatTemplatesView({api, user, onLogout, openDashboard}) {
   const [templates, setTemplates] = useState([]);
-  const [selected, setSelected] = useState(null); // {id?, naam, beschrijving, vragen, is_default}
+  const [selected, setSelected] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(null);
   const [error, setError] = useState("");
@@ -2524,26 +2593,16 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
     setTemplates(data);
   }
 
-  useEffect(() => {
-    load().catch((err) => setError(err.message));
-  }, []);
+  useEffect(() => { load().catch((err) => setError(err.message)); }, []);
 
   function newTemplate() {
-    setSelected({
-      naam: "Nieuw template",
-      beschrijving: "",
-      vragen: [
-        {id: "wp_count", label: "Aantal werkzame personen", type: "wp_count", verplicht: true, hint: "Headcount (niet FTE)"},
-        {id: "opmerking", label: "Toelichting", type: "text", verplicht: false, hint: ""},
-      ],
-      is_default: false,
-    });
+    setSelected(leegTemplate());
     setSaved(false);
     setError("");
   }
 
   function editTemplate(t) {
-    setSelected({...t, vragen: t.vragen ? [...t.vragen.map((v) => ({...v}))] : []});
+    setSelected(templateNaarEditor(t));
     setSaved(false);
     setError("");
   }
@@ -2567,10 +2626,11 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
     setSaving(true);
     setError("");
     try {
+      const body = editorNaarBody(selected);
       if (selected.id) {
-        await api.updateTemplate(selected.id, {naam: selected.naam, beschrijving: selected.beschrijving, vragen: selected.vragen, is_default: selected.is_default});
+        await api.updateTemplate(selected.id, body);
       } else {
-        const result = await api.createTemplate({naam: selected.naam, beschrijving: selected.beschrijving, vragen: selected.vragen, is_default: selected.is_default});
+        const result = await api.createTemplate(body);
         setSelected((prev) => ({...prev, id: result.id}));
       }
       await load();
@@ -2587,42 +2647,28 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
     setSaved(false);
   }
 
-  function setVraagField(index, field, value) {
-    setSelected((prev) => {
-      const vragen = [...prev.vragen];
-      vragen[index] = {...vragen[index], [field]: value};
-      return {...prev, vragen};
-    });
-    setSaved(false);
-  }
-
-  function addVraag() {
-    const newId = `vraag_${Date.now()}`;
+  function setVeldStatus(key, status) {
     setSelected((prev) => ({
       ...prev,
-      vragen: [...prev.vragen, {id: newId, label: "Nieuwe vraag", type: "text", verplicht: false, hint: ""}],
+      veld_config: {...(prev.veld_config || {}), [key]: status},
     }));
     setSaved(false);
   }
 
-  function removeVraag(index) {
-    setSelected((prev) => ({
-      ...prev,
-      vragen: prev.vragen.filter((_, i) => i !== index),
-    }));
-    setSaved(false);
-  }
-
-  function moveVraag(index, dir) {
-    const newIndex = index + dir;
-    if (newIndex < 0 || !selected || newIndex >= selected.vragen.length) return;
+  function setExtraVraag(i, value) {
     setSelected((prev) => {
-      const vragen = [...prev.vragen];
-      [vragen[index], vragen[newIndex]] = [vragen[newIndex], vragen[index]];
-      return {...prev, vragen};
+      const eq = [...(prev.extra_vragen || ["", "", ""])];
+      eq[i] = value;
+      return {...prev, extra_vragen: eq};
     });
     setSaved(false);
   }
+
+  const statusKleur = {
+    verplicht: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    optioneel: "bg-amber-50 text-amber-700 border-amber-200",
+    skip: "bg-slate-50 text-slate-400 border-slate-200",
+  };
 
   return (
     <Shell
@@ -2637,7 +2683,7 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
       }
     >
       {error ? <Alert message={error} /> : null}
-      <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
         {/* Template-lijst */}
         <div className="space-y-2">
           {!templates.length ? (
@@ -2657,12 +2703,13 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
                 <div>
                   <div className="font-semibold text-sm">{t.naam}</div>
                   {t.beschrijving ? <div className="mt-0.5 text-xs text-slate-500 line-clamp-1">{t.beschrijving}</div> : null}
-                  <div className="mt-1 text-xs text-slate-400">{(t.vragen || []).length} vragen</div>
+                  <div className="mt-1.5 flex gap-2 text-xs">
+                    <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700">{t.n_verplicht ?? "?"} verplicht</span>
+                    <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-700">{t.n_optioneel ?? "?"} optioneel</span>
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  {t.is_default ? (
-                    <span className="rounded bg-etil/10 px-1.5 py-0.5 text-xs font-semibold text-etil">Standaard</span>
-                  ) : null}
+                  {t.is_default ? <span className="rounded bg-etil/10 px-1.5 py-0.5 text-xs font-semibold text-etil">Standaard</span> : null}
                   <button
                     className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
                     onClick={(e) => { e.stopPropagation(); deleteTemplate(t); }}
@@ -2679,95 +2726,117 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
 
         {/* Editor */}
         {selected ? (
-          <div className="rounded-lg border border-line bg-white p-5">
-            <div className="mb-5 grid gap-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium">Naam</label>
-                <input
-                  className="focus-ring h-10 w-full rounded-md border border-line px-3"
-                  value={selected.naam}
-                  onChange={(e) => setField("naam", e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">Beschrijving</label>
-                <input
-                  className="focus-ring h-10 w-full rounded-md border border-line px-3 text-sm"
-                  value={selected.beschrijving || ""}
-                  onChange={(e) => setField("beschrijving", e.target.value)}
-                  placeholder="Optionele omschrijving"
-                />
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={selected.is_default}
-                  onChange={(e) => setField("is_default", e.target.checked)}
-                />
-                <span>Standaard-template (wordt automatisch gebruikt bij nieuwe uitnodigingen)</span>
-              </label>
-            </div>
-
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Vragen</h3>
-              <button
-                className="inline-flex items-center gap-1 rounded-md border border-etil px-2 py-1 text-xs font-medium text-etil hover:bg-etil/5"
-                onClick={addVraag}
-              >
-                <Plus size={13} /> Vraag toevoegen
-              </button>
-            </div>
-
-            <div className="mb-5 space-y-2">
-              {(selected.vragen || []).map((vraag, i) => (
-                <div key={vraag.id || i} className="rounded-md border border-line bg-panel p-3">
-                  <div className="mb-2 flex items-center gap-2">
-                    <GripVertical size={15} className="shrink-0 text-slate-400" />
-                    <div className="grid flex-1 gap-2 sm:grid-cols-[1fr_140px_80px]">
-                      <input
-                        className="focus-ring h-8 rounded-md border border-line bg-white px-2 text-sm"
-                        value={vraag.label}
-                        onChange={(e) => setVraagField(i, "label", e.target.value)}
-                        placeholder="Label"
-                      />
-                      <select
-                        className="focus-ring h-8 rounded-md border border-line bg-white px-2 text-sm"
-                        value={vraag.type}
-                        onChange={(e) => setVraagField(i, "type", e.target.value)}
-                      >
-                        {VRAAG_TYPES.map(({value, label}) => <option key={value} value={value}>{label}</option>)}
-                      </select>
-                      <label className="flex h-8 items-center gap-1 text-xs text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={vraag.verplicht}
-                          onChange={(e) => setVraagField(i, "verplicht", e.target.checked)}
-                        />
-                        Verplicht
-                      </label>
-                    </div>
-                    <div className="flex shrink-0 gap-1">
-                      <button className="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700" onClick={() => moveVraag(i, -1)} disabled={i === 0}><ChevronUp size={14} /></button>
-                      <button className="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700" onClick={() => moveVraag(i, 1)} disabled={i === selected.vragen.length - 1}><ChevronDown size={14} /></button>
-                      <button className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => removeVraag(i)}><Trash2 size={14} /></button>
-                    </div>
-                  </div>
+          <div className="space-y-5">
+            {/* Basisinfo */}
+            <div className="rounded-lg border border-line bg-white p-5">
+              <h3 className="mb-4 text-sm font-semibold">Algemeen</h3>
+              <div className="grid gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Naam</label>
                   <input
-                    className="focus-ring h-8 w-full rounded-md border border-line bg-white px-2 text-xs text-slate-600"
-                    value={vraag.hint || ""}
-                    onChange={(e) => setVraagField(i, "hint", e.target.value)}
-                    placeholder="Hint / toelichting (zichtbaar voor bedrijf)"
+                    className="focus-ring h-10 w-full rounded-md border border-line px-3 text-sm"
+                    value={selected.naam}
+                    onChange={(e) => setField("naam", e.target.value)}
                   />
                 </div>
-              ))}
-              {!selected.vragen?.length ? (
-                <div className="rounded-md border border-dashed border-line p-4 text-center text-sm text-slate-400">
-                  Nog geen vragen — klik op "Vraag toevoegen"
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Beschrijving <span className="font-normal text-slate-400">(optioneel)</span></label>
+                  <input
+                    className="focus-ring h-10 w-full rounded-md border border-line px-3 text-sm"
+                    value={selected.beschrijving || ""}
+                    onChange={(e) => setField("beschrijving", e.target.value)}
+                    placeholder="Bijv. 'Volledig — alle velden'"
+                  />
                 </div>
-              ) : null}
+                <div>
+                  <label className="mb-1 block text-sm font-medium">
+                    Aangepaste openingstekst <span className="font-normal text-slate-400">(optioneel — overschrijft standaard-opening)</span>
+                  </label>
+                  <textarea
+                    className="focus-ring w-full rounded-md border border-line px-3 py-2 text-sm"
+                    rows={3}
+                    value={selected.intro_tekst || ""}
+                    onChange={(e) => setField("intro_tekst", e.target.value)}
+                    placeholder="Leeg = standaard Etil-opening gebruiken"
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selected.is_default}
+                    onChange={(e) => setField("is_default", e.target.checked)}
+                  />
+                  <span>Standaard-template <span className="text-slate-400">(automatisch gebruikt bij nieuwe uitnodigingen)</span></span>
+                </label>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3 border-t border-line pt-4">
+            {/* Velden configuratie */}
+            <div className="rounded-lg border border-line bg-white p-5">
+              <div className="mb-3 flex items-center gap-3">
+                <h3 className="text-sm font-semibold">Welke velden uitvragen?</h3>
+                <div className="flex gap-2 text-xs">
+                  <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700">verplicht — AI vraagt altijd</span>
+                  <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-700">optioneel — accepteert "niet van toepassing"</span>
+                  <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-400">niet uitvragen</span>
+                </div>
+              </div>
+              <div className="space-y-5">
+                {CHAT_VELDEN.map(({groep, velden}) => (
+                  <div key={groep}>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{groep}</div>
+                    <div className="space-y-1">
+                      {velden.map(({key, label}) => {
+                        const status = (selected.veld_config || {})[key] || "optioneel";
+                        return (
+                          <div key={key} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-panel">
+                            <span className="text-sm">{label}</span>
+                            <div className="flex shrink-0 gap-1">
+                              {["verplicht", "optioneel", "skip"].map((s) => (
+                                <button
+                                  key={s}
+                                  onClick={() => setVeldStatus(key, s)}
+                                  className={classNames(
+                                    "rounded border px-2 py-0.5 text-xs font-medium transition",
+                                    status === s
+                                      ? statusKleur[s]
+                                      : "border-transparent text-slate-400 hover:bg-panel",
+                                  )}
+                                >
+                                  {s === "skip" ? "niet" : s}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Extra vragen */}
+            <div className="rounded-lg border border-line bg-white p-5">
+              <h3 className="mb-1 text-sm font-semibold">Extra vragen <span className="font-normal text-slate-400">(max 3 — worden gesteld in BEURT 5)</span></h3>
+              <p className="mb-3 text-xs text-slate-500">Aanvullende open vragen die de AI stelt naast de standaard-onderwerpen. De antwoorden worden opgeslagen als extra_1, extra_2, extra_3.</p>
+              <div className="space-y-2">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="w-5 shrink-0 text-center text-xs text-slate-400">{i + 1}.</span>
+                    <input
+                      className="focus-ring h-9 flex-1 rounded-md border border-line px-3 text-sm"
+                      value={(selected.extra_vragen || [])[i] || ""}
+                      onChange={(e) => setExtraVraag(i, e.target.value)}
+                      placeholder={i === 0 ? "Bijv. Wat is uw voornaamste activiteit op dit adres?" : "Optionele extra vraag"}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Opslaan */}
+            <div className="flex items-center gap-3">
               <IconButton icon={Check} variant="primary" onClick={save} disabled={saving}>
                 {saving ? "Opslaan…" : "Opslaan"}
               </IconButton>

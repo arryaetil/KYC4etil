@@ -1,4 +1,4 @@
-﻿"""OpenAI-powered chat service for WP data collection."""
+"""OpenAI-powered chat service for WP data collection."""
 import json
 import re
 
@@ -69,30 +69,105 @@ OPMAAK VAN REPLY-TEKST:
 - Wanneer je vragen stelt, nummer ze (1. 2. 3.) met elk een eigen regel via \\n.
 - Gebruik komma's als scheidingsteken wanneer je meerdere waarden op één regel samenvat."""
 
-_ANTWOORDEN_SCHEMA = """{
-  "wp_totaal": <getal of null>,
-  "eigen_personeel": <getal of null>,
-  "uitzend": <getal of null>,
-  "detachering": <getal of null>,
-  "wsw": <getal of null>,
-  "man": <getal of null>,
-  "vrouw": <getal of null>,
-  "voltijd": <getal of null>,
-  "deeltijd": <getal of null>,
-  "pct_op_locatie": <getal of null>,
-  "adres": <tekst of null>,
-  "correspondentieadres": <tekst of null>,
-  "perceeloppervlakte": <getal of null>,
-  "winkeloppervlakte": <getal of null>,
-  "kantooroppervlakte": <getal of null>,
-  "bedrijfsvloeroppervlakte": <getal of null>,
-  "uitbreidingsruimte": <tekst of null>,
-  "seizoensverschil": <tekst of null>,
-  "opmerking": <tekst of null>
-}"""
+# Standaard veldconfiguratie — wordt gebruikt als er geen template actief is
+_DEFAULT_VELD_CONFIG: dict[str, str] = {
+    "wp_totaal": "verplicht",
+    "eigen_personeel": "verplicht",
+    "uitzend": "verplicht",
+    "detachering": "verplicht",
+    "wsw": "verplicht",
+    "man": "verplicht",
+    "vrouw": "verplicht",
+    "voltijd": "verplicht",
+    "deeltijd": "verplicht",
+    "pct_op_locatie": "optioneel",
+    "adres": "verplicht",
+    "correspondentieadres": "optioneel",
+    "perceeloppervlakte": "verplicht",
+    "winkeloppervlakte": "optioneel",
+    "kantooroppervlakte": "optioneel",
+    "bedrijfsvloeroppervlakte": "verplicht",
+    "uitbreidingsruimte": "optioneel",
+    "seizoensverschil": "optioneel",
+    "opmerking": "optioneel",
+}
+
+_VELD_LABELS: dict[str, str] = {
+    "wp_totaal": "wp_totaal (totaal werkzame personen, headcount)",
+    "eigen_personeel": "eigen_personeel (eigen personeel in loondienst)",
+    "uitzend": "uitzend (uitzendkrachten)",
+    "detachering": "detachering (gedetacheerden)",
+    "wsw": "wsw (WSW-personeel)",
+    "man": "man (aantal mannen)",
+    "vrouw": "vrouw (aantal vrouwen)",
+    "voltijd": "voltijd (voltijdwerkers)",
+    "deeltijd": "deeltijd (deeltijdwerkers)",
+    "pct_op_locatie": "pct_op_locatie (% werkzaam op dit vestigingsadres)",
+    "adres": "adres (vestigingsadres inclusief huisnummer)",
+    "correspondentieadres": "correspondentieadres",
+    "perceeloppervlakte": "perceeloppervlakte in m²",
+    "winkeloppervlakte": "winkeloppervlakte in m²",
+    "kantooroppervlakte": "kantooroppervlakte in m²",
+    "bedrijfsvloeroppervlakte": "bedrijfsvloeroppervlakte in m²",
+    "uitbreidingsruimte": "uitbreidingsruimte (ja/nee/niet van toepassing)",
+    "seizoensverschil": "seizoensverschil (ja/nee — pieken/dalen in personeelsbezetting)",
+    "opmerking": "opmerking (vrije toelichting)",
+}
+
+
+def _effective_veld_config(template_config: dict | None) -> dict[str, str]:
+    """Samenvoegen van standaard config met eventuele template-overrides."""
+    cfg = dict(_DEFAULT_VELD_CONFIG)
+    if template_config and isinstance(template_config.get("veld_config"), dict):
+        for k, v in template_config["veld_config"].items():
+            if k in cfg and v in ("verplicht", "optioneel", "skip"):
+                cfg[k] = v
+    return cfg
+
 
 def _build_system_prompt(session: ChatSession, company: Company,
-                         enrichment: Enrichment | None) -> str:
+                         enrichment: Enrichment | None,
+                         template_config: dict | None = None) -> str:
+    veld_cfg = _effective_veld_config(template_config)
+
+    verplicht = [k for k in _DEFAULT_VELD_CONFIG if veld_cfg.get(k) == "verplicht"]
+    optioneel = [k for k in _DEFAULT_VELD_CONFIG if veld_cfg.get(k) == "optioneel"]
+    actief = verplicht + optioneel
+
+    extra_vragen: list[str] = (template_config or {}).get("extra_vragen") or []
+    intro_tekst: str = (template_config or {}).get("intro_tekst") or ""
+
+    def veld_str(keys: list[str]) -> str:
+        return "\n".join(f"- {_VELD_LABELS.get(k, k)}" for k in keys)
+
+    verplicht_str = veld_str(verplicht) if verplicht else "— geen verplichte velden —"
+    optioneel_str = veld_str(optioneel) if optioneel else "— geen optionele velden —"
+
+    extra_vragen_blok = ""
+    if extra_vragen:
+        regels = "\n".join(f"- {v} (sla op als extra_{i})" for i, v in enumerate(extra_vragen, 1))
+        extra_vragen_blok = f"\nEXTRA VRAGEN (stel deze in BEURT 5, aanvullend op de standaardvragen):\n{regels}\n"
+
+    # Dynamisch antwoorden-schema — alleen actieve velden
+    schema_lines = [f'  "{k}": <getal of null>' if k not in (
+        "adres", "correspondentieadres", "uitbreidingsruimte", "seizoensverschil", "opmerking"
+    ) else f'  "{k}": <tekst of null>' for k in actief]
+    for i, _ in enumerate(extra_vragen, 1):
+        schema_lines.append(f'  "extra_{i}": <tekst of null>')
+    schema = "{\n" + ",\n".join(schema_lines) + "\n}"
+
+    # Rekenregels — alleen als de relevante velden actief zijn
+    rekenregels: list[str] = []
+    if "wp_totaal" in actief:
+        if all(k in actief for k in ["eigen_personeel", "uitzend", "detachering", "wsw"]):
+            rekenregels.append("- eigen_personeel + uitzend + detachering + wsw MOET gelijk zijn aan wp_totaal.")
+        if "man" in actief and "vrouw" in actief:
+            rekenregels.append("- man + vrouw MOET gelijk zijn aan wp_totaal.")
+        if "voltijd" in actief and "deeltijd" in actief:
+            rekenregels.append("- voltijd + deeltijd MOET gelijk zijn aan wp_totaal.")
+    rekenregels_str = "\n".join(rekenregels) if rekenregels else "Geen rekencontroles van toepassing."
+
+    # Bekende bedrijfsgegevens
     bekende_info = f"Bedrijfsnaam: {company.naam}"
     if company.gemeente:
         bekende_info += f"\nGemeente: {company.gemeente}"
@@ -108,46 +183,60 @@ def _build_system_prompt(session: ChatSession, company: Company,
     if session.pre_fill_wp:
         pre_fill_wp = f"\nGeschat aantal WP: {session.pre_fill_wp} (bevestig of corrigeer dit met de gebruiker)"
 
+    opening = intro_tekst if intro_tekst else (
+        "u bent benaderd door Etil Research Group, in opdracht van Provincie Limburg, voor het "
+        "jaarlijkse Vestigingsregister. De antwoorden worden door een medewerker gecontroleerd "
+        "voordat ze worden verwerkt. Vraag eerst bevestiging van de bedrijfsnaam."
+    )
+
+    heeft_vastgoed = any(k in actief for k in [
+        "perceeloppervlakte", "winkeloppervlakte", "kantooroppervlakte", "bedrijfsvloeroppervlakte",
+    ])
+    beurt4 = (
+        "BEURT 4: Meld dat de gebruiker het formulier kan gebruiken om de oppervlaktes in te vullen "
+        "(perceel, winkel, kantoor, bedrijfsvloer in m², voor zover van toepassing) en of er "
+        "uitbreidingsruimte is. Wacht op het antwoord via het formulier."
+        if heeft_vastgoed else
+        "BEURT 4: Sla deze beurt over (geen vastgoedvelden actief in dit template)."
+    )
+
     return f"""Je bent een vriendelijke data-assistent van Etil Research Group.
 
-DOEL: Verzamel personeels- en vastgoedgegevens voor deze vestiging via een natuurlijk gesprek. Groepeer gerelateerde vragen. Bevestig wat al bekend is — vraag het niet opnieuw.
+DOEL: Verzamel de gevraagde gegevens voor deze vestiging via een natuurlijk gesprek. Groepeer gerelateerde vragen. Bevestig wat al bekend is — vraag het niet opnieuw.
 
-Open het gesprek met: u bent benaderd door Etil Research Group, in opdracht van Provincie Limburg, voor het jaarlijkse Vestigingsregister. De antwoorden worden door een medewerker gecontroleerd voordat ze worden verwerkt. Vraag eerst bevestiging van de bedrijfsnaam.
+Open het gesprek met: {opening}
 
 BEKENDE GEGEVENS (bevestig, niet opnieuw vragen):
 {bekende_info}{pre_fill_wp}
 
 VERPLICHTE VELDEN (deze MOETEN allemaal worden uitgevraagd):
-- Personeel: wp_totaal, eigen_personeel, uitzend, detachering, wsw, man, vrouw, voltijd, deeltijd, pct_op_locatie
-- Vastgoed: adres, perceeloppervlakte, winkeloppervlakte, kantooroppervlakte, bedrijfsvloeroppervlakte
+{verplicht_str}
 
 OPTIONELE VELDEN (vraag ernaar maar accepteer als de gebruiker het niet weet):
-- correspondentieadres, uitbreidingsruimte, seizoensverschil, opmerking
-
+{optioneel_str}
+{extra_vragen_blok}
 GESPREKSVERLOOP (volg deze beurten EXACT in deze volgorde):
 BEURT 1: Begroeting + transparantie (wie, waarvoor, review). Bevestig ALLE bekende gegevens met de gebruiker (bedrijfsnaam, adres, eventueel geschat WP-getal). Vraag bevestiging.
 BEURT 2: Vraag het totaal aantal werkzame personen (wp_totaal). Meld dat de gebruiker het invoerformulier kan gebruiken om de uitsplitsingen in te vullen (dienstverband, geslacht, arbeidsduur, % op locatie). Wacht op de antwoorden van de gebruiker — deze komen via het formulier per groep.
 BEURT 3: Vraag ALLEEN of het correspondentieadres hetzelfde is als het vestigingsadres. Stel GEEN andere vragen in deze beurt. De gebruiker beantwoordt dit via knoppen. Wacht op het antwoord.
-BEURT 4: Meld dat de gebruiker het formulier kan gebruiken om de oppervlaktes in te vullen (perceel, winkel, kantoor, bedrijfsvloer in m²) en of er uitbreidingsruimte is. Wacht op het antwoord via het formulier.
+{beurt4}
 BEURT 5: Vraag naar seizoensverschillen en eventuele opmerkingen.
 BEURT 6: BEVESTIGINGSSTAP — Toon GEEN overzicht van gegevens in de chat. Verwijs alleen naar het overzichtspaneel: "Controleer het overzicht hiernaast. Klopt alles? Zo ja, dan sla ik het op."
 BEURT 7: Als de gebruiker "ja" zegt: bedank en sluit af met done: true. Als "nee": corrigeer en vraag opnieuw.
 
 REKENREGELS PERSONEEL:
-- eigen_personeel + uitzend + detachering + wsw MOET gelijk zijn aan wp_totaal.
-- man + vrouw MOET gelijk zijn aan wp_totaal.
-- voltijd + deeltijd MOET gelijk zijn aan wp_totaal.
-- Als de som niet klopt, wijs de gebruiker hierop en vraag om correctie.
+{rekenregels_str}
+Als de som niet klopt, wijs de gebruiker hierop en vraag om correctie.
 
 BELANGRIJK:
 - Sla geen verplicht veld over. Als de gebruiker een veld niet weet, noteer null en ga door.
 - Als er een geschat WP-getal is, presenteer dit en vraag of het klopt.
 - Zet null voor onbekende velden in het gegevens/antwoorden-object.
-- Als de gebruiker zegt dat iets niet van toepassing is, er geen is, of "nee" antwoordt (bijv. geen uitbreidingsruimte, geen seizoensverschil, geen opmerkingen), zet dan "/" als waarde in het gegevens-object — NIET null. Null betekent "nog niet gevraagd", "/" betekent "niet van toepassing".
+- Als de gebruiker zegt dat iets niet van toepassing is, of "nee" antwoordt (bijv. geen uitbreidingsruimte, geen seizoensverschil), zet dan "/" als waarde — NIET null. Null = nog niet gevraagd, "/" = niet van toepassing.
 - Als het correspondentieadres hetzelfde is als het vestigingsadres, zet dan "Zelfde als vestigingsadres" als waarde.
 
-GEGEVENS-SCHEMA (gebruik dit voor het "gegevens" object in elke beurt EN voor "antwoorden" bij de laatste beurt):
-{_ANTWOORDEN_SCHEMA}
+GEGEVENS-SCHEMA (gebruik dit voor "gegevens" in elke beurt EN voor "antwoorden" bij de laatste beurt):
+{schema}
 
 {_FORMAT_RULES}"""
 
@@ -161,7 +250,8 @@ async def get_chat_reply(messages: list[dict], session: ChatSession,
                          "Neem contact op met Etil Research Group.", "done": False}
 
     client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
-    system_text = _build_system_prompt(session, company, enrichment)
+    template_config = session.vragen if isinstance(session.vragen, dict) else None
+    system_text = _build_system_prompt(session, company, enrichment, template_config)
 
     response = await client.chat.completions.create(
         model=settings.openai_model,

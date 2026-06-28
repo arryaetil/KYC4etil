@@ -79,6 +79,7 @@ export function createApi(token, onUnauthorized) {
     chatTemplates: () => request("/chat-templates"),
     createTemplate: (body) => request("/chat-templates", {method: "POST", json: body}),
     updateTemplate: (id, body) => request(`/chat-templates/${id}`, {method: "PUT", json: body}),
+    setDefaultTemplate: (id) => request(`/chat-templates/${id}`, {method: "PUT", json: {is_default: true}}),
     deleteTemplate: (id) => request(`/chat-templates/${id}`, {method: "DELETE"}),
     uploadJaarverslag: (file, jaar, companyId) => {
       const body = new FormData();
