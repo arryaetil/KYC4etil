@@ -157,6 +157,17 @@ def _build_system_prompt(session: ChatSession, company: Company,
         schema_lines.append(f'  "extra_{i}": <tekst of null>')
     schema = "{\n" + ",\n".join(schema_lines) + "\n}"
 
+    # Rekenregels — alleen als relevante velden actief zijn
+    rekenregels: list[str] = []
+    if "wp_totaal" in actief:
+        if all(k in actief for k in ["eigen_personeel", "uitzend", "detachering", "wsw"]):
+            rekenregels.append("- eigen_personeel + uitzend + detachering + wsw MOET gelijk zijn aan wp_totaal.")
+        if "man" in actief and "vrouw" in actief:
+            rekenregels.append("- man + vrouw MOET gelijk zijn aan wp_totaal.")
+        if "voltijd" in actief and "deeltijd" in actief:
+            rekenregels.append("- voltijd + deeltijd MOET gelijk zijn aan wp_totaal.")
+    rekenregels_str = "\n".join(rekenregels) if rekenregels else "Geen rekencontroles van toepassing."
+
     bekende_info = f"Bedrijfsnaam: {company.naam}"
     if company.gemeente:
         bekende_info += f"\nGemeente: {company.gemeente}"
@@ -209,6 +220,10 @@ BEURT 3: Vraag ALLEEN of het correspondentieadres hetzelfde is als het vestiging
 BEURT 5: Vraag naar seizoensverschillen en eventuele opmerkingen.{" Stel daarna ook de extra vragen." if extra_vragen else ""}
 BEURT 6: BEVESTIGINGSSTAP — Toon GEEN overzicht van gegevens in de chat. Verwijs alleen naar het overzichtspaneel: "Controleer het overzicht hiernaast. Klopt alles? Zo ja, dan sla ik het op."
 BEURT 7: Als de gebruiker "ja" zegt: bedank en sluit af met done: true. Als "nee": corrigeer en vraag opnieuw.
+
+REKENREGELS PERSONEEL:
+{rekenregels_str}
+Als de som niet klopt, wijs de gebruiker hierop en vraag om correctie. Als de som WEL klopt, accepteer de verdeling altijd — ook als de verhouding ongewoon lijkt (bijv. 100 voltijds op 1400 deeltijds). Geef nooit commentaar op de verdeling zolang de som overeenkomt.
 
 BELANGRIJK:
 - Sla geen veld over. Als de gebruiker een veld niet weet, noteer null en ga door.
