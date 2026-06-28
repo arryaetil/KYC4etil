@@ -2119,7 +2119,7 @@ const OVERZICHT_GROEPEN = [
     titel: "Overig",
     velden: [
       {key: "seizoensverschil", label: "Seizoensverschil"},
-      {key: "opmerking", label: "Opmerking"},
+      {key: "opmerking", label: "Opmerking", optioneel: true},
     ],
   },
 ];
@@ -2128,8 +2128,9 @@ function OverzichtPanel({gegevens}) {
   const prevGegevensRef = useRef({});
   const merged = gegevens || {};
   const alleVelden = OVERZICHT_GROEPEN.flatMap((g) => g.velden);
-  const ingevuld = alleVelden.filter((v) => merged[v.key] != null).length;
-  const totaal = alleVelden.length;
+  const verplichtVelden = alleVelden.filter((v) => !v.optioneel);
+  const ingevuld = verplichtVelden.filter((v) => merged[v.key] != null).length;
+  const totaal = verplichtVelden.length;
   const pctVoortgang = totaal ? Math.round((ingevuld / totaal) * 100) : 0;
   const changedKeys = new Set();
   const prev = prevGegevensRef.current;
