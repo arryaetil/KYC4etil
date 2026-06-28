@@ -69,27 +69,27 @@ OPMAAK VAN REPLY-TEKST:
 - Wanneer je vragen stelt, nummer ze (1. 2. 3.) met elk een eigen regel via \\n.
 - Gebruik komma's als scheidingsteken wanneer je meerdere waarden op één regel samenvat."""
 
-# Standaard veldconfiguratie — wordt gebruikt als er geen template actief is
-_DEFAULT_VELD_CONFIG: dict[str, str] = {
-    "wp_totaal": "verplicht",
-    "eigen_personeel": "verplicht",
-    "uitzend": "verplicht",
-    "detachering": "verplicht",
-    "wsw": "verplicht",
-    "man": "verplicht",
-    "vrouw": "verplicht",
-    "voltijd": "verplicht",
-    "deeltijd": "verplicht",
-    "pct_op_locatie": "optioneel",
-    "adres": "verplicht",
-    "correspondentieadres": "optioneel",
-    "perceeloppervlakte": "verplicht",
-    "winkeloppervlakte": "optioneel",
-    "kantooroppervlakte": "optioneel",
-    "bedrijfsvloeroppervlakte": "verplicht",
-    "uitbreidingsruimte": "optioneel",
-    "seizoensverschil": "optioneel",
-    "opmerking": "optioneel",
+# Standaard veldconfiguratie — True = aan, False = uit
+_DEFAULT_VELD_CONFIG: dict[str, bool] = {
+    "wp_totaal": True,
+    "eigen_personeel": True,
+    "uitzend": True,
+    "detachering": True,
+    "wsw": True,
+    "man": True,
+    "vrouw": True,
+    "voltijd": True,
+    "deeltijd": True,
+    "pct_op_locatie": True,
+    "adres": True,
+    "correspondentieadres": True,
+    "perceeloppervlakte": True,
+    "winkeloppervlakte": True,
+    "kantooroppervlakte": True,
+    "bedrijfsvloeroppervlakte": True,
+    "uitbreidingsruimte": True,
+    "seizoensverschil": True,
+    "opmerking": True,
 }
 
 _VELD_LABELS: dict[str, str] = {
@@ -115,13 +115,18 @@ _VELD_LABELS: dict[str, str] = {
 }
 
 
-def _effective_veld_config(template_config: dict | None) -> dict[str, str]:
+def _effective_veld_config(template_config: dict | None) -> dict[str, bool]:
     """Samenvoegen van standaard config met eventuele template-overrides."""
     cfg = dict(_DEFAULT_VELD_CONFIG)
     if template_config and isinstance(template_config.get("veld_config"), dict):
         for k, v in template_config["veld_config"].items():
-            if k in cfg and v in ("verplicht", "optioneel", "skip"):
-                cfg[k] = v
+            if k in cfg:
+                if isinstance(v, bool):
+                    cfg[k] = v
+                elif v == "skip":
+                    cfg[k] = False
+                else:
+                    cfg[k] = True  # "verplicht" of "optioneel" (oud formaat)
     return cfg
 
 
@@ -129,10 +134,7 @@ def _build_system_prompt(session: ChatSession, company: Company,
                          enrichment: Enrichment | None,
                          template_config: dict | None = None) -> str:
     veld_cfg = _effective_veld_config(template_config)
-
-    verplicht = [k for k in _DEFAULT_VELD_CONFIG if veld_cfg.get(k) == "verplicht"]
-    optioneel = [k for k in _DEFAULT_VELD_CONFIG if veld_cfg.get(k) == "optioneel"]
-    actief = verplicht + optioneel
+    actief = [k for k in _DEFAULT_VELD_CONFIG if veld_cfg.get(k)]
 
     extra_vragen: list[str] = (template_config or {}).get("extra_vragen") or []
     intro_tekst: str = (template_config or {}).get("intro_tekst") or ""
@@ -140,8 +142,7 @@ def _build_system_prompt(session: ChatSession, company: Company,
     def veld_str(keys: list[str]) -> str:
         return "\n".join(f"- {_VELD_LABELS.get(k, k)}" for k in keys)
 
-    verplicht_str = veld_str(verplicht) if verplicht else "— geen verplichte velden —"
-    optioneel_str = veld_str(optioneel) if optioneel else "— geen optionele velden —"
+    actief_str = veld_str(actief) if actief else "— geen velden actief —"
 
     extra_vragen_blok = ""
     if extra_vragen:
@@ -156,7 +157,7 @@ def _build_system_prompt(session: ChatSession, company: Company,
         schema_lines.append(f'  "extra_{i}": <tekst of null>')
     schema = "{\n" + ",\n".join(schema_lines) + "\n}"
 
-    # Rekenregels — alleen als de relevante velden actief zijn
+    # Rekenregels — alleen als relevante velden actief zijn
     rekenregels: list[str] = []
     if "wp_totaal" in actief:
         if all(k in actief for k in ["eigen_personeel", "uitzend", "detachering", "wsw"]):
@@ -167,7 +168,6 @@ def _build_system_prompt(session: ChatSession, company: Company,
             rekenregels.append("- voltijd + deeltijd MOET gelijk zijn aan wp_totaal.")
     rekenregels_str = "\n".join(rekenregels) if rekenregels else "Geen rekencontroles van toepassing."
 
-    # Bekende bedrijfsgegevens
     bekende_info = f"Bedrijfsnaam: {company.naam}"
     if company.gemeente:
         bekende_info += f"\nGemeente: {company.gemeente}"
@@ -209,18 +209,15 @@ Open het gesprek met: {opening}
 BEKENDE GEGEVENS (bevestig, niet opnieuw vragen):
 {bekende_info}{pre_fill_wp}
 
-VERPLICHTE VELDEN (deze MOETEN allemaal worden uitgevraagd):
-{verplicht_str}
-
-OPTIONELE VELDEN (vraag ernaar maar accepteer als de gebruiker het niet weet):
-{optioneel_str}
+UIT TE VRAGEN VELDEN:
+{actief_str}
 {extra_vragen_blok}
 GESPREKSVERLOOP (volg deze beurten EXACT in deze volgorde):
 BEURT 1: Begroeting + transparantie (wie, waarvoor, review). Bevestig ALLE bekende gegevens met de gebruiker (bedrijfsnaam, adres, eventueel geschat WP-getal). Vraag bevestiging.
 BEURT 2: Vraag het totaal aantal werkzame personen (wp_totaal). Meld dat de gebruiker het invoerformulier kan gebruiken om de uitsplitsingen in te vullen (dienstverband, geslacht, arbeidsduur, % op locatie). Wacht op de antwoorden van de gebruiker — deze komen via het formulier per groep.
 BEURT 3: Vraag ALLEEN of het correspondentieadres hetzelfde is als het vestigingsadres. Stel GEEN andere vragen in deze beurt. De gebruiker beantwoordt dit via knoppen. Wacht op het antwoord.
 {beurt4}
-BEURT 5: Vraag naar seizoensverschillen en eventuele opmerkingen.
+BEURT 5: Vraag naar seizoensverschillen en eventuele opmerkingen.{" Stel daarna ook de extra vragen." if extra_vragen else ""}
 BEURT 6: BEVESTIGINGSSTAP — Toon GEEN overzicht van gegevens in de chat. Verwijs alleen naar het overzichtspaneel: "Controleer het overzicht hiernaast. Klopt alles? Zo ja, dan sla ik het op."
 BEURT 7: Als de gebruiker "ja" zegt: bedank en sluit af met done: true. Als "nee": corrigeer en vraag opnieuw.
 
@@ -229,7 +226,7 @@ REKENREGELS PERSONEEL:
 Als de som niet klopt, wijs de gebruiker hierop en vraag om correctie.
 
 BELANGRIJK:
-- Sla geen verplicht veld over. Als de gebruiker een veld niet weet, noteer null en ga door.
+- Sla geen veld over. Als de gebruiker een veld niet weet, noteer null en ga door.
 - Als er een geschat WP-getal is, presenteer dit en vraag of het klopt.
 - Zet null voor onbekende velden in het gegevens/antwoorden-object.
 - Als de gebruiker zegt dat iets niet van toepassing is, of "nee" antwoordt (bijv. geen uitbreidingsruimte, geen seizoensverschil), zet dan "/" als waarde — NIET null. Null = nog niet gevraagd, "/" = niet van toepassing.

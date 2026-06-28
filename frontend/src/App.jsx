@@ -2538,13 +2538,13 @@ const CHAT_VELDEN = [
 ];
 
 const STANDAARD_VELD_CONFIG = {
-  wp_totaal: "verplicht", eigen_personeel: "verplicht", uitzend: "verplicht",
-  detachering: "verplicht", wsw: "verplicht", man: "verplicht", vrouw: "verplicht",
-  voltijd: "verplicht", deeltijd: "verplicht", pct_op_locatie: "optioneel",
-  adres: "verplicht", correspondentieadres: "optioneel",
-  perceeloppervlakte: "verplicht", winkeloppervlakte: "optioneel",
-  kantooroppervlakte: "optioneel", bedrijfsvloeroppervlakte: "verplicht",
-  uitbreidingsruimte: "optioneel", seizoensverschil: "optioneel", opmerking: "optioneel",
+  wp_totaal: true, eigen_personeel: true, uitzend: true,
+  detachering: true, wsw: true, man: true, vrouw: true,
+  voltijd: true, deeltijd: true, pct_op_locatie: true,
+  adres: true, correspondentieadres: true,
+  perceeloppervlakte: true, winkeloppervlakte: true,
+  kantooroppervlakte: true, bedrijfsvloeroppervlakte: true,
+  uitbreidingsruimte: true, seizoensverschil: true, opmerking: true,
 };
 
 function leegTemplate() {
@@ -2553,19 +2553,25 @@ function leegTemplate() {
     beschrijving: "",
     veld_config: {...STANDAARD_VELD_CONFIG},
     intro_tekst: "",
-    extra_vragen: ["", "", ""],
+    extra_vragen: [],
     is_default: false,
   };
 }
 
 function templateNaarEditor(t) {
-  const cfg = {...STANDAARD_VELD_CONFIG, ...(t.veld_config || {})};
-  const eq = t.extra_vragen || [];
+  const cfg = {...STANDAARD_VELD_CONFIG};
+  for (const [k, v] of Object.entries(t.veld_config || {})) {
+    if (k in cfg) {
+      if (typeof v === "boolean") cfg[k] = v;
+      else if (v === "skip") cfg[k] = false;
+      else cfg[k] = true; // "verplicht" of "optioneel" (oud formaat)
+    }
+  }
   return {
     ...t,
     veld_config: cfg,
     intro_tekst: t.intro_tekst || "",
-    extra_vragen: [eq[0] || "", eq[1] || "", eq[2] || ""],
+    extra_vragen: (t.extra_vragen || []).filter((v) => v.trim()),
   };
 }
 
@@ -2647,28 +2653,36 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
     setSaved(false);
   }
 
-  function setVeldStatus(key, status) {
+  function toggleVeld(key) {
     setSelected((prev) => ({
       ...prev,
-      veld_config: {...(prev.veld_config || {}), [key]: status},
+      veld_config: {...(prev.veld_config || {}), [key]: !(prev.veld_config || {})[key]},
     }));
     setSaved(false);
   }
 
   function setExtraVraag(i, value) {
     setSelected((prev) => {
-      const eq = [...(prev.extra_vragen || ["", "", ""])];
+      const eq = [...(prev.extra_vragen || [])];
       eq[i] = value;
       return {...prev, extra_vragen: eq};
     });
     setSaved(false);
   }
 
-  const statusKleur = {
-    verplicht: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    optioneel: "bg-amber-50 text-amber-700 border-amber-200",
-    skip: "bg-slate-50 text-slate-400 border-slate-200",
-  };
+  function addExtraVraag() {
+    setSelected((prev) => ({...prev, extra_vragen: [...(prev.extra_vragen || []), ""]}));
+    setSaved(false);
+  }
+
+  function removeExtraVraag(i) {
+    setSelected((prev) => {
+      const eq = [...(prev.extra_vragen || [])];
+      eq.splice(i, 1);
+      return {...prev, extra_vragen: eq};
+    });
+    setSaved(false);
+  }
 
   return (
     <Shell
@@ -2704,8 +2718,14 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
                   <div className="font-semibold text-sm">{t.naam}</div>
                   {t.beschrijving ? <div className="mt-0.5 text-xs text-slate-500 line-clamp-1">{t.beschrijving}</div> : null}
                   <div className="mt-1.5 flex gap-2 text-xs">
-                    <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700">{t.n_verplicht ?? "?"} verplicht</span>
-                    <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-700">{t.n_optioneel ?? "?"} optioneel</span>
+                    <span className="rounded border border-etil/20 bg-etil/5 px-1.5 py-0.5 text-etil">
+                      {t.n_actief ?? Object.values(t.veld_config || {}).filter(Boolean).length} velden aan
+                    </span>
+                    {(t.extra_vragen || []).length > 0 && (
+                      <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-500">
+                        +{t.extra_vragen.length} extra
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -2773,40 +2793,29 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
 
             {/* Velden configuratie */}
             <div className="rounded-lg border border-line bg-white p-5">
-              <div className="mb-3 flex items-center gap-3">
-                <h3 className="text-sm font-semibold">Welke velden uitvragen?</h3>
-                <div className="flex gap-2 text-xs">
-                  <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700">verplicht — AI vraagt altijd</span>
-                  <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-700">optioneel — accepteert "niet van toepassing"</span>
-                  <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-400">niet uitvragen</span>
-                </div>
-              </div>
+              <h3 className="mb-3 text-sm font-semibold">Welke velden uitvragen?</h3>
               <div className="space-y-5">
                 {CHAT_VELDEN.map(({groep, velden}) => (
                   <div key={groep}>
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{groep}</div>
                     <div className="space-y-1">
                       {velden.map(({key, label}) => {
-                        const status = (selected.veld_config || {})[key] || "optioneel";
+                        const aan = (selected.veld_config || {})[key] !== false;
                         return (
                           <div key={key} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-panel">
-                            <span className="text-sm">{label}</span>
-                            <div className="flex shrink-0 gap-1">
-                              {["verplicht", "optioneel", "skip"].map((s) => (
-                                <button
-                                  key={s}
-                                  onClick={() => setVeldStatus(key, s)}
-                                  className={classNames(
-                                    "rounded border px-2 py-0.5 text-xs font-medium transition",
-                                    status === s
-                                      ? statusKleur[s]
-                                      : "border-transparent text-slate-400 hover:bg-panel",
-                                  )}
-                                >
-                                  {s === "skip" ? "niet" : s}
-                                </button>
-                              ))}
-                            </div>
+                            <span className={classNames("text-sm", !aan && "text-slate-400 line-through")}>{label}</span>
+                            <button
+                              onClick={() => toggleVeld(key)}
+                              className={classNames(
+                                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
+                                aan ? "bg-etil" : "bg-slate-200",
+                              )}
+                            >
+                              <span className={classNames(
+                                "block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform",
+                                aan ? "translate-x-4" : "translate-x-1",
+                              )} />
+                            </button>
                           </div>
                         );
                       })}
@@ -2818,20 +2827,32 @@ function ChatTemplatesView({api, user, onLogout, openDashboard}) {
 
             {/* Extra vragen */}
             <div className="rounded-lg border border-line bg-white p-5">
-              <h3 className="mb-1 text-sm font-semibold">Extra vragen <span className="font-normal text-slate-400">(max 3 — worden gesteld in BEURT 5)</span></h3>
-              <p className="mb-3 text-xs text-slate-500">Aanvullende open vragen die de AI stelt naast de standaard-onderwerpen. De antwoorden worden opgeslagen als extra_1, extra_2, extra_3.</p>
+              <h3 className="mb-1 text-sm font-semibold">Extra vragen</h3>
+              <p className="mb-3 text-xs text-slate-500">Aanvullende vragen die de AI stelt. De antwoorden worden opgeslagen als extra_1, extra_2, …</p>
               <div className="space-y-2">
-                {[0, 1, 2].map((i) => (
+                {(selected.extra_vragen || []).map((v, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <span className="w-5 shrink-0 text-center text-xs text-slate-400">{i + 1}.</span>
                     <input
                       className="focus-ring h-9 flex-1 rounded-md border border-line px-3 text-sm"
-                      value={(selected.extra_vragen || [])[i] || ""}
+                      value={v}
                       onChange={(e) => setExtraVraag(i, e.target.value)}
-                      placeholder={i === 0 ? "Bijv. Wat is uw voornaamste activiteit op dit adres?" : "Optionele extra vraag"}
+                      placeholder="Stel een extra vraag…"
                     />
+                    <button
+                      onClick={() => removeExtraVraag(i)}
+                      className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
                 ))}
+                <button
+                  onClick={addExtraVraag}
+                  className="flex items-center gap-1.5 text-sm text-etil hover:underline"
+                >
+                  <Plus size={14} /> Vraag toevoegen
+                </button>
               </div>
             </div>
 

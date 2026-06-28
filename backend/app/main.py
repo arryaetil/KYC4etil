@@ -27,13 +27,13 @@ app.include_router(jaarverslagen.router)
 
 DEFAULT_TEMPLATE_CONFIG = {
     "veld_config": {
-        "wp_totaal": "verplicht", "eigen_personeel": "verplicht", "uitzend": "verplicht",
-        "detachering": "verplicht", "wsw": "verplicht", "man": "verplicht", "vrouw": "verplicht",
-        "voltijd": "verplicht", "deeltijd": "verplicht", "pct_op_locatie": "optioneel",
-        "adres": "verplicht", "correspondentieadres": "optioneel",
-        "perceeloppervlakte": "verplicht", "winkeloppervlakte": "optioneel",
-        "kantooroppervlakte": "optioneel", "bedrijfsvloeroppervlakte": "verplicht",
-        "uitbreidingsruimte": "optioneel", "seizoensverschil": "optioneel", "opmerking": "optioneel",
+        "wp_totaal": True, "eigen_personeel": True, "uitzend": True,
+        "detachering": True, "wsw": True, "man": True, "vrouw": True,
+        "voltijd": True, "deeltijd": True, "pct_op_locatie": True,
+        "adres": True, "correspondentieadres": True,
+        "perceeloppervlakte": True, "winkeloppervlakte": True,
+        "kantooroppervlakte": True, "bedrijfsvloeroppervlakte": True,
+        "uitbreidingsruimte": True, "seizoensverschil": True, "opmerking": True,
     },
     "intro_tekst": "",
     "extra_vragen": [],

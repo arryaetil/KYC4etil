@@ -53,7 +53,7 @@ router = APIRouter(tags=["chat-admin"], dependencies=[Depends(get_current_user)]
 class TemplateBody(BaseModel):
     naam: str
     beschrijving: str | None = None
-    veld_config: dict[str, str] | None = None   # veld -> "verplicht"|"optioneel"|"skip"
+    veld_config: dict[str, bool] | None = None   # veld -> True (aan) | False (uit)
     intro_tekst: str | None = None
     extra_vragen: list[str] | None = None
     is_default: bool = False
@@ -69,20 +69,22 @@ def _template_config(body: TemplateBody) -> dict:
 
 def _template_response(t: ChatTemplate) -> dict:
     cfg = t.vragen if isinstance(t.vragen, dict) else {}
-    n_verplicht = sum(1 for v in cfg.get("veld_config", {}).values() if v == "verplicht")
-    n_optioneel = sum(1 for v in cfg.get("veld_config", {}).values() if v == "optioneel")
+    vc = cfg.get("veld_config", {})
+    n_actief = sum(
+        1 for v in vc.values()
+        if v is True or (isinstance(v, str) and v != "skip")
+    )
     return {
         "id": t.id,
         "naam": t.naam,
         "beschrijving": t.beschrijving,
-        "veld_config": cfg.get("veld_config", {}),
+        "veld_config": vc,
         "intro_tekst": cfg.get("intro_tekst", ""),
         "extra_vragen": cfg.get("extra_vragen", []),
         "is_default": t.is_default,
         "aangemaakt_door": t.aangemaakt_door,
         "created_at": t.created_at.isoformat() + "Z" if t.created_at else None,
-        "n_verplicht": n_verplicht,
-        "n_optioneel": n_optioneel,
+        "n_actief": n_actief,
     }
 
 
