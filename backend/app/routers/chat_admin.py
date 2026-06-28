@@ -8,7 +8,42 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
-from ..models import Candidate, ChatSession, ChatTemplate, Company, User, WPRecord
+from ..models import Batch, Candidate, ChatSession, ChatTemplate, Company, User, VastgoedRecord, WPRecord
+
+
+def _getal(antwoorden: dict, key: str) -> int | None:
+    """Zet antwoord-waarde om naar int, of None als onbekend/'/'."""
+    val = antwoorden.get(key)
+    if val is None or val == "/" or val == "":
+        return None
+    try:
+        return int(float(val))
+    except (TypeError, ValueError):
+        return None
+
+
+def _pct_fractie(antwoorden: dict, key: str) -> float | None:
+    """Zet percentage (0-100) om naar fractie (0-1), of None."""
+    val = antwoorden.get(key)
+    if val is None or val == "/" or val == "":
+        return None
+    try:
+        v = float(val)
+        return v / 100 if v > 1 else v
+    except (TypeError, ValueError):
+        return None
+
+
+def _bool_antwoord(antwoorden: dict, key: str) -> bool | None:
+    """Zet tekst-antwoord ('ja'/'nee'/'/') om naar bool."""
+    val = antwoorden.get(key)
+    if val is None or val == "":
+        return None
+    if val == "/":
+        return False
+    if isinstance(val, bool):
+        return val
+    return str(val).lower() in ("ja", "yes", "true", "1")
 
 router = APIRouter(tags=["chat-admin"], dependencies=[Depends(get_current_user)])
 
@@ -131,7 +166,7 @@ def get_chat_sessies(batch_id: str, db: Session = Depends(get_db)):
 @router.post("/chat-sessies/{session_id}/doorvoeren")
 def doorvoeren_chat(session_id: str, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
-    """Doorvoeren van het opgegeven WP-getal naar WPRecord."""
+    """Doorvoeren van alle chat-antwoorden naar WPRecord en VastgoedRecord."""
     session = db.get(ChatSession, session_id)
     if not session:
         raise HTTPException(404, "Chat-sessie niet gevonden")
@@ -141,8 +176,9 @@ def doorvoeren_chat(session_id: str, db: Session = Depends(get_db),
         raise HTTPException(409, "Sessie is al doorvoerd")
 
     antwoorden = session.antwoorden or {}
-    wp = antwoorden.get("wp_count") or antwoorden.get("wp_opgegeven")
-    if not wp:
+    wp_totaal = (antwoorden.get("wp_totaal") or antwoorden.get("wp_count")
+                 or antwoorden.get("wp_opgegeven"))
+    if not wp_totaal:
         raise HTTPException(422, "Geen WP-getal in antwoorden")
 
     comp = db.get(Company, session.company_id)
@@ -152,24 +188,82 @@ def doorvoeren_chat(session_id: str, db: Session = Depends(get_db),
     if not cand:
         raise HTTPException(404, "Geen kandidaat gevonden voor dit bedrijf")
 
-    from ..models import Batch
     b = db.get(Batch, cand.batch_id)
+    wp_jaar = b.jaar if b else datetime.now(timezone.utc).replace(tzinfo=None).year
+    nu = datetime.now(timezone.utc).replace(tzinfo=None)
 
+    # --- WPRecord met volledige uitsplitsing ---
     cand.status = "corrected"
+    cand.wp_kandidaat = int(float(wp_totaal))
     cand.reconciliatie_reden = (cand.reconciliatie_reden or "") + \
-        f" | chat-antwoord ({current_user.naam}): {wp} WP"
+        f" | chat-antwoord ({current_user.naam}): {wp_totaal} WP"
+
     rec = WPRecord(
         company_id=comp.id,
         candidate_id=cand.id,
-        wp_waarde=int(wp),
-        wp_jaar=b.jaar if b else datetime.now(timezone.utc).replace(tzinfo=None).year,
+        wp_waarde=int(float(wp_totaal)),
+        wp_jaar=wp_jaar,
         bron_type="chat",
-        bron_url=None,
         status="reviewed",
         goedgekeurd_door=current_user.id,
-        goedgekeurd_op=datetime.now(timezone.utc).replace(tzinfo=None),
+        goedgekeurd_op=nu,
+        eigen_personeel=_getal(antwoorden, "eigen_personeel"),
+        uitzend=_getal(antwoorden, "uitzend"),
+        detachering=_getal(antwoorden, "detachering"),
+        wsw=_getal(antwoorden, "wsw"),
+        man=_getal(antwoorden, "man"),
+        vrouw=_getal(antwoorden, "vrouw"),
+        voltijd=_getal(antwoorden, "voltijd"),
+        deeltijd=_getal(antwoorden, "deeltijd"),
+        pct_op_locatie=_pct_fractie(antwoorden, "pct_op_locatie"),
     )
     db.add(rec)
+
+    # --- VastgoedRecord aanmaken of bijwerken ---
+    perceel = _getal(antwoorden, "perceeloppervlakte")
+    winkel = _getal(antwoorden, "winkeloppervlakte")
+    kantoor = _getal(antwoorden, "kantooroppervlakte")
+    bedrijfs = _getal(antwoorden, "bedrijfsvloeroppervlakte")
+    uitbreid = _bool_antwoord(antwoorden, "uitbreidingsruimte")
+    seizoen = _bool_antwoord(antwoorden, "seizoensverschil")
+    corresp = antwoorden.get("correspondentieadres") or None
+    opmerking = antwoorden.get("opmerking") or None
+
+    heeft_vastgoed = any(v is not None for v in [perceel, winkel, kantoor, bedrijfs, uitbreid, seizoen, corresp])
+    if heeft_vastgoed:
+        vg = comp.vastgoed
+        if vg:
+            vg.perceel_opp = perceel if perceel is not None else vg.perceel_opp
+            vg.winkel_opp = winkel if winkel is not None else vg.winkel_opp
+            vg.kantoor_opp = kantoor if kantoor is not None else vg.kantoor_opp
+            vg.bedrijfs_opp = bedrijfs if bedrijfs is not None else vg.bedrijfs_opp
+            vg.uitbreidingsruimte = uitbreid if uitbreid is not None else vg.uitbreidingsruimte
+            vg.seizoensverschillen = seizoen if seizoen is not None else vg.seizoensverschillen
+            vg.correspondentieadres = corresp or vg.correspondentieadres
+            vg.seizoen_toelichting = opmerking or vg.seizoen_toelichting
+            vg.bron = "chat"
+            vg.updated_at = nu
+        else:
+            db.add(VastgoedRecord(
+                company_id=comp.id,
+                perceel_opp=perceel,
+                winkel_opp=winkel,
+                kantoor_opp=kantoor,
+                bedrijfs_opp=bedrijfs,
+                uitbreidingsruimte=uitbreid,
+                seizoensverschillen=seizoen,
+                correspondentieadres=corresp,
+                seizoen_toelichting=opmerking,
+                bron="chat",
+                ingevoerd_door=current_user.id,
+                updated_at=nu,
+            ))
+
+    # --- Adres bijwerken als het bedrijf een nieuw adres opgaf ---
+    nieuw_adres = antwoorden.get("adres")
+    if nieuw_adres and nieuw_adres != "/" and nieuw_adres != comp.adres:
+        comp.adres = nieuw_adres
+
     session.verwerkt = True
     db.commit()
     return {"wp_record_id": rec.id, "wp_waarde": rec.wp_waarde}
