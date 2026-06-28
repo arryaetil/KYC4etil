@@ -187,6 +187,17 @@ def update_bellijst_item(item_id: str, body: BellijstUpdate, db: Session = Depen
     return {"id": item.id, "status": item.status}
 
 
+@router.delete("/bellijst/{item_id}")
+def delete_bellijst_item(item_id: str, db: Session = Depends(get_db)):
+    """Verwijdert een bellijst-item definitief."""
+    item = db.get(CallListItem, item_id)
+    if not item:
+        raise HTTPException(404, "bellijst-item niet gevonden")
+    db.delete(item)
+    db.commit()
+    return {"deleted": item_id}
+
+
 @router.post("/bellijst/{item_id}/doorvoeren")
 def doorvoeren_bellijst(item_id: str, db: Session = Depends(get_db),
                         current_user: User = Depends(get_current_user)):

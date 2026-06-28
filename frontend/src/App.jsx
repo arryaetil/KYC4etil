@@ -50,6 +50,7 @@ function IconButton({children, icon: Icon, variant = "default", ...props}) {
     primary: "border-etil bg-etil text-white hover:opacity-90",
     danger: "border-red-600 bg-red-600 text-white hover:bg-red-700",
     quiet: "border-transparent bg-transparent text-slate-600 hover:bg-panel",
+    danger: "border-red-200 bg-red-50 text-red-600 hover:bg-red-100",
     ghost: "border-transparent bg-transparent text-white hover:bg-white/10",
   };
   return (
@@ -598,6 +599,19 @@ function BellijstView({api, user, onLogout, batchId, openBatch}) {
     }
   }
 
+  async function verwijder(id, naam) {
+    if (!window.confirm(`"${naam}" van de bellijst verwijderen?`)) return;
+    setSaving((prev) => ({...prev, [`del_${id}`]: true}));
+    try {
+      await api.deleteBellijstItem(id);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving((prev) => ({...prev, [`del_${id}`]: false}));
+    }
+  }
+
   const visibleItems = useMemo(() => {
     let list = filterStatus ? items.filter((i) => i.status === filterStatus) : items;
     return [...list].sort((a, b) => {
@@ -702,16 +716,23 @@ function BellijstView({api, user, onLogout, batchId, openBatch}) {
                       inputMode="numeric"
                     />
                   </div>
-                  <div className="flex items-end">
+                  <div className="flex items-end gap-2">
                     <IconButton
                       icon={Check}
                       variant="primary"
-                      className="w-full justify-center"
+                      className="flex-1 justify-center"
                       onClick={() => save(item.id)}
                       disabled={saving[item.id]}
                     >
                       {saving[item.id] ? "…" : "Opslaan"}
                     </IconButton>
+                    <IconButton
+                      icon={Trash2}
+                      variant="danger"
+                      onClick={() => verwijder(item.id, item.naam)}
+                      disabled={saving[`del_${item.id}`]}
+                      title="Verwijder van bellijst"
+                    />
                   </div>
                 </div>
                 {item.status === "afgerond" && item.resultaat_wp != null ? (

@@ -73,6 +73,7 @@ export function createApi(token, onUnauthorized) {
     bellijstItems: (batchId) => request(`/batches/${batchId}/bellijst`),
     updateBellijstItem: (itemId, data) => request(`/bellijst/${itemId}`, {method: "PATCH", json: data}),
     doorvoerenBellijst: (itemId) => request(`/bellijst/${itemId}/doorvoeren`, {method: "POST"}),
+    deleteBellijstItem: (itemId) => request(`/bellijst/${itemId}`, {method: "DELETE"}),
     approveAllGreen: (batchId) => request(`/batches/${batchId}/approve-all-green`, {method: "POST"}),
     chatSessies: (batchId) => request(`/batches/${batchId}/chat-sessies`),
     doorvoerenChat: (sessionId) => request(`/chat-sessies/${sessionId}/doorvoeren`, {method: "POST"}),
