@@ -45,13 +45,15 @@ def _parse_response(raw: str) -> dict:
     except json.JSONDecodeError:
         pass
 
-    m = re.search(r'"reply"\s*:\s*"(.*?)",?\s*"done"', raw, re.DOTALL)
+    # Truncated JSON: extraheer reply-veld via regex (ook zonder sluitende })
+    m = re.search(r'"reply"\s*:\s*"(.*?)(?<!\\)"', raw, re.DOTALL)
     if m:
         reply = m.group(1).replace('\\n', '\n').replace('\\"', '"')
         done = bool(re.search(r'"done"\s*:\s*true', raw))
         return {"reply": reply, "done": done}
 
-    return {"reply": raw, "done": False}
+    # Laatste redmiddel: toon generieke foutmelding i.p.v. rauwe JSON
+    return {"reply": "Er ging iets mis. Probeer het opnieuw.", "done": False}
 
 
 _FORMAT_RULES = """ANTWOORDFORMAAT:
@@ -252,7 +254,7 @@ async def get_chat_reply(messages: list[dict], session: ChatSession,
 
     response = await client.chat.completions.create(
         model=settings.openai_model,
-        max_tokens=900,
+        max_tokens=1500,
         response_format={"type": "json_object"},
         messages=[{"role": "system", "content": system_text}] + messages,
     )
