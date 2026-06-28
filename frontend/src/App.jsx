@@ -1909,7 +1909,7 @@ function ChatForm({token}) {
 
     // WP dienstverband: gegevens.wp_totaal gezet ÓÓFF AI vraagt uitdrukkelijk om uitsplitsing
     if (!widgetDone.wp && gegevens.eigen_personeel == null) {
-      if (gegevens.wp_totaal != null || aiMentions(["uitsplitsing", "dienstverband", "invulformulier"]))
+      if (session?.pre_fill_wp != null || gegevens.wp_totaal != null || aiMentions(["uitsplitsing", "dienstverband", "invulformulier"]))
         return "wp";
     }
     // Verdeling: gegevens.eigen_personeel gezet ÓÓFF AI vraagt om geslacht/arbeidsduur
@@ -2005,8 +2005,8 @@ function ChatForm({token}) {
           {/* Contextual form widget */}
           {!busy && widget === "wp" && (
             <WpEnDienstverbandFormulier
-              wpSchatting={gegevens.wp_totaal || session?.pre_fill_wp || 0}
-              skipBevestiging
+              wpSchatting={session?.pre_fill_wp || gegevens.wp_totaal || 0}
+              skipBevestiging={!session?.pre_fill_wp}
               onSubmit={(txt) => sendWidget(txt, "wp")}
               disabled={busy}
             />
