@@ -2788,6 +2788,7 @@ function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
   const fileRef = useRef(null);
   const [uploads, setUploads] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(null);
   const [error, setError] = useState("");
   const [jaar, setJaar] = useState(String(new Date().getFullYear()));
 
@@ -2812,6 +2813,20 @@ function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
     } finally {
       setBusy(false);
       event.target.value = "";
+    }
+  }
+
+  async function verwijder(e, uploadId, naam) {
+    e.stopPropagation();
+    if (!window.confirm(`"${naam}" en alle chatberichten definitief verwijderen?`)) return;
+    setDeleting(uploadId);
+    try {
+      await api.verwijderJaarverslag(uploadId);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -2846,6 +2861,7 @@ function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
               <th className="px-4 py-3">Jaar</th>
               <th className="px-4 py-3">Berichten</th>
               <th className="px-4 py-3">Geüpload</th>
+              <th className="w-12 px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
@@ -2859,6 +2875,16 @@ function JaarverslagenView({api, user, onLogout, openDashboard, openChat}) {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-500">{new Date(u.uploaded_at).toLocaleDateString("nl-NL")}</td>
+                <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className="rounded-md p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                    onClick={(e) => verwijder(e, u.upload_id, u.bestandsnaam)}
+                    disabled={deleting === u.upload_id}
+                    title="Verwijderen"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </td>
               </tr>
             ))}
             {!uploads.length ? (

@@ -160,6 +160,16 @@ async def chat(upload_id: str, body: ChatVraag, db: Session = Depends(get_db)):
     return {"antwoord": antwoord, "message_id": msg.id}
 
 
+@router.delete("/{upload_id}")
+def verwijder_upload(upload_id: str, db: Session = Depends(get_db)):
+    upload = db.get(JaarverslagUpload, upload_id)
+    if not upload:
+        raise HTTPException(404, "Upload niet gevonden")
+    db.delete(upload)
+    db.commit()
+    return {"deleted": True}
+
+
 @router.post("/{upload_id}/opslaan-wp")
 def opslaan_wp(upload_id: str, body: WPOpslaanBody, db: Session = Depends(get_db)):
     upload = db.get(JaarverslagUpload, upload_id)

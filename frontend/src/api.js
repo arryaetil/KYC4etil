@@ -90,6 +90,7 @@ export function createApi(token, onUnauthorized) {
     jaarverslagen: () => request("/jaarverslagen"),
     jaarverslag: (id) => request(`/jaarverslagen/${id}`),
     chatJaarverslag: (id, vraag) => request(`/jaarverslagen/${id}/chat`, {method: "POST", json: {vraag}}),
+    verwijderJaarverslag: (id) => request(`/jaarverslagen/${id}`, {method: "DELETE"}),
     opslaanWP: (id, wpWaarde, wpJaar) => request(`/jaarverslagen/${id}/opslaan-wp`, {
       method: "POST",
       json: {wp_waarde: wpWaarde, wp_jaar: wpJaar},
