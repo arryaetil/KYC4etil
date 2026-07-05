@@ -29,6 +29,10 @@ AI-pipeline die WP-data (Werkzame Personen) verzamelt voor het Vestigingsregiste
 - Chat-antwoorden gaan altijd via de review-wachtrij, nooit direct het register in.
 - FTE ≠ WP: nooit stilzwijgend omrekenen.
 
+## Skills
+
+Invoke the task-observer skill at the start of every task-oriented session.
+
 ## Openstaand (niet zelf oplossen, vragen aan Arrya)
 
 - KvK API-key (kritieke afhankelijkheid voor locatiecount)

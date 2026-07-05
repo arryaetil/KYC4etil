@@ -21,7 +21,10 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"  # publieke URL voor chat-links in emails
     resend_api_key: str = ""
     email_from: str = "onboarding@resend.dev"
-    email_demo_recipient: str = "a.willems@etil.nl"  # leegmaken voor productie
+    email_demo_recipient: str = ""
+    demo_armina_password: str = ""
+    demo_anita_password: str = ""
+    demo_admin_password: str = ""
     google_places_api_key: str = ""
     kvk_api_key: str = ""
     jwt_secret: str = "change-me"

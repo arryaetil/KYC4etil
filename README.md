@@ -32,11 +32,13 @@ Lokale URLs:
 - API-docs: `http://127.0.0.1:8000/docs`
 - Review-interface: `http://127.0.0.1:5173`
 
-Demo-accounts:
+Demo-accounts worden aangemaakt met `python -m scripts.seed_users`. De command print de actuele wachtwoorden. Wil je vaste lokale demo-wachtwoorden, zet dan eerst `DEMO_ARMINA_PASSWORD`, `DEMO_ANITA_PASSWORD` en `DEMO_ADMIN_PASSWORD` in `backend/.env`.
 
-- `armina@etil.nl` / `ArminaDemo2026!`
-- `anita@etil.nl` / `AnitaDemo2026!`
-- `admin@etil.nl` / `AdminDemo2026!`
+Standaard e-mails:
+
+- `armina@etil.nl`
+- `anita@etil.nl`
+- `admin@etil.nl`
 
 ## Demo-flow
 
@@ -48,7 +50,7 @@ Via API:
 # Login eerst en gebruik de Bearer token voor alle endpoints behalve /health.
 curl -X POST localhost:8000/auth/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=armina@etil.nl&password=ArminaDemo2026!"
+  -d "username=armina@etil.nl&password=<wachtwoord-uit-seed-output>"
 
 # Testset uploaden
 curl -F "file=@data/testset.csv" "localhost:8000/batches/upload?naam=demo&jaar=2026"

@@ -36,3 +36,13 @@ button:disabled {
 .field-pulse {
   animation: fieldPulse 1.5s ease-out;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .field-pulse {
+    animation: none;
+    background-color: transparent;
+  }
+  .animate-bounce {
+    animation: none;
+  }
+}

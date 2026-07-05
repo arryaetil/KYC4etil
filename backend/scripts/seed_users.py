@@ -2,27 +2,37 @@
 
 Gebruik vanuit backend/: python -m scripts.seed_users
 """
+import secrets
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.auth import hash_password  # noqa: E402
+from app.config import get_settings  # noqa: E402
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.models import User  # noqa: E402
 
-USERS = [
-    ("Armina", "armina@etil.nl", "reviewer", "ArminaDemo2026!"),
-    ("Anita", "anita@etil.nl", "reviewer", "AnitaDemo2026!"),
-    ("Admin", "admin@etil.nl", "admin", "AdminDemo2026!"),
+USER_CONFIG = [
+    ("Armina", "armina@etil.nl", "reviewer", "demo_armina_password"),
+    ("Anita", "anita@etil.nl", "reviewer", "demo_anita_password"),
+    ("Admin", "admin@etil.nl", "admin", "demo_admin_password"),
 ]
 
 
+def _password(settings, field_name: str) -> str:
+    return getattr(settings, field_name) or secrets.token_urlsafe(18)
+
+
 def main() -> int:
+    settings = get_settings()
+    users = [(naam, email, rol, _password(settings, field_name))
+             for naam, email, rol, field_name in USER_CONFIG]
+
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        for naam, email, rol, password in USERS:
+        for naam, email, rol, password in users:
             user = db.query(User).filter(User.email == email).one_or_none()
             if user is None:
                 db.add(User(naam=naam, email=email, rol=rol,
@@ -30,14 +40,13 @@ def main() -> int:
             else:
                 user.naam = naam
                 user.rol = rol
-                if not user.password_hash:
-                    user.password_hash = hash_password(password)
+                user.password_hash = hash_password(password)
         db.commit()
     finally:
         db.close()
 
     print("Demo-gebruikers seeded:")
-    for naam, email, rol, password in USERS:
+    for naam, email, rol, password in users:
         print(f"- {naam} ({rol}): {email} / {password}")
     return 0
 

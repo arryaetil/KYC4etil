@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-05T00:00:00.000Z",
+  "title": "Design System: Vestigingsregister Review-interface",
+  "extensions": {
+    "colorMeta": {
+      "etil-blue": { "role": "primary", "displayName": "Etil Blauw", "canonical": "oklch(33% 0.06 250)", "tonalRamp": ["oklch(18% 0.04 250)", "oklch(25% 0.05 250)", "oklch(33% 0.06 250)", "oklch(42% 0.07 250)", "oklch(55% 0.06 250)", "oklch(68% 0.05 250)", "oklch(82% 0.03 250)", "oklch(95% 0.01 250)"] },
+      "etil-red": { "role": "secondary", "displayName": "Etil Rood", "canonical": "oklch(48% 0.20 25)", "tonalRamp": ["oklch(20% 0.10 25)", "oklch(30% 0.14 25)", "oklch(48% 0.20 25)", "oklch(56% 0.20 25)", "oklch(65% 0.18 25)", "oklch(75% 0.14 25)", "oklch(87% 0.07 25)", "oklch(96% 0.02 25)"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "oklch(30% 0.02 250)", "tonalRamp": ["oklch(15% 0.01 250)", "oklch(30% 0.02 250)", "oklch(45% 0.02 250)", "oklch(60% 0.02 250)", "oklch(75% 0.01 250)", "oklch(88% 0.01 250)", "oklch(95% 0.005 250)", "oklch(99% 0.002 250)"] },
+      "page-bg": { "role": "neutral", "displayName": "Pagina-achtergrond", "canonical": "oklch(96% 0.005 235)", "tonalRamp": ["oklch(20% 0.01 235)", "oklch(40% 0.01 235)", "oklch(60% 0.01 235)", "oklch(80% 0.008 235)", "oklch(88% 0.006 235)", "oklch(93% 0.005 235)", "oklch(96% 0.005 235)", "oklch(99% 0.002 235)"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Schermtitels in de header, sectietitels." },
+      "title": { "displayName": "Title", "purpose": "Kaarttitels en tabel-kolomkoppen." },
+      "body": { "displayName": "Body", "purpose": "Standaard leestekst, tabelcellen, formuliervelden." },
+      "label": { "displayName": "Label", "purpose": "Badges, status-pills, metadata." }
+    },
+    "shadows": [
+      { "name": "ambient", "value": "0 1px 2px rgba(15, 23, 42, 0.06)", "purpose": "Kaarten/panelen die rusten op de pagina-achtergrond." },
+      { "name": "overlay", "value": "0 10px 25px rgba(15, 23, 42, 0.15)", "purpose": "Dropdowns, tooltips, contextmenu's die boven content zweven." }
+    ],
+    "motion": [
+      { "name": "ease-standard", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Default easing voor hover/focus state transities." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Hoofdactie per scherm (inloggen, run starten, opslaan).",
+      "html": "<button class=\"ds-btn-primary\">Opslaan</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid #1e3a5f; background: #1e3a5f; color: #ffffff; font-size: 14px; font-weight: 500; transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-primary:hover { opacity: 0.9; } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #1e3a5f; }"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button-default",
+      "description": "Secundaire acties, iconknoppen in actiebalken.",
+      "html": "<button class=\"ds-btn-default\">Annuleren</button>",
+      "css": ".ds-btn-default { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid #d7dde5; background: #ffffff; color: #1f2933; font-size: 14px; font-weight: 500; transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-default:hover { background: #f7f8fa; } .ds-btn-default:focus-visible { outline: none; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #1e3a5f; }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructieve acties (verwijderen, stoppen).",
+      "html": "<button class=\"ds-btn-danger\">Verwijderen</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid #dc2626; background: #dc2626; color: #ffffff; font-size: 14px; font-weight: 500; transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-danger:hover { background: #b91c1c; } .ds-btn-danger:focus-visible { outline: none; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #1e3a5f; }"
+    },
+    {
+      "name": "Confidence Badge (Groen)",
+      "kind": "chip",
+      "refersTo": "label-badge-groen",
+      "description": "Hoge AI-confidence — nooit voor is_schatting=True (domeinregel).",
+      "html": "<span class=\"ds-badge ds-badge-green\"><span class=\"ds-badge-dot\"></span>Groen</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 8px; font-size: 12px; font-weight: 600; } .ds-badge-green { background: #ecfdf5; color: #065f46; } .ds-badge-dot { width: 8px; height: 8px; border-radius: 9999px; background: #10b981; }"
+    },
+    {
+      "name": "Confidence Badge (Rood)",
+      "kind": "chip",
+      "refersTo": "label-badge-rood",
+      "description": "Lage AI-confidence, gaat naar review/bellijst.",
+      "html": "<span class=\"ds-badge ds-badge-red\"><span class=\"ds-badge-dot-red\"></span>Rood</span>",
+      "css": ".ds-badge-red { background: #fef2f2; color: #991b1b; display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 8px; font-size: 12px; font-weight: 600; } .ds-badge-dot-red { width: 8px; height: 8px; border-radius: 9999px; background: #ef4444; }"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "Neutrale workflow-status (Open/Goedgekeurd/Draait/Klaar/Fout) — bewust apart van confidence-badges.",
+      "html": "<span class=\"ds-status-pill\">Goedgekeurd</span>",
+      "css": ".ds-status-pill { display: inline-block; padding: 4px 8px; border-radius: 8px; border: 1px solid #d7dde5; background: #ffffff; color: #334155; font-size: 12px; font-weight: 500; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Standaard formulierveld (login, zoeken, waarden invullen).",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Zoeken\" />",
+      "css": ".ds-input { height: 44px; width: 100%; padding: 0 12px; border-radius: 8px; border: 1px solid #d7dde5; background: #ffffff; font-size: 14px; color: #1f2933; } .ds-input:focus-visible { outline: none; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #1e3a5f; }"
+    },
+    {
+      "name": "Card / Panel",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Basiscontainer voor secties (batch-detail, login, chatvenster).",
+      "html": "<div class=\"ds-card\">Inhoud</div>",
+      "css": ".ds-card { border-radius: 12px; border: 1px solid #d7dde5; background: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); padding: 16px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Auditor's Desk",
+    "overview": "Dit systeem is de digitale werkplek van een precieze, betrouwbare controleur — niet een marketingvitrine. Reviewers (Armina, Anita) verwerken hier tientallen tot honderden bedrijfsrecords per dag: uploaden, wachten, oordelen, corrigeren, goedkeuren. Elke visuele keuze dient dat tempo en die zorgvuldigheid. Het Etil-rood (#C8102E) in de header en het Etil-blauw (#1e3a5f) als actie-kleur zijn de enige plekken waar merkidentiteit zich mag laten zien; de rest van het scherm is neutraal grijs-wit zodat status- en confidence-signalen (groen/geel/rood) altijd de opvallendste kleur op het scherm zijn — nooit concurrerend met decoratie. Dit systeem wijst expliciet af: gradient-tekst, glassmorphism, identieke kaartgrids, kleine uppercase eyebrows boven elke sectie, hero-metric-templates.",
+    "keyCharacteristics": [
+      "Vlak, neutraal canvas met precies twee merk-accenten: rood (header) en etil-blauw (primaire actie)",
+      "Statuskleuren (emerald/amber/red) zijn functioneel gereserveerd voor confidence-labels en foutmeldingen",
+      "Compacte, dichte tabellen en lijsten; witruimte is functioneel, niet esthetisch opgevuld",
+      "Vrijwel platte elevatie: shadow-sm als enige noemenswaardige schaduw"
+    ],
+    "rules": [
+      { "name": "The Two-Accent Rule", "body": "Precies twee merkkleuren zijn toegestaan buiten status-signalen: Etil-rood (header only) en Etil-blauw (primaire actie/link).", "section": "colors" },
+      { "name": "The Reserved Status Rule", "body": "Emerald/amber/red zijn uitsluitend gereserveerd voor confidence-labels en foutmeldingen — nooit decoratief.", "section": "colors" },
+      { "name": "The One-Family Rule", "body": "Eén font-stack (Inter) voor alles; hiërarchie ontstaat uit weight en size, niet font-pairing.", "section": "typography" },
+      { "name": "The Border-Over-Shadow Rule", "body": "Scheiding tussen elementen op dezelfde laag gebeurt via border-line, niet via schaduw.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do gebruik border-line (#d7dde5) als enige randkleur door de hele app",
+      "Do reserveer emerald/amber/red uitsluitend voor confidence-labels en foutmeldingen",
+      "Do houd StatusPill (workflow) en LabelBadge (confidence) visueel gescheiden",
+      "Do gebruik focus-ring op elk interactief element (WCAG 2.1 AA)",
+      "Do houd tabellen en lijsten compact — reviewers verwerken veel records per dag"
+    ],
+    "donts": [
+      "Don't gebruik gradient-tekst, glassmorphism, of decoratieve blur-effecten",
+      "Don't voeg een derde merkaccent-kleur toe naast Etil-rood en Etil-blauw",
+      "Don't gebruik kleine uppercase eyebrows of hero-metric-templates",
+      "Don't gebruik identieke kaartgrids als standaardoplossing",
+      "Don't gebruik border-left/border-right als gekleurde accentstreep",
+      "Don't laat kleur de enige drager van betekenis zijn"
+    ]
+  }
+}
