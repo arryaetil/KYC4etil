@@ -231,7 +231,7 @@ BELANGRIJK:
 - Sla geen veld over. Als de gebruiker een veld niet weet, noteer null en ga door.
 - Als er een geschat WP-getal is, presenteer dit en vraag of het klopt.
 - Zet null voor onbekende velden in het gegevens/antwoorden-object.
-- Als de gebruiker zegt dat iets niet van toepassing is, of "nee" antwoordt (bijv. geen uitbreidingsruimte, geen seizoensverschil), zet dan "/" als waarde — NIET null. Null = nog niet gevraagd, "/" = niet van toepassing.
+- Als de gebruiker zegt dat iets niet van toepassing is, of "nee" antwoordt (bijv. geen uitbreidingsruimte, geen seizoensverschil, geen opmerkingen), zet dan "/" als waarde — NIET null. Null = nog niet gevraagd, "/" = niet van toepassing of geen.
 - Als het correspondentieadres hetzelfde is als het vestigingsadres, zet dan "Zelfde als vestigingsadres" als waarde.
 
 GEGEVENS-SCHEMA (gebruik dit voor "gegevens" in elke beurt EN voor "antwoorden" bij de laatste beurt):
