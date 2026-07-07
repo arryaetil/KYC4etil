@@ -1,6 +1,7 @@
 import csv
 import io
 import asyncio
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
@@ -11,6 +12,7 @@ from ..auth import get_current_user
 from ..database import SessionLocal, get_db
 from ..models import (AgentResult, Batch, CallListItem, Candidate, ChatSession,
                       Company, Enrichment, PipelineRun, VastgoedRecord, WPRecord)
+from ..pipeline.monitoring import check_company_jaarverslag
 from ..pipeline.runner import run_batch, verwerk_company
 
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
@@ -39,6 +41,29 @@ def run_single_background(company_id: str, batch_id: str) -> None:
                            stap="herverwerk", status="error", duur_ms=0,
                            error=str(exc)[:1000]))
         db.commit()
+    finally:
+        db.close()
+
+
+def run_monitoring_background(batch_id: str) -> None:
+    db = SessionLocal()
+    try:
+        batch = db.get(Batch, batch_id)
+        if batch is None:
+            return
+
+        for company in list(batch.companies):
+            t0 = time.monotonic()
+            try:
+                asyncio.run(check_company_jaarverslag(db, company, batch.jaar))
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                db.add(PipelineRun(batch_id=batch.id, company_id=company.id,
+                                   stap="jaarverslag_monitoring", status="error",
+                                   duur_ms=int((time.monotonic() - t0) * 1000),
+                                   error=str(exc)[:1000]))
+                db.commit()
     finally:
         db.close()
 
@@ -87,6 +112,17 @@ async def start_batch(batch_id: str, background_tasks: BackgroundTasks,
     background_tasks.add_task(run_batch_background, batch.id)
     return {"batch_id": batch.id, "status": batch.status, "verwerkt": batch.verwerkt,
             "totaal": batch.totaal}
+
+
+@router.post("/{batch_id}/monitor")
+async def monitor_batch(batch_id: str, background_tasks: BackgroundTasks,
+                        db: Session = Depends(get_db)):
+    """Start een periodieke jaarverslag-controle buiten de reguliere batch-run."""
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(404, f"batch {batch_id} bestaat niet")
+    background_tasks.add_task(run_monitoring_background, batch.id)
+    return {"batch_id": batch.id, "aantal_companies": len(batch.companies)}
 
 
 @router.post("/{batch_id}/cancel")
