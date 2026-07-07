@@ -527,49 +527,28 @@ async def _tool_use_loop(naam: str, adres: str | None, start_url: str) -> dict |
     return None
 
 
-CANDIDATE_PATHS = ["", "/over-ons", "/over", "/team", "/wie-zijn-wij", "/contact", "/medewerkers"]
-
-
 class LiveWebsiteAgent:
     async def run(self, naam: str, adres: str | None, website_url: str | None,
                   gemeente: str | None = None) -> AgentFinding | None:
         best: AgentFinding | None = None
 
-        # Fase A+B: website scrapen als URL beschikbaar
+        # Fase A+B: tool-use-loop laat het model zelf de website doorzoeken
         if website_url:
-            base = website_url.rstrip("/")
-            for path in CANDIDATE_PATHS[:settings.max_website_pages]:
-                url = base + path
-                try:
-                    tekst = await _fetch_text(url)
-                except Exception:
-                    continue
-
-                # Playwright-retry als httpx te weinig tekst teruggeeft (JS-heavy site)
-                # Alleen inschakelen als PLAYWRIGHT_ENABLED=true in de omgeving
-                if len(tekst) < 400 and settings.playwright_enabled:
-                    try:
-                        tekst_pw = await _fetch_text_playwright(url)
-                        if len(tekst_pw) > len(tekst):
-                            tekst = tekst_pw
-                    except Exception:
-                        pass  # Playwright niet beschikbaar; doorgaan met httpx-resultaat
-
-                data = await _llm_extract(naam, adres, tekst)
-                await asyncio.sleep(1.0)  # rate limit per domein
-                if data and data.get("wp_gevonden"):
-                    finding = AgentFinding(
-                        wp_gevonden=data["wp_gevonden"], context=data.get("context"),
-                        zekerheid=data.get("zekerheid", "laag"), reden=data.get("reden"),
-                        bron_url=url, bron_type="website",
-                        is_totaal_meerdere_vestigingen=data.get("is_totaal_meerdere_vestigingen", False),
-                        is_limburg_specifiek=data.get("is_limburg_specifiek"),
-                        is_fte=data.get("is_fte", False), peilmoment=data.get("peilmoment"),
-                        raw=data,
-                    )
-                    if finding.zekerheid == "hoog":
-                        return finding
-                    best = best or finding
+            data = await _tool_use_loop(naam, adres, website_url.rstrip("/"))
+            await asyncio.sleep(1.0)  # rate limit per domein
+            if data and data.get("wp_gevonden"):
+                finding = AgentFinding(
+                    wp_gevonden=data["wp_gevonden"], context=data.get("context"),
+                    zekerheid=data.get("zekerheid", "laag"), reden=data.get("reden"),
+                    bron_url=website_url.rstrip("/"), bron_type="website",
+                    is_totaal_meerdere_vestigingen=data.get("is_totaal_meerdere_vestigingen", False),
+                    is_limburg_specifiek=data.get("is_limburg_specifiek"),
+                    is_fte=data.get("is_fte", False), peilmoment=data.get("peilmoment"),
+                    raw=data,
+                )
+                if finding.zekerheid == "hoog":
+                    return finding
+                best = best or finding
 
         # Fase C: nieuws-fallback via directe web search als scraping niets opleverde
         if best is None:

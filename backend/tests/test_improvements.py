@@ -52,13 +52,8 @@ async def test_live_website_agent_roept_web_search_aan_zonder_url():
 
 @pytest.mark.asyncio
 async def test_live_website_agent_slaat_web_search_over_als_scraping_slaagt():
-    """Als website-scraping een resultaat geeft, moet web search NIET aangeroepen worden."""
-    scrape_finding = AgentFinding(
-        wp_gevonden=10, context="10 medewerkers", zekerheid="hoog",
-        reden="website", bron_url="https://example.com/over-ons", bron_type="website",
-    )
-    with patch("app.providers.live._fetch_text", new=AsyncMock(return_value="tekst")), \
-         patch("app.providers.live._llm_extract", new=AsyncMock(return_value={
+    """Als de tool-use-loop een resultaat geeft, moet web search NIET aangeroepen worden."""
+    with patch("app.providers.live._tool_use_loop", new=AsyncMock(return_value={
              "wp_gevonden": 10, "context": "10 medewerkers", "zekerheid": "hoog",
              "reden": "ok", "is_totaal_meerdere_vestigingen": False,
              "is_limburg_specifiek": True, "is_fte": False, "peilmoment": "2024",

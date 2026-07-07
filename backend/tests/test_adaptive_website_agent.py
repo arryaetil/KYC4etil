@@ -168,3 +168,46 @@ async def test_tool_use_loop_stopt_bij_budget_op(monkeypatch):
     resultaat = await live._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
 
     assert resultaat is None
+
+
+@pytest.mark.asyncio
+async def test_website_agent_gebruikt_tool_use_loop(monkeypatch):
+    async def fake_tool_use_loop(naam, adres, start_url):
+        assert start_url == "https://voorbeeld.test"
+        return {
+            "wp_gevonden": 25, "context": "25 medewerkers", "zekerheid": "hoog",
+            "reden": "letterlijk vermeld", "is_totaal_meerdere_vestigingen": False,
+            "is_limburg_specifiek": True, "is_fte": False, "peilmoment": "2026",
+        }
+
+    monkeypatch.setattr(live, "_tool_use_loop", fake_tool_use_loop)
+
+    agent = live.LiveWebsiteAgent()
+    finding = await agent.run("Testbedrijf", "Markt 1", "https://voorbeeld.test", gemeente="Maastricht")
+
+    assert finding is not None
+    assert finding.wp_gevonden == 25
+    assert finding.bron_url == "https://voorbeeld.test"
+    assert finding.bron_type == "website"
+
+
+@pytest.mark.asyncio
+async def test_website_agent_valt_terug_op_web_search_zonder_resultaat(monkeypatch):
+    async def fake_tool_use_loop(naam, adres, start_url):
+        return None
+
+    async def fake_web_search_wp(naam, gemeente):
+        return live.AgentFinding(
+            wp_gevonden=8, context="nieuwsbericht", zekerheid="laag", reden="fallback",
+            bron_url="https://nieuws.test/artikel", bron_type="media",
+        )
+
+    monkeypatch.setattr(live, "_tool_use_loop", fake_tool_use_loop)
+    monkeypatch.setattr(live, "_web_search_wp", fake_web_search_wp)
+
+    agent = live.LiveWebsiteAgent()
+    finding = await agent.run("Testbedrijf", "Markt 1", "https://voorbeeld.test", gemeente="Maastricht")
+
+    assert finding is not None
+    assert finding.wp_gevonden == 8
+    assert finding.bron_type == "media"
