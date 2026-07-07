@@ -1,10 +1,12 @@
 """Periodieke jaarverslag-monitoring: hergebruikt de bestaande jaarverslag-agent
 en reconciliatie-/confidence-logica, maar draait buiten een handmatige batch-run om."""
+import asyncio
 import time
 
 from sqlalchemy.orm import Session
 
-from ..models import AgentResult, Candidate, Company, JaarverslagMonitoring
+from ..database import SessionLocal
+from ..models import AgentResult, Batch, Candidate, Company, JaarverslagMonitoring, PipelineRun
 from ..providers import get_providers
 from .confidence import bereken_confidence
 from .reconcile import reconcilieer
@@ -79,3 +81,58 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "ok", t0)
     db.commit()
     return True
+
+
+async def _check_company_met_eigen_sessie(batch_id: str, company_id: str, jaar: int,
+                                          semaphore: asyncio.Semaphore) -> None:
+    """Verwerkt één organisatie met een eigen databasesessie, zodat meerdere
+    organisaties veilig gelijktijdig verwerkt kunnen worden (een SQLAlchemy
+    Session mag niet door meerdere gelijktijdige taken gedeeld worden)."""
+    async with semaphore:
+        t0 = time.monotonic()
+        db = SessionLocal()
+        try:
+            company = db.get(Company, company_id)
+            if company is None:
+                return
+            await check_company_jaarverslag(db, company, jaar)
+        except Exception as exc:
+            db.rollback()
+            db.add(PipelineRun(batch_id=batch_id, company_id=company_id,
+                               stap="jaarverslag_monitoring", status="error",
+                               duur_ms=int((time.monotonic() - t0) * 1000),
+                               error=str(exc)[:1000]))
+            db.commit()
+        finally:
+            db.close()
+
+
+async def check_batch_jaarverslagen(batch_id: str, jaar: int, company_ids: list[str],
+                                    max_concurrent: int = 8) -> None:
+    """Controleert alle opgegeven organisaties op nieuwe jaarverslagen, met ten
+    hoogste max_concurrent gelijktijdige controles."""
+    semaphore = asyncio.Semaphore(max_concurrent)
+    await asyncio.gather(*(
+        _check_company_met_eigen_sessie(batch_id, company_id, jaar, semaphore)
+        for company_id in company_ids
+    ))
+
+
+def run_monitoring_watchlist_background() -> None:
+    """Zoekt de gemarkeerde watchlist-batch op (Batch.is_monitoringlijst=True) en
+    controleert alle organisaties daarin gelijktijdig op nieuwe jaarverslagen.
+    Geen watchlist ingesteld of leeg -> stille no-op."""
+    db = SessionLocal()
+    try:
+        batch = db.query(Batch).filter_by(is_monitoringlijst=True).order_by(
+            Batch.created_at.desc()).first()
+        if batch is None:
+            return
+        batch_id, jaar = batch.id, batch.jaar
+        company_ids = [c.id for c in batch.companies]
+    finally:
+        db.close()
+
+    if not company_ids:
+        return
+    asyncio.run(check_batch_jaarverslagen(batch_id, jaar, company_ids))
