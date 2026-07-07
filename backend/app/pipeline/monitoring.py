@@ -1,6 +1,7 @@
 """Periodieke jaarverslag-monitoring: hergebruikt de bestaande jaarverslag-agent
 en reconciliatie-/confidence-logica, maar draait buiten een handmatige batch-run om."""
 import asyncio
+import logging
 import time
 
 from sqlalchemy.orm import Session
@@ -97,12 +98,17 @@ async def _check_company_met_eigen_sessie(batch_id: str, company_id: str, jaar: 
                 return
             await check_company_jaarverslag(db, company, jaar)
         except Exception as exc:
-            db.rollback()
-            db.add(PipelineRun(batch_id=batch_id, company_id=company_id,
-                               stap="jaarverslag_monitoring", status="error",
-                               duur_ms=int((time.monotonic() - t0) * 1000),
-                               error=str(exc)[:1000]))
-            db.commit()
+            try:
+                db.rollback()
+                db.add(PipelineRun(batch_id=batch_id, company_id=company_id,
+                                   stap="jaarverslag_monitoring", status="error",
+                                   duur_ms=int((time.monotonic() - t0) * 1000),
+                                   error=str(exc)[:1000]))
+                db.commit()
+            except Exception:
+                logging.getLogger("monitoring").exception(
+                    "Kon jaarverslag_monitoring-fout niet loggen voor company_id=%s "
+                    "(oorspronkelijke fout: %s)", company_id, exc)
         finally:
             db.close()
 
