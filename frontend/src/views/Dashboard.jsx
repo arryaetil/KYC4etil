@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from "react";
-import {AlertTriangle, BookOpen, FileUp, Play, RefreshCw, Settings, Square, Trash2} from "lucide-react";
+import {AlertTriangle, BookOpen, FileUp, Play, RefreshCw, SearchCheck, Settings, Square, Trash2} from "lucide-react";
 import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
 import {Alert} from "../components/Alert.jsx";
@@ -8,7 +8,7 @@ import {Progress} from "../components/Progress.jsx";
 import {LabelCounts} from "../components/LabelCounts.jsx";
 import {StatusPill} from "../components/StatusPill.jsx";
 
-export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, openJaarverslagen}) {
+export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, openJaarverslagen, openMonitoring}) {
   const fileRef = useRef(null);
   const [batches, setBatches] = useState([]);
   const [error, setError] = useState("");
@@ -96,6 +96,7 @@ export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, op
         <>
           <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={upload} />
           <IconButton icon={BookOpen} variant="quiet" onClick={openJaarverslagen}>Jaarverslagen</IconButton>
+          <IconButton icon={SearchCheck} variant="quiet" onClick={openMonitoring}>Jaarverslag-monitoring</IconButton>
           <IconButton icon={Settings} variant="quiet" onClick={openChatTemplates}>Chat-templates</IconButton>
           <IconButton icon={RefreshCw} onClick={() => load().catch((err) => setError(err.message))}>Verversen</IconButton>
           <IconButton icon={FileUp} variant="primary" onClick={() => fileRef.current?.click()} disabled={busy}>CSV uploaden</IconButton>

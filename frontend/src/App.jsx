@@ -54,7 +54,6 @@ export default function App() {
         openCompany={(batchId, companyId) => setRoute({name: "detail", batchId, companyId})}
         openBellijst={(batchId) => setRoute({name: "bellijst", batchId})}
         openChatSessies={(batchId) => setRoute({name: "chat-sessies", batchId})}
-        openMonitoring={(batchId) => setRoute({name: "monitoring", batchId})}
       />
     );
   }
@@ -77,8 +76,7 @@ export default function App() {
         api={api}
         user={user}
         onLogout={logout}
-        batchId={route.batchId}
-        openBatch={(batchId) => setRoute({name: "batch", batchId})}
+        openDashboard={() => setRoute({name: "dashboard"})}
         openCompany={(batchId, companyId) => setRoute({name: "detail", batchId, companyId})}
       />
     );
@@ -152,6 +150,7 @@ export default function App() {
       openBatch={(batchId) => setRoute({name: "batch", batchId})}
       openChatTemplates={() => setRoute({name: "chat-templates"})}
       openJaarverslagen={() => setRoute({name: "jaarverslagen"})}
+      openMonitoring={() => setRoute({name: "monitoring"})}
     />
   );
 }

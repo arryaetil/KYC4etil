@@ -5,6 +5,7 @@ from .config import get_settings
 from .database import Base, SessionLocal, engine, ensure_lightweight_migrations
 from .models import Batch, ChatTemplate, PipelineRun
 from .routers import auth, batches, chat, chat_admin, review, jaarverslagen, monitoring
+from .scheduler import start_scheduler
 
 settings = get_settings()
 
@@ -88,6 +89,11 @@ def reset_stuck_batches() -> None:
         logging.getLogger("startup").error("Startup event fout: %s", exc)
     finally:
         db.close()
+
+
+@app.on_event("startup")
+def start_jaarverslag_scheduler() -> None:
+    start_scheduler()
 
 
 @app.get("/health")
