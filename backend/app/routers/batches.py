@@ -228,6 +228,7 @@ def delete_batch(batch_id: str, db: Session = Depends(get_db)):
         db.query(Candidate).filter(Candidate.batch_id == batch_id).delete(synchronize_session=False)
         db.query(AgentResult).filter(AgentResult.batch_id == batch_id).delete(synchronize_session=False)
         db.query(Enrichment).filter(Enrichment.company_id.in_(company_ids)).delete(synchronize_session=False)
+        db.query(JaarverslagMonitoring).filter(JaarverslagMonitoring.company_id.in_(company_ids)).delete(synchronize_session=False)
 
     db.query(PipelineRun).filter_by(batch_id=batch_id).delete(synchronize_session=False)
     db.query(Company).filter_by(batch_id=batch_id).delete(synchronize_session=False)

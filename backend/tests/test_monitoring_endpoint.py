@@ -89,3 +89,28 @@ def test_monitoring_status_toont_gecontroleerde_en_ongecontroleerde_vestigingen(
 def test_monitoring_status_onbekende_batch_geeft_404(client):
     response = client.get("/batches/onbekend-batch-id/monitoring")
     assert response.status_code == 404
+
+
+def test_batch_met_monitoring_status_kan_verwijderd_worden(client, db_session):
+    """Regressie: JaarverslagMonitoring-rijen blokkeerden het verwijderen van een
+    batch (foreign-key-fout) omdat delete_batch ze niet opruimde vóór de
+    company-rijen te verwijderen."""
+    upload = client.post(
+        "/batches/upload?naam=delete-monitoring-test&jaar=2026",
+        files={"file": ("bedrijven.csv", BytesIO(b"naam\nGemonitord B.V.\n"), "text/csv")},
+    )
+    assert upload.status_code == 200
+    batch_id = upload.json()["batch_id"]
+
+    company = db_session.query(Company).filter_by(batch_id=batch_id).one()
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id, laatste_bron_url="https://voorbeeld.test/jaarverslag.pdf",
+        laatst_gecontroleerd_op=datetime.now(timezone.utc).replace(tzinfo=None),
+    ))
+    db_session.commit()
+
+    response = client.delete(f"/batches/{batch_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": batch_id}
+    assert db_session.query(JaarverslagMonitoring).filter_by(company_id=company.id).count() == 0
