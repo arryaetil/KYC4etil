@@ -53,6 +53,8 @@ export function createApi(token, onUnauthorized) {
       return request(`/batches/upload?${params.toString()}`, {method: "POST", body});
     },
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
+    monitoringSummary: () => request("/batches/monitoring/summary"),
+    monitorBatch: (id) => request(`/batches/${id}/monitor`, {method: "POST"}),
     cancelBatch: (id) => request(`/batches/${id}/cancel`, {method: "POST"}),
     resetVastgelopen: (id) => request(`/batches/${id}/reset-vastgelopen`, {method: "POST"}),
     deleteBatch: (id) => request(`/batches/${id}`, {method: "DELETE"}),

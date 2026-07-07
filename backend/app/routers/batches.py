@@ -11,13 +11,15 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..database import SessionLocal, get_db
 from ..models import (AgentResult, Batch, CallListItem, Candidate, ChatSession,
-                      Company, Enrichment, PipelineRun, VastgoedRecord, WPRecord)
+                      Company, Enrichment, JaarverslagMonitoring, PipelineRun,
+                      VastgoedRecord, WPRecord)
 from ..pipeline.monitoring import check_company_jaarverslag
 from ..pipeline.runner import run_batch, verwerk_company
 
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
 
 CSV_VELDEN = {"naam"}  # minimaal vereist
+MONITORING_BATCH_PREFIX = "Jaarverslag monitoring"
 
 
 def run_batch_background(batch_id: str) -> None:
@@ -190,6 +192,61 @@ def zoek_companies(q: str = "", db: Session = Depends(get_db)):
         {"id": c.id, "naam": c.naam, "gemeente": c.gemeente, "batch_naam": batch_naam}
         for c, batch_naam in rows
     ]
+
+
+@router.get("/monitoring/summary")
+def monitoring_summary(db: Session = Depends(get_db)):
+    batch = (db.query(Batch)
+             .filter(Batch.naam.startswith(MONITORING_BATCH_PREFIX))
+             .order_by(Batch.created_at.desc())
+             .first())
+    if batch is None:
+        return {
+            "batch": None,
+            "checked": 0,
+            "total": 0,
+            "findings": 0,
+            "skipped": 0,
+            "errors": 0,
+            "schedule": {"enabled": False, "label": "Niet ingepland"},
+        }
+
+    checked = (
+        db.query(JaarverslagMonitoring)
+        .join(Company, JaarverslagMonitoring.company_id == Company.id)
+        .filter(Company.batch_id == batch.id)
+        .count()
+    )
+    findings = db.query(PipelineRun).filter_by(
+        batch_id=batch.id, stap="jaarverslag_monitoring", status="ok").count()
+    skipped = db.query(PipelineRun).filter_by(
+        batch_id=batch.id, stap="jaarverslag_monitoring", status="skipped").count()
+    errors = db.query(PipelineRun).filter_by(
+        batch_id=batch.id, stap="jaarverslag_monitoring", status="error").count()
+    last_check = (
+        db.query(JaarverslagMonitoring.laatst_gecontroleerd_op)
+        .join(Company, JaarverslagMonitoring.company_id == Company.id)
+        .filter(Company.batch_id == batch.id)
+        .order_by(JaarverslagMonitoring.laatst_gecontroleerd_op.desc())
+        .first()
+    )
+    return {
+        "batch": {
+            "id": batch.id,
+            "naam": batch.naam,
+            "jaar": batch.jaar,
+            "status": batch.status,
+            "created_at": batch.created_at.isoformat() + "Z" if batch.created_at else None,
+        },
+        "checked": checked,
+        "total": db.query(Company).filter_by(batch_id=batch.id).count(),
+        "findings": findings,
+        "skipped": skipped,
+        "errors": errors,
+        "candidates": db.query(Candidate).filter_by(batch_id=batch.id).count(),
+        "last_checked_at": last_check[0].isoformat() + "Z" if last_check and last_check[0] else None,
+        "schedule": {"enabled": False, "label": "Niet ingepland"},
+    }
 
 
 @router.get("")
