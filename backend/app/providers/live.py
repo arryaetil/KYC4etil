@@ -381,6 +381,40 @@ async def _fetch_text_playwright(url: str) -> str:
     return soup.get_text(separator="\n", strip=True)
 
 
+async def _haal_pagina_op(url: str) -> dict:
+    """Haalt een pagina op en geeft zowel de opgeschoonde tekst als de links terug
+    die het model kan gebruiken om zelf verder te navigeren. Alleen links binnen
+    hetzelfde domein worden meegegeven; nav/footer/script/style zijn al verwijderd."""
+    from urllib.parse import urljoin, urlparse
+
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True,
+                                 headers={"User-Agent": USER_AGENT}) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        eigen_domein = urlparse(url).netloc
+        links: list[dict] = []
+        seen: set[str] = set()
+        for a in soup.find_all("a", href=True):
+            if a.find_parent(["nav", "footer"]) is not None:
+                continue
+            absolute = urljoin(url, a["href"])
+            if urlparse(absolute).netloc != eigen_domein:
+                continue
+            if absolute in seen:
+                continue
+            seen.add(absolute)
+            links.append({"tekst": a.get_text(strip=True), "url": absolute})
+
+        for tag in soup(["script", "style", "nav", "footer"]):
+            tag.decompose()
+        tekst = soup.get_text(separator="\n", strip=True)
+
+    return {"tekst": tekst, "links": links}
+
+
 CANDIDATE_PATHS = ["", "/over-ons", "/over", "/team", "/wie-zijn-wij", "/contact", "/medewerkers"]
 
 
