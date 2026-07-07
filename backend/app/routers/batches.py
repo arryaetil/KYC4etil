@@ -1,7 +1,6 @@
 import csv
 import io
 import asyncio
-import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
@@ -13,7 +12,6 @@ from ..database import SessionLocal, get_db
 from ..models import (AgentResult, Batch, CallListItem, Candidate, ChatSession,
                       Company, Enrichment, JaarverslagMonitoring, PipelineRun,
                       VastgoedRecord, WPRecord)
-from ..pipeline.monitoring import check_company_jaarverslag
 from ..pipeline.runner import run_batch, verwerk_company
 
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
@@ -42,29 +40,6 @@ def run_single_background(company_id: str, batch_id: str) -> None:
                            stap="herverwerk", status="error", duur_ms=0,
                            error=str(exc)[:1000]))
         db.commit()
-    finally:
-        db.close()
-
-
-def run_monitoring_background(batch_id: str) -> None:
-    db = SessionLocal()
-    try:
-        batch = db.get(Batch, batch_id)
-        if batch is None:
-            return
-
-        for company in list(batch.companies):
-            t0 = time.monotonic()
-            try:
-                asyncio.run(check_company_jaarverslag(db, company, batch.jaar))
-                db.commit()
-            except Exception as exc:
-                db.rollback()
-                db.add(PipelineRun(batch_id=batch.id, company_id=company.id,
-                                   stap="jaarverslag_monitoring", status="error",
-                                   duur_ms=int((time.monotonic() - t0) * 1000),
-                                   error=str(exc)[:1000]))
-                db.commit()
     finally:
         db.close()
 
@@ -120,73 +95,6 @@ async def start_batch(batch_id: str, background_tasks: BackgroundTasks,
     background_tasks.add_task(run_batch_background, batch.id)
     return {"batch_id": batch.id, "status": batch.status, "verwerkt": batch.verwerkt,
             "totaal": batch.totaal}
-
-
-@router.post("/{batch_id}/monitor")
-async def monitor_batch(batch_id: str, background_tasks: BackgroundTasks,
-                        db: Session = Depends(get_db)):
-    """Start een periodieke jaarverslag-controle buiten de reguliere batch-run."""
-    batch = db.get(Batch, batch_id)
-    if batch is None:
-        raise HTTPException(404, f"batch {batch_id} bestaat niet")
-    background_tasks.add_task(run_monitoring_background, batch.id)
-    return {"batch_id": batch.id, "aantal_companies": len(batch.companies)}
-
-
-@router.get("/{batch_id}/monitoring")
-def monitoring_status(batch_id: str, db: Session = Depends(get_db)):
-    """Leest de monitoring-status per vestiging in deze batch: wanneer voor het
-    laatst gecontroleerd, welke bron toen gevonden werd, en of dat een nieuwe
-    bevinding opleverde (via de jaarverslag_monitoring-pipeline_runs)."""
-    batch = db.get(Batch, batch_id)
-    if batch is None:
-        raise HTTPException(404, "batch niet gevonden")
-
-    companies = db.query(Company).filter_by(batch_id=batch_id).all()
-    company_ids = [c.id for c in companies]
-
-    status_map: dict[str, JaarverslagMonitoring] = {}
-    if company_ids:
-        for status in (db.query(JaarverslagMonitoring)
-                       .filter(JaarverslagMonitoring.company_id.in_(company_ids))):
-            status_map[status.company_id] = status
-
-    bevindingen: set[str] = set()
-    fouten_map: dict[str, str] = {}
-    if company_ids:
-        for pr in (db.query(PipelineRun)
-                   .filter(PipelineRun.company_id.in_(company_ids),
-                           PipelineRun.stap == "jaarverslag_monitoring")
-                   .order_by(PipelineRun.created_at)):
-            if pr.status == "ok":
-                bevindingen.add(pr.company_id)
-            elif pr.status == "error":
-                fouten_map[pr.company_id] = pr.error or "onbekende fout"
-
-    out = []
-    for comp in companies:
-        status = status_map.get(comp.id)
-        cand = comp.candidate
-        out.append({
-            "company_id": comp.id, "naam": comp.naam, "gemeente": comp.gemeente,
-            "laatst_gecontroleerd_op": (status.laatst_gecontroleerd_op.isoformat() + "Z"
-                                        if status and status.laatst_gecontroleerd_op else None),
-            "laatste_bron_url": status.laatste_bron_url if status else None,
-            "nieuwe_bevinding": comp.id in bevindingen,
-            "fout": fouten_map.get(comp.id),
-            "wp_kandidaat": cand.wp_kandidaat if cand else None,
-            "confidence_label": cand.confidence_label if cand else None,
-        })
-
-    gecontroleerd = sum(1 for c in out if c["laatst_gecontroleerd_op"])
-    return {
-        "batch_id": batch.id,
-        "totaal": len(companies),
-        "gecontroleerd": gecontroleerd,
-        "nieuwe_bevindingen": len(bevindingen),
-        "fouten": len(fouten_map),
-        "companies": out,
-    }
 
 
 @router.post("/{batch_id}/cancel")
