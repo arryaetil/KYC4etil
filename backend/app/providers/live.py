@@ -483,10 +483,13 @@ async def _tool_use_loop(naam: str, adres: str | None, start_url: str) -> dict |
     """Multi-turn tool-use-loop: het model beslist zelf welke pagina's te bezoeken
     (via bezoek_pagina) totdat het meld_resultaat aanroept of het paginabudget
     (settings.max_website_pages) op is."""
+    from urllib.parse import urlparse
+
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     prompt = AGENT_PROMPT.format(naam=naam, adres=adres or "onbekend", start_url=start_url)
+    eigen_domein = urlparse(start_url).netloc
 
     response = await client.responses.create(
         model=_extraction_model(), input=prompt, tools=TOOLS, max_output_tokens=1024,
@@ -507,6 +510,11 @@ async def _tool_use_loop(naam: str, adres: str | None, start_url: str) -> dict |
             if call.name == "meld_resultaat":
                 return args
             if call.name == "bezoek_pagina":
+                gevraagde_url = urlparse(args["url"])
+                if gevraagde_url.scheme not in ("http", "https") or gevraagde_url.netloc != eigen_domein:
+                    outputs.append({"type": "function_call_output", "call_id": call.call_id,
+                                    "output": json.dumps({"fout": f"Alleen pagina's op {eigen_domein} zijn toegestaan."})})
+                    continue
                 bezochte_paginas += 1
                 if bezochte_paginas > settings.max_website_pages:
                     outputs.append({"type": "function_call_output", "call_id": call.call_id,

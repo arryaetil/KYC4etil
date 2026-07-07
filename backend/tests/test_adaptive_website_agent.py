@@ -171,6 +171,129 @@ async def test_tool_use_loop_stopt_bij_budget_op(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_tool_use_loop_weigert_cross_domain_url(monkeypatch):
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "openai_model", "gpt-test")
+    monkeypatch.setattr(live.settings, "max_website_pages", 3)
+
+    async def fake_haal_pagina_op(url):
+        raise AssertionError("_haal_pagina_op mag niet aangeroepen worden voor een cross-domain URL")
+
+    monkeypatch.setattr(live, "_haal_pagina_op", fake_haal_pagina_op)
+
+    # Model probeert een off-domain URL te bezoeken (bv. uit prompt-injection of hallucinatie),
+    # daarna meldt het resultaat.
+    eerste_antwoord = _FakeToolResponse(
+        output=[_FakeToolCall("bezoek_pagina", {"url": "https://evil.test/exfiltreer"}, "call_1")],
+        response_id="resp_1",
+    )
+    tweede_antwoord = _FakeToolResponse(
+        output=[_FakeToolCall("meld_resultaat", {
+            "wp_gevonden": None, "context": None,
+            "zekerheid": "laag", "reden": "niet gevonden",
+            "is_totaal_meerdere_vestigingen": False, "is_limburg_specifiek": None,
+            "is_fte": False, "peilmoment": None,
+        }, "call_2")],
+        response_id="resp_2",
+    )
+
+    import openai
+    monkeypatch.setattr(openai, "AsyncOpenAI", _maak_fake_openai([eerste_antwoord, tweede_antwoord]))
+
+    resultaat = await live._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
+
+    assert resultaat["wp_gevonden"] is None
+    calls = _FakeToolOpenAI.laatste_responses.calls
+    assert len(calls) == 2
+    # De rejectie wordt teruggekoppeld als function_call_output, geen fetch is uitgevoerd
+    output_call = calls[1]["input"][0]
+    assert output_call["type"] == "function_call_output"
+    assert output_call["call_id"] == "call_1"
+    fout = json.loads(output_call["output"])["fout"]
+    assert "voorbeeld.test" in fout
+    assert "toegestaan" in fout
+
+
+@pytest.mark.asyncio
+async def test_tool_use_loop_cross_domain_rejectie_verbruikt_geen_paginabudget(monkeypatch):
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "openai_model", "gpt-test")
+    monkeypatch.setattr(live.settings, "max_website_pages", 1)  # budget van maar 1 legitieme pagina
+
+    async def fake_haal_pagina_op(url):
+        assert url == "https://voorbeeld.test/over-ons"  # alleen de legitieme URL mag gefetcht worden
+        return {"tekst": "Ons team bestaat uit 12 medewerkers.", "links": []}
+
+    monkeypatch.setattr(live, "_haal_pagina_op", fake_haal_pagina_op)
+
+    # Ronde 1: model probeert eerst een off-domain URL (moet geweigerd worden, geen budget-verbruik)
+    eerste_antwoord = _FakeToolResponse(
+        output=[_FakeToolCall("bezoek_pagina", {"url": "https://evil.test/exfiltreer"}, "call_1")],
+        response_id="resp_1",
+    )
+    # Ronde 2: model bezoekt daarna alsnog de legitieme startpagina — dit moet slagen omdat
+    # de rejectie in ronde 1 het budget (max 1) niet heeft verbruikt.
+    tweede_antwoord = _FakeToolResponse(
+        output=[_FakeToolCall("bezoek_pagina", {"url": "https://voorbeeld.test/over-ons"}, "call_2")],
+        response_id="resp_2",
+    )
+    derde_antwoord = _FakeToolResponse(
+        output=[_FakeToolCall("meld_resultaat", {
+            "wp_gevonden": 12, "context": "Ons team bestaat uit 12 medewerkers.",
+            "zekerheid": "hoog", "reden": "letterlijk vermeld",
+            "is_totaal_meerdere_vestigingen": False, "is_limburg_specifiek": True,
+            "is_fte": False, "peilmoment": None,
+        }, "call_3")],
+        response_id="resp_3",
+    )
+
+    import openai
+    monkeypatch.setattr(openai, "AsyncOpenAI",
+                         _maak_fake_openai([eerste_antwoord, tweede_antwoord, derde_antwoord]))
+
+    resultaat = await live._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
+
+    assert resultaat["wp_gevonden"] == 12
+    assert resultaat["zekerheid"] == "hoog"
+
+
+@pytest.mark.asyncio
+async def test_tool_use_loop_weigert_niet_http_scheme(monkeypatch):
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "openai_model", "gpt-test")
+    monkeypatch.setattr(live.settings, "max_website_pages", 3)
+
+    async def fake_haal_pagina_op(url):
+        raise AssertionError("_haal_pagina_op mag niet aangeroepen worden voor een niet-http(s) scheme")
+
+    monkeypatch.setattr(live, "_haal_pagina_op", fake_haal_pagina_op)
+
+    eerste_antwoord = _FakeToolResponse(
+        output=[_FakeToolCall("bezoek_pagina", {"url": "file:///etc/passwd"}, "call_1")],
+        response_id="resp_1",
+    )
+    tweede_antwoord = _FakeToolResponse(
+        output=[_FakeToolCall("meld_resultaat", {
+            "wp_gevonden": None, "context": None,
+            "zekerheid": "laag", "reden": "niet gevonden",
+            "is_totaal_meerdere_vestigingen": False, "is_limburg_specifiek": None,
+            "is_fte": False, "peilmoment": None,
+        }, "call_2")],
+        response_id="resp_2",
+    )
+
+    import openai
+    monkeypatch.setattr(openai, "AsyncOpenAI", _maak_fake_openai([eerste_antwoord, tweede_antwoord]))
+
+    resultaat = await live._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
+
+    assert resultaat["wp_gevonden"] is None
+    output_call = _FakeToolOpenAI.laatste_responses.calls[1]["input"][0]
+    fout = json.loads(output_call["output"])["fout"]
+    assert "toegestaan" in fout
+
+
+@pytest.mark.asyncio
 async def test_website_agent_gebruikt_tool_use_loop(monkeypatch):
     async def fake_tool_use_loop(naam, adres, start_url):
         assert start_url == "https://voorbeeld.test"
