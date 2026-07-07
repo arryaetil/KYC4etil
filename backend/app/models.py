@@ -251,3 +251,12 @@ class JaarverslagChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     upload: Mapped[JaarverslagUpload] = relationship(back_populates="berichten")
+
+
+class JaarverslagMonitoring(Base):
+    __tablename__ = "jaarverslag_monitoring"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), unique=True, index=True)
+    laatste_bron_url: Mapped[str | None] = mapped_column(Text)
+    laatst_gecontroleerd_op: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
