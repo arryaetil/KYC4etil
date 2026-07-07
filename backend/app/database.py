@@ -52,6 +52,10 @@ def ensure_lightweight_migrations() -> None:
                 ))
             if "completed_at" not in existing_batches:
                 conn.execute(text("ALTER TABLE batches ADD COLUMN completed_at TIMESTAMP"))
+            if "is_monitoringlijst" not in existing_batches:
+                conn.execute(text(
+                    "ALTER TABLE batches ADD COLUMN is_monitoringlijst BOOLEAN DEFAULT FALSE"
+                ))
 
     if "chat_sessions" in tables:
         existing_cs = {col["name"] for col in inspector.get_columns("chat_sessions")}

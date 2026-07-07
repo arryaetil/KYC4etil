@@ -71,17 +71,24 @@ def run_monitoring_background(batch_id: str) -> None:
 
 @router.post("/upload")
 async def upload_batch(file: UploadFile, naam: str | None = None,
-                       jaar: int | None = None, db: Session = Depends(get_db)):
+                       jaar: int | None = None, monitoringlijst: bool = False,
+                       db: Session = Depends(get_db)):
     """CSV-upload -> batch + companies. Verwachte kolommen (flexibel):
-    vestigingsnummer, naam, gemeente, adres, sbi_code, cb_er, kvk_nummer."""
+    vestigingsnummer, naam, gemeente, adres, sbi_code, cb_er, kvk_nummer.
+    monitoringlijst=true markeert deze batch als de actieve jaarverslag-watchlist
+    en ontmarkeert automatisch een eventuele vorige watchlist."""
     content = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
     rows = list(reader)
     if not rows or not CSV_VELDEN.issubset({k.strip().lower() for k in rows[0]}):
         raise HTTPException(422, "CSV mist verplichte kolom 'naam'")
 
+    if monitoringlijst:
+        db.query(Batch).filter_by(is_monitoringlijst=True).update(
+            {"is_monitoringlijst": False})
+
     batch = Batch(naam=naam or file.filename, jaar=jaar or datetime.now(timezone.utc).replace(tzinfo=None).year,
-                  totaal=len(rows))
+                  totaal=len(rows), is_monitoringlijst=monitoringlijst)
     db.add(batch)
     db.flush()
     for r in rows:

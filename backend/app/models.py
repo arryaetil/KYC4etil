@@ -38,6 +38,7 @@ class Batch(Base):
     verwerkt: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    is_monitoringlijst: Mapped[bool] = mapped_column(Boolean, default=False)
 
     companies: Mapped[list["Company"]] = relationship(back_populates="batch")
 
