@@ -4,6 +4,7 @@ import {Login} from "./views/Login.jsx";
 import {Dashboard} from "./views/Dashboard.jsx";
 import {BatchView} from "./views/BatchView.jsx";
 import {BellijstView} from "./views/BellijstView.jsx";
+import {MonitoringView} from "./views/MonitoringView.jsx";
 import {DetailView} from "./views/DetailView.jsx";
 import {ChatSessiesView} from "./views/ChatSessiesView.jsx";
 import {ChatTemplatesView} from "./views/ChatTemplatesView.jsx";
@@ -53,6 +54,7 @@ export default function App() {
         openCompany={(batchId, companyId) => setRoute({name: "detail", batchId, companyId})}
         openBellijst={(batchId) => setRoute({name: "bellijst", batchId})}
         openChatSessies={(batchId) => setRoute({name: "chat-sessies", batchId})}
+        openMonitoring={(batchId) => setRoute({name: "monitoring", batchId})}
       />
     );
   }
@@ -65,6 +67,19 @@ export default function App() {
         onLogout={logout}
         batchId={route.batchId}
         openBatch={(batchId) => setRoute({name: "batch", batchId})}
+      />
+    );
+  }
+
+  if (route.name === "monitoring") {
+    return (
+      <MonitoringView
+        api={api}
+        user={user}
+        onLogout={logout}
+        batchId={route.batchId}
+        openBatch={(batchId) => setRoute({name: "batch", batchId})}
+        openCompany={(batchId, companyId) => setRoute({name: "detail", batchId, companyId})}
       />
     );
   }

@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useState} from "react";
-import {AlertTriangle, Check, FileDown, ListChecks, MessageSquare, Phone, Play, RefreshCw, Search, Square, Trash2} from "lucide-react";
+import {AlertTriangle, Check, FileDown, ListChecks, MessageSquare, Phone, Play, RefreshCw, Search, SearchCheck, Square, Trash2} from "lucide-react";
 import {classNames, pct} from "../lib/format.js";
 import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
@@ -9,7 +9,7 @@ import {LabelCounts} from "../components/LabelCounts.jsx";
 import {LabelBadge} from "../components/LabelBadge.jsx";
 import {StatusPill} from "../components/StatusPill.jsx";
 
-export function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, openBellijst, openChatSessies}) {
+export function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, openBellijst, openChatSessies, openMonitoring}) {
   const [batch, setBatch] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [label, setLabel] = useState("");
@@ -121,6 +121,7 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
           <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Groen goedkeuren</IconButton>
           <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.xlsx`, "export.xlsx")}>Export</IconButton>
           <IconButton icon={Phone} onClick={() => openBellijst(batchId)}>Bellijst</IconButton>
+          <IconButton icon={SearchCheck} onClick={() => openMonitoring(batchId)} title="Jaarverslag-monitoring">Monitoring</IconButton>
           <div className="relative inline-flex">
             <IconButton icon={MessageSquare} onClick={() => openChatSessies(batchId)}>Chat-sessies</IconButton>
             {batch?.chat_sessies_open > 0 && (

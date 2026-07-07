@@ -62,6 +62,18 @@ def client():
 
 
 @pytest.fixture
+def db_session():
+    """Directe toegang tot dezelfde testdatabase als de `client`-fixture, voor
+    het opzetten van state die geen publieke endpoint heeft (bv. pipeline_runs,
+    jaarverslag_monitoring-rijen)."""
+    db = _Session()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@pytest.fixture
 def pdf_bytes():
     """Minimale, geldige PDF met leesbare tekst."""
     doc = fitz.open()
