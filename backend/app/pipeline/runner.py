@@ -12,6 +12,10 @@ from .confidence import bereken_confidence
 from .reconcile import Strategie, bepaal_strategie, reconcilieer
 
 
+def _now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _log(db: Session, batch_id: str, company_id: str | None, stap: str,
          status: str, t0: float, error: str | None = None) -> None:
     db.add(PipelineRun(batch_id=batch_id, company_id=company_id, stap=stap,
@@ -163,6 +167,6 @@ async def run_batch(db: Session, batch_id: str) -> Batch:
             return batch
 
     batch.status = "done"
-    batch.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    batch.completed_at = _now()
     db.commit()
     return batch
