@@ -103,3 +103,25 @@ def test_check_company_jaarverslag_werkt_bestaande_candidate_bij():
         db.query(Batch).delete()
         db.commit()
         db.close()
+
+
+def test_check_company_jaarverslag_geen_wijziging_tweede_keer():
+    db = SessionLocal()
+    try:
+        company = _maak_company(db)
+
+        eerste = asyncio.run(check_company_jaarverslag(db, company, 2026))
+        tweede = asyncio.run(check_company_jaarverslag(db, company, 2026))
+
+        assert eerste is True
+        assert tweede is False
+        assert db.query(AgentResult).filter_by(company_id=company.id).count() == 1
+        assert db.query(Candidate).filter_by(company_id=company.id).count() == 1
+    finally:
+        db.query(Candidate).delete()
+        db.query(AgentResult).delete()
+        db.query(JaarverslagMonitoring).delete()
+        db.query(Company).delete()
+        db.query(Batch).delete()
+        db.commit()
+        db.close()
