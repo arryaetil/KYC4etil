@@ -72,8 +72,8 @@ def test_monitoring_run_start_achtergrondtaak(client, monkeypatch):
 
     gestart = []
 
-    def fake_run_monitoring_watchlist_background() -> None:
-        gestart.append(True)
+    def fake_run_monitoring_watchlist_background(limit=None) -> None:
+        gestart.append(limit)
 
     monkeypatch.setattr(monitoring_router, "run_monitoring_watchlist_background",
                         fake_run_monitoring_watchlist_background)
@@ -82,4 +82,49 @@ def test_monitoring_run_start_achtergrondtaak(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"batch_id": batch_id, "aantal_companies": 1}
-    assert gestart == [True]
+    assert gestart == [None]
+
+
+def test_monitoring_run_met_limit_beperkt_aantal_companies(client, monkeypatch):
+    """Met ?limit=N wordt maar een deel van de watchlist gecontroleerd — bedoeld
+    om tijdens ontwikkelen/testen niet steeds de volledige (kostbare) live-lijst
+    te hoeven doorlopen."""
+    upload = client.post(
+        "/batches/upload?naam=watchlist-run-groot&jaar=2026&monitoringlijst=true",
+        files={"file": ("orgs.csv", BytesIO(
+            b"naam\nOrganisatie A\nOrganisatie B\nOrganisatie C\n"
+        ), "text/csv")},
+    )
+    assert upload.status_code == 200
+    batch_id = upload.json()["batch_id"]
+
+    gestart = []
+
+    def fake_run_monitoring_watchlist_background(limit=None) -> None:
+        gestart.append(limit)
+
+    monkeypatch.setattr(monitoring_router, "run_monitoring_watchlist_background",
+                        fake_run_monitoring_watchlist_background)
+
+    response = client.post("/monitoring/run?limit=2")
+
+    assert response.status_code == 200
+    assert response.json() == {"batch_id": batch_id, "aantal_companies": 2}
+    assert gestart == [2]
+
+
+def test_monitoring_run_met_limit_groter_dan_watchlist_gebruikt_totaal(client, monkeypatch):
+    upload = client.post(
+        "/batches/upload?naam=watchlist-run-klein&jaar=2026&monitoringlijst=true",
+        files={"file": ("orgs.csv", BytesIO(b"naam\nOrganisatie X\n"), "text/csv")},
+    )
+    assert upload.status_code == 200
+    batch_id = upload.json()["batch_id"]
+
+    monkeypatch.setattr(monitoring_router, "run_monitoring_watchlist_background",
+                        lambda limit=None: None)
+
+    response = client.post("/monitoring/run?limit=50")
+
+    assert response.status_code == 200
+    assert response.json() == {"batch_id": batch_id, "aantal_companies": 1}

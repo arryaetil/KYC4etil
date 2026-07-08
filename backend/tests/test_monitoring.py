@@ -321,3 +321,39 @@ def test_run_monitoring_watchlist_background_zonder_watchlist_is_stille_noop():
         run_monitoring_watchlist_background()  # mag geen exception opgooien
     finally:
         db.close()
+
+
+def test_run_monitoring_watchlist_background_respecteert_limit(monkeypatch):
+    """limit beperkt hoeveel organisaties er gecontroleerd worden — bedoeld om
+    tijdens testen niet steeds de volledige (kostbare) live-watchlist te draaien."""
+    from app.pipeline.monitoring import run_monitoring_watchlist_background
+
+    db = SessionLocal()
+    try:
+        batch = Batch(naam="watchlist-limit-test", jaar=2026, totaal=3,
+                     is_monitoringlijst=True)
+        db.add(batch)
+        db.flush()
+        namen = ["Org A", "Org B", "Org C"]
+        for naam in namen:
+            db.add(Company(batch_id=batch.id, naam=naam))
+        db.commit()
+
+        doorgegeven_ids = []
+
+        async def fake_check_batch_jaarverslagen(batch_id, jaar, company_ids, max_concurrent=8):
+            doorgegeven_ids.extend(company_ids)
+
+        monkeypatch.setattr(
+            "app.pipeline.monitoring.check_batch_jaarverslagen",
+            fake_check_batch_jaarverslagen,
+        )
+
+        run_monitoring_watchlist_background(limit=2)
+
+        assert len(doorgegeven_ids) == 2
+    finally:
+        db.query(Company).delete()
+        db.query(Batch).delete()
+        db.commit()
+        db.close()

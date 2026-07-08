@@ -136,10 +136,13 @@ async def check_batch_jaarverslagen(batch_id: str, jaar: int, company_ids: list[
     ))
 
 
-def run_monitoring_watchlist_background() -> None:
+def run_monitoring_watchlist_background(limit: int | None = None) -> None:
     """Zoekt de gemarkeerde watchlist-batch op (Batch.is_monitoringlijst=True) en
     controleert alle organisaties daarin gelijktijdig op nieuwe jaarverslagen.
-    Geen watchlist ingesteld of leeg -> stille no-op."""
+    Geen watchlist ingesteld of leeg -> stille no-op.
+    limit beperkt (optioneel) het aantal gecontroleerde organisaties — bedoeld
+    om tijdens testen/ontwikkelen niet steeds de volledige, live-kostbare
+    watchlist te hoeven doorlopen."""
     db = SessionLocal()
     try:
         batch = db.query(Batch).filter_by(is_monitoringlijst=True).order_by(
@@ -151,6 +154,8 @@ def run_monitoring_watchlist_background() -> None:
     finally:
         db.close()
 
+    if limit is not None:
+        company_ids = company_ids[:limit]
     if not company_ids:
         return
     asyncio.run(check_batch_jaarverslagen(batch_id, jaar, company_ids))
