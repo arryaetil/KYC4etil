@@ -55,7 +55,7 @@ export function DetailView({api, user, onLogout, batchId, companyId, openBatch})
               companyId={companyId}
               onRefresh={load}
             />
-            <WpUitsplitsing wp_historie={detail?.wp_historie} api={api} batchId={batchId} companyId={companyId} onRefresh={load} />
+            <WpUitsplitsing wp_historie={detail?.wp_historie} agent_results={detail?.agent_results} api={api} batchId={batchId} companyId={companyId} onRefresh={load} />
             <VastgoedKaart api={api} batchId={batchId} companyId={companyId} vastgoed={detail?.vastgoed} />
             <Panel title="Gevonden bronnen" collapsible defaultOpen={false}>
               <div className="space-y-3">

@@ -15,9 +15,14 @@ const WP_SPLITS_VELDEN = [
   {key: "wsw",             label: "WSW",             groep: "Type personeel", tooltip: "Wet sociale werkvoorziening"},
 ];
 
-export function WpUitsplitsing({wp_historie, api, batchId, companyId, onRefresh}) {
+export function WpUitsplitsing({wp_historie, agent_results, api, batchId, companyId, onRefresh}) {
   const record = wp_historie?.[0] ?? null;
   const r = record || {};
+  const agentUitsplitsing = (agent_results || []).find(
+    (ar) => ar.agent_type === "jaarverslag" && (
+      WP_SPLITS_VELDEN.some(({key}) => ar[key] != null) || ar.pct_op_locatie != null
+    )
+  );
   const velden = WP_SPLITS_VELDEN.map(({key}) => r[key]);
   const gevuld = [...velden, r.pct_op_locatie].filter((v) => v != null).length;
 
@@ -56,6 +61,19 @@ export function WpUitsplitsing({wp_historie, api, batchId, companyId, onRefresh}
       {!record && (
         <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Nog geen WP-record — bevestig eerst een WP-waarde in de Werkzame personen-kaart.
+        </div>
+      )}
+      {!record && agentUitsplitsing && (
+        <div className="mb-4 rounded-md border border-line bg-panel px-3 py-2 text-xs text-slate-700">
+          <div className="mb-1 font-semibold text-ink">Agent-suggestie uit jaarverslag, nog niet bevestigd</div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {WP_SPLITS_VELDEN.filter(({key}) => agentUitsplitsing[key] != null).map(({key, label}) => (
+              <span key={key}>{label}: {agentUitsplitsing[key]}</span>
+            ))}
+            {agentUitsplitsing.pct_op_locatie != null && (
+              <span>% op locatie: {Math.round(agentUitsplitsing.pct_op_locatie * 100)}%</span>
+            )}
+          </div>
         </div>
       )}
       {record && (
