@@ -657,7 +657,11 @@ class LiveJaarverslagAgent:
     async def run(self, naam: str, jaar: int) -> AgentFinding | None:
         """Fase A: zoek jaarverslag-PDF via web search; Fase B: extraheer WP uit PDF.
         Fase C (optioneel): directe WP-zoekopdracht op jaarverslagdata als PDF-pad mislukt.
-        Fase C is standaard uitgeschakeld (JAARVERSLAG_WEB_FALLBACK=false) voor kostenbeheersing."""
+        Fase C is standaard uitgeschakeld (JAARVERSLAG_WEB_FALLBACK=false) voor kostenbeheersing.
+        Vindt Fase A wel een PDF maar levert geen van beide paden een WP-getal op, dan
+        wordt de gevonden bron_url alsnog teruggegeven (zonder wp_gevonden) zodat de
+        jaarverslag-monitoring een baseline-URL heeft om toekomstige wijzigingen aan te
+        toetsen — anders gaat een gevonden jaarverslag-link onnodig verloren."""
         pdf_url = await _zoek_jaarverslag_pdf(naam, jaar)
         if pdf_url:
             try:
@@ -667,7 +671,15 @@ class LiveJaarverslagAgent:
             except Exception:
                 pass
         if settings.jaarverslag_web_fallback:
-            return await _web_search_jaarverslag_wp(naam, jaar)
+            fallback = await _web_search_jaarverslag_wp(naam, jaar)
+            if fallback:
+                return fallback
+        if pdf_url:
+            return AgentFinding(
+                wp_gevonden=None, context=None, zekerheid="laag",
+                reden="Jaarverslag gevonden, geen WP-getal geëxtraheerd",
+                bron_url=pdf_url, bron_type="jaarverslag",
+            )
         return None
 
     async def run_with_pdf(self, naam: str, pdf_url: str) -> AgentFinding | None:

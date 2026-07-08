@@ -2,10 +2,13 @@
 import asyncio
 import asyncio as _asyncio_voor_lock  # alias voorkomt naamsbotsing met bovenstaande `import asyncio`
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
 
 from app.database import SessionLocal
 from app.models import AgentResult, Batch, Candidate, Company, JaarverslagMonitoring
+from app.pipeline import monitoring as monitoring_module
 from app.pipeline.monitoring import check_company_jaarverslag
+from app.providers.base import AgentFinding
 
 
 def _now() -> datetime:
@@ -121,6 +124,95 @@ def test_check_company_jaarverslag_geen_wijziging_tweede_keer():
     finally:
         db.query(Candidate).delete()
         db.query(AgentResult).delete()
+        db.query(JaarverslagMonitoring).delete()
+        db.query(Company).delete()
+        db.query(Batch).delete()
+        db.commit()
+        db.close()
+
+
+def test_check_company_jaarverslag_slaat_url_op_zonder_wp_gevonden(monkeypatch):
+    """Vindt de agent alleen een bron_url maar geen WP-getal (bijv. jaarverslag
+    gevonden maar geen medewerkersaantal erin geëxtraheerd), dan moet de URL toch
+    als baseline opgeslagen worden — zonder dat er een AgentResult/Candidate ontstaat."""
+    db = SessionLocal()
+    try:
+        company = _maak_company(db, naam="Onbekend Bedrijf")
+
+        finding = AgentFinding(
+            wp_gevonden=None, context=None, zekerheid="laag",
+            reden="Jaarverslag gevonden, geen WP-getal geëxtraheerd",
+            bron_url="https://example.test/jaarverslag.pdf", bron_type="jaarverslag",
+        )
+        mock_jaarverslag = MagicMock()
+        mock_jaarverslag.run = AsyncMock(return_value=finding)
+        monkeypatch.setattr(monitoring_module, "get_providers",
+                            lambda: (None, None, mock_jaarverslag))
+
+        resultaat = asyncio.run(check_company_jaarverslag(db, company, 2026))
+
+        assert resultaat is True
+        status = db.query(JaarverslagMonitoring).filter_by(company_id=company.id).one()
+        assert status.laatste_bron_url == "https://example.test/jaarverslag.pdf"
+        assert db.query(AgentResult).filter_by(company_id=company.id).count() == 0
+        assert db.query(Candidate).filter_by(company_id=company.id).count() == 0
+    finally:
+        db.query(Candidate).delete()
+        db.query(AgentResult).delete()
+        db.query(JaarverslagMonitoring).delete()
+        db.query(Company).delete()
+        db.query(Batch).delete()
+        db.commit()
+        db.close()
+
+
+def test_check_company_jaarverslag_zonder_bron_url_wordt_overgeslagen(monkeypatch):
+    """Vindt de agent helemaal niets (geen finding, of een finding zonder bron_url),
+    dan blijft de baseline leeg en gebeurt er verder niets."""
+    db = SessionLocal()
+    try:
+        company = _maak_company(db, naam="Onbekend Bedrijf")
+
+        mock_jaarverslag = MagicMock()
+        mock_jaarverslag.run = AsyncMock(return_value=None)
+        monkeypatch.setattr(monitoring_module, "get_providers",
+                            lambda: (None, None, mock_jaarverslag))
+
+        resultaat = asyncio.run(check_company_jaarverslag(db, company, 2026))
+
+        assert resultaat is False
+        status = db.query(JaarverslagMonitoring).filter_by(company_id=company.id).one()
+        assert status.laatste_bron_url is None
+    finally:
+        db.query(JaarverslagMonitoring).delete()
+        db.query(Company).delete()
+        db.query(Batch).delete()
+        db.commit()
+        db.close()
+
+
+def test_check_company_jaarverslag_zelfde_url_zonder_wp_geen_wijziging_tweede_keer(monkeypatch):
+    """Blijft de agent dezelfde bron_url zonder WP-getal teruggeven, dan telt de
+    tweede keer niet meer als wijziging."""
+    db = SessionLocal()
+    try:
+        company = _maak_company(db, naam="Onbekend Bedrijf")
+
+        finding = AgentFinding(
+            wp_gevonden=None, context=None, zekerheid="laag", reden="t",
+            bron_url="https://example.test/jaarverslag.pdf", bron_type="jaarverslag",
+        )
+        mock_jaarverslag = MagicMock()
+        mock_jaarverslag.run = AsyncMock(return_value=finding)
+        monkeypatch.setattr(monitoring_module, "get_providers",
+                            lambda: (None, None, mock_jaarverslag))
+
+        eerste = asyncio.run(check_company_jaarverslag(db, company, 2026))
+        tweede = asyncio.run(check_company_jaarverslag(db, company, 2026))
+
+        assert eerste is True
+        assert tweede is False
+    finally:
         db.query(JaarverslagMonitoring).delete()
         db.query(Company).delete()
         db.query(Batch).delete()

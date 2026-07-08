@@ -107,7 +107,10 @@ async def test_live_jaarverslag_agent_verwerkt_pdf_als_gevonden():
 
 @pytest.mark.asyncio
 async def test_live_jaarverslag_agent_handelt_pdf_fout_af():
-    """Als run_with_pdf faalt, valt agent terug op web search (Fase C); mock web search geeft None."""
+    """Als run_with_pdf faalt en de web search-fallback (Fase C) niets oplevert,
+    geeft de agent toch de gevonden bron_url door (zonder wp_gevonden) — zodat de
+    jaarverslag-monitoring in elk geval een baseline-URL heeft, in plaats van de
+    gevonden link stilzwijgend te laten vervallen."""
     with patch("app.providers.live._zoek_jaarverslag_pdf",
                new=AsyncMock(return_value="https://example.com/broken.pdf")), \
          patch("app.providers.live.LiveJaarverslagAgent.run_with_pdf",
@@ -117,7 +120,9 @@ async def test_live_jaarverslag_agent_handelt_pdf_fout_af():
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
         result = await agent.run("TestBedrijf", 2025)
-    assert result is None
+    assert result is not None
+    assert result.bron_url == "https://example.com/broken.pdf"
+    assert result.wp_gevonden is None
 
 
 # --- Verbetering 4: lookup_failed blokkeert agents niet meer ---

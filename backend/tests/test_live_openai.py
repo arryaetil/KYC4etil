@@ -186,3 +186,36 @@ async def test_web_search_jaarverslag_wp_geeft_uitsplitsing_door(monkeypatch):
     assert result.detachering == 10
     assert result.wsw == 0
     assert result.pct_op_locatie == 0.9
+
+
+@pytest.mark.asyncio
+async def test_run_geeft_bron_url_door_als_pdf_gevonden_maar_geen_wp_geextraheerd(monkeypatch):
+    async def fake_zoek_pdf(naam, jaar):
+        return "https://example.test/jaarverslag-2025.pdf"
+
+    async def fake_run_with_pdf(self, naam, pdf_url):
+        return None
+
+    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek_pdf)
+    monkeypatch.setattr(live.LiveJaarverslagAgent, "run_with_pdf", fake_run_with_pdf)
+    monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
+
+    result = await live.LiveJaarverslagAgent().run("Testbedrijf", 2026)
+
+    assert result is not None
+    assert result.bron_url == "https://example.test/jaarverslag-2025.pdf"
+    assert result.bron_type == "jaarverslag"
+    assert result.wp_gevonden is None
+
+
+@pytest.mark.asyncio
+async def test_run_geeft_none_als_geen_pdf_gevonden(monkeypatch):
+    async def fake_zoek_pdf(naam, jaar):
+        return None
+
+    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek_pdf)
+    monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
+
+    result = await live.LiveJaarverslagAgent().run("Testbedrijf", 2026)
+
+    assert result is None

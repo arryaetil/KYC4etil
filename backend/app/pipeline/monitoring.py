@@ -16,7 +16,12 @@ from .runner import _log, _now
 
 async def check_company_jaarverslag(db: Session, company: Company, jaar: int) -> bool:
     """Controleert of er een nieuw jaarverslag is t.o.v. de laatst bekende bron.
-    Retourneert True als er een nieuwe/bijgewerkte candidate is aangemaakt."""
+    De laatst bekende bron_url wordt altijd bijgewerkt zodra de agent er één vindt,
+    ook als er geen WP-getal uit te halen was — zo houdt de monitoring altijd een
+    actuele link naar het meest recente jaarverslag bij. Een candidate wordt alleen
+    aangemaakt/bijgewerkt als er zowel een nieuwe URL als een bruikbaar WP-getal is.
+    Retourneert True als er een wijziging is vastgesteld (nieuwe URL, met of zonder
+    WP-getal)."""
     _, _, jaarverslag_agent = get_providers()
     t0 = time.monotonic()
 
@@ -28,17 +33,19 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     finding = await jaarverslag_agent.run(company.naam, jaar)
     status.laatst_gecontroleerd_op = _now()
 
-    if finding is None or not finding.wp_gevonden:
+    if finding is None or not finding.bron_url:
         _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "skipped", t0)
         db.commit()
         return False
 
-    if finding.bron_url == status.laatste_bron_url:
-        _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "skipped", t0)
-        db.commit()
-        return False
-
+    url_gewijzigd = finding.bron_url != status.laatste_bron_url
     status.laatste_bron_url = finding.bron_url
+
+    if not url_gewijzigd or not finding.wp_gevonden:
+        _log(db, company.batch_id, company.id, "jaarverslag_monitoring",
+             "ok" if url_gewijzigd else "skipped", t0)
+        db.commit()
+        return url_gewijzigd
 
     ar = AgentResult(
         company_id=company.id, batch_id=company.batch_id, agent_type="jaarverslag",
