@@ -50,3 +50,16 @@ def test_monitoringlijst_batch_verschijnt_niet_in_hoofdoverzicht(client, db_sess
 
     assert "gewone-batch" in namen
     assert "watchlist-test" not in namen
+
+
+def test_legacy_monitorlijst_naam_verschijnt_niet_in_hoofdoverzicht(client, db_session):
+    db_session.add(Batch(naam="Jaarverslagen monitorlijst", jaar=2026, totaal=1,
+                         is_monitoringlijst=False))
+    db_session.add(Batch(naam="gewone-batch", jaar=2026, totaal=1,
+                         is_monitoringlijst=False))
+    db_session.commit()
+
+    namen = [b["naam"] for b in client.get("/batches").json()]
+
+    assert "gewone-batch" in namen
+    assert "Jaarverslagen monitorlijst" not in namen

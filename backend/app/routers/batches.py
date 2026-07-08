@@ -17,6 +17,12 @@ from ..pipeline.runner import run_batch, verwerk_company
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
 
 CSV_VELDEN = {"naam"}  # minimaal vereist
+MONITORINGLIJST_NAAM_MARKERS = ("monitoringlijst", "monitorlijst", "watchlist")
+
+
+def _lijkt_monitoringlijst_batch(batch: Batch) -> bool:
+    naam = (batch.naam or "").lower()
+    return any(marker in naam for marker in MONITORINGLIJST_NAAM_MARKERS)
 
 
 def run_batch_background(batch_id: str) -> None:
@@ -172,7 +178,8 @@ def list_batches(db: Session = Depends(get_db)):
              "created_at": b.created_at.isoformat() + "Z" if b.created_at else None,
              "completed_at": b.completed_at.isoformat() + "Z" if b.completed_at else None}
             for b in db.query(Batch).filter(Batch.is_monitoringlijst.isnot(True))
-                .order_by(Batch.created_at.desc()).all()]
+                .order_by(Batch.created_at.desc()).all()
+            if not _lijkt_monitoringlijst_batch(b)]
 
 
 @router.get("/{batch_id}")
