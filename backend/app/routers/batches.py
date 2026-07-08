@@ -297,6 +297,11 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
             "context": ar.wp_context, "bron_url": ar.bron_url, "bron_type": ar.bron_type,
             "is_limburg_specifiek": ar.is_limburg_specifiek, "is_fte": ar.is_fte,
             "peilmoment": ar.peilmoment, "llm_zekerheid": ar.llm_zekerheid,
+            "eigen_personeel": ar.eigen_personeel, "uitzend": ar.uitzend,
+            "detachering": ar.detachering, "wsw": ar.wsw,
+            "man": ar.man, "vrouw": ar.vrouw,
+            "voltijd": ar.voltijd, "deeltijd": ar.deeltijd,
+            "pct_op_locatie": ar.pct_op_locatie,
         } for ar in comp.agent_results],
         "pipeline_fouten": [{
             "stap": pr.stap, "error": pr.error,

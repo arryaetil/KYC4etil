@@ -298,3 +298,33 @@ def test_approve_negeert_niet_kloppende_uitsplitsing_in_wprecord(client, db_sess
     assert rec.wp_waarde == 100
     assert rec.man is None
     assert rec.vrouw is None
+
+
+def test_company_detail_toont_agent_uitsplitsing(client, db_session):
+    batch = Batch(naam="detail-test", jaar=2026, totaal=1)
+    db_session.add(batch)
+    db_session.flush()
+    company = Company(batch_id=batch.id, naam="Testbedrijf")
+    db_session.add(company)
+    db_session.flush()
+    db_session.add(AgentResult(
+        company_id=company.id, batch_id=batch.id, agent_type="jaarverslag",
+        wp_gevonden=100, bron_type="jaarverslag",
+        man=60, vrouw=40, voltijd=80, deeltijd=20,
+        eigen_personeel=70, uitzend=20, detachering=10, wsw=0, pct_op_locatie=0.9,
+    ))
+    db_session.commit()
+
+    response = client.get(f"/batches/{batch.id}/companies/{company.id}")
+
+    assert response.status_code == 200
+    ar = response.json()["agent_results"][0]
+    assert ar["man"] == 60
+    assert ar["vrouw"] == 40
+    assert ar["voltijd"] == 80
+    assert ar["deeltijd"] == 20
+    assert ar["eigen_personeel"] == 70
+    assert ar["uitzend"] == 20
+    assert ar["detachering"] == 10
+    assert ar["wsw"] == 0
+    assert ar["pct_op_locatie"] == 0.9
