@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models import AgentResult, Batch, Company
+from app.models import AgentResult, Batch, Company, User
 from app.providers.base import AgentFinding, LocationInfo
 
 
@@ -172,3 +172,129 @@ async def test_check_company_jaarverslag_slaat_uitsplitsing_op(db_session, monke
     assert ar.voltijd == 80
     assert ar.deeltijd == 20
     assert ar.pct_op_locatie == 0.9
+
+
+def test_valideer_wp_uitsplitsing_zonder_agent_result_geeft_leeg():
+    from app.pipeline.wp_uitsplitsing import valideer_wp_uitsplitsing
+
+    assert valideer_wp_uitsplitsing(None, 100) == {}
+
+
+def test_valideer_wp_uitsplitsing_neemt_kloppende_groepen_over():
+    from app.pipeline.wp_uitsplitsing import valideer_wp_uitsplitsing
+
+    ar = AgentResult(
+        company_id="c", batch_id="b", agent_type="jaarverslag", bron_type="jaarverslag",
+        man=60, vrouw=40, voltijd=80, deeltijd=20,
+        eigen_personeel=70, uitzend=20, detachering=10, wsw=0,
+        pct_op_locatie=0.9,
+    )
+
+    resultaat = valideer_wp_uitsplitsing(ar, 100)
+
+    assert resultaat == {
+        "man": 60, "vrouw": 40, "voltijd": 80, "deeltijd": 20,
+        "eigen_personeel": 70, "uitzend": 20, "detachering": 10, "wsw": 0,
+        "pct_op_locatie": 0.9,
+    }
+
+
+def test_valideer_wp_uitsplitsing_negeert_niet_kloppende_groep():
+    from app.pipeline.wp_uitsplitsing import valideer_wp_uitsplitsing
+
+    ar = AgentResult(
+        company_id="c", batch_id="b", agent_type="jaarverslag", bron_type="jaarverslag",
+        man=70, vrouw=60,
+        voltijd=80, deeltijd=20,
+    )
+
+    resultaat = valideer_wp_uitsplitsing(ar, 100)
+
+    assert "man" not in resultaat
+    assert "vrouw" not in resultaat
+    assert resultaat["voltijd"] == 80
+    assert resultaat["deeltijd"] == 20
+
+
+def test_valideer_wp_uitsplitsing_negeert_onvolledige_groep():
+    from app.pipeline.wp_uitsplitsing import valideer_wp_uitsplitsing
+
+    ar = AgentResult(
+        company_id="c", batch_id="b", agent_type="jaarverslag", bron_type="jaarverslag",
+        man=60,
+    )
+
+    resultaat = valideer_wp_uitsplitsing(ar, 100)
+
+    assert "man" not in resultaat
+
+
+def test_approve_neemt_kloppende_uitsplitsing_over_in_wprecord(client, db_session):
+    from app.models import Candidate, WPRecord
+
+    db_session.add(User(id="test-user-id", naam="Test User", email="test-user@example.test", rol="admin"))
+    batch = Batch(naam="approve-test", jaar=2026, totaal=1)
+    db_session.add(batch)
+    db_session.flush()
+    company = Company(batch_id=batch.id, naam="Testbedrijf")
+    db_session.add(company)
+    db_session.flush()
+    ar = AgentResult(
+        company_id=company.id, batch_id=batch.id, agent_type="jaarverslag",
+        wp_gevonden=100, bron_type="jaarverslag", bron_url="https://x",
+        man=60, vrouw=40, voltijd=80, deeltijd=20,
+        eigen_personeel=70, uitzend=20, detachering=10, wsw=0, pct_op_locatie=0.9,
+    )
+    db_session.add(ar)
+    db_session.flush()
+    cand = Candidate(company_id=company.id, batch_id=batch.id, wp_kandidaat=100,
+                     is_schatting=False, gekozen_agent_result=ar.id,
+                     confidence_score=0.9, confidence_label="hoog", strategie="auto")
+    db_session.add(cand)
+    db_session.commit()
+
+    response = client.post(f"/candidates/{cand.id}/approve")
+
+    assert response.status_code == 200
+    rec = db_session.get(WPRecord, response.json()["wp_record_id"])
+    assert rec.man == 60
+    assert rec.vrouw == 40
+    assert rec.voltijd == 80
+    assert rec.deeltijd == 20
+    assert rec.eigen_personeel == 70
+    assert rec.uitzend == 20
+    assert rec.detachering == 10
+    assert rec.wsw == 0
+    assert rec.pct_op_locatie == 0.9
+
+
+def test_approve_negeert_niet_kloppende_uitsplitsing_in_wprecord(client, db_session):
+    from app.models import Candidate, WPRecord
+
+    db_session.add(User(id="test-user-id", naam="Test User", email="test-user-2@example.test", rol="admin"))
+    batch = Batch(naam="approve-test-2", jaar=2026, totaal=1)
+    db_session.add(batch)
+    db_session.flush()
+    company = Company(batch_id=batch.id, naam="Testbedrijf 2")
+    db_session.add(company)
+    db_session.flush()
+    ar = AgentResult(
+        company_id=company.id, batch_id=batch.id, agent_type="jaarverslag",
+        wp_gevonden=100, bron_type="jaarverslag", bron_url="https://x",
+        man=70, vrouw=60,
+    )
+    db_session.add(ar)
+    db_session.flush()
+    cand = Candidate(company_id=company.id, batch_id=batch.id, wp_kandidaat=100,
+                     is_schatting=False, gekozen_agent_result=ar.id,
+                     confidence_score=0.9, confidence_label="hoog", strategie="auto")
+    db_session.add(cand)
+    db_session.commit()
+
+    response = client.post(f"/candidates/{cand.id}/approve")
+
+    assert response.status_code == 200
+    rec = db_session.get(WPRecord, response.json()["wp_record_id"])
+    assert rec.wp_waarde == 100
+    assert rec.man is None
+    assert rec.vrouw is None

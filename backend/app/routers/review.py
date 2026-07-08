@@ -15,6 +15,7 @@ from ..chat_utils import hash_token
 from ..config import get_settings
 from ..database import get_db
 from ..models import AgentResult, Batch, CallListItem, Candidate, ChatSession, ChatTemplate, Company, User, WPRecord
+from ..pipeline.wp_uitsplitsing import valideer_wp_uitsplitsing
 
 router = APIRouter(tags=["review"], dependencies=[Depends(get_current_user)])
 
@@ -38,11 +39,13 @@ def _maak_wp_record(db: Session, cand: Candidate, wp: int, status: str, user: Us
     comp = db.get(Company, cand.company_id)
     batch = db.get(Batch, cand.batch_id)
     ar = db.get(AgentResult, cand.gekozen_agent_result) if cand.gekozen_agent_result else None
+    uitsplitsing = valideer_wp_uitsplitsing(ar, wp)
     rec = WPRecord(company_id=comp.id, candidate_id=cand.id, wp_waarde=wp,
                    wp_jaar=batch.jaar, bron_type=(ar.bron_type if ar else "handmatig"),
                    bron_url=(ar.bron_url if ar else None), status=status,
                    goedgekeurd_door=user.id,
-                   goedgekeurd_op=datetime.now(timezone.utc).replace(tzinfo=None))
+                   goedgekeurd_op=datetime.now(timezone.utc).replace(tzinfo=None),
+                   **uitsplitsing)
     db.add(rec)
     return rec
 
