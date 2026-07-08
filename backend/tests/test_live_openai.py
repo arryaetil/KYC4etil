@@ -104,3 +104,85 @@ async def test_places_lookup_valt_terug_op_web_search_bij_google_http_fout(monke
 
     assert result.website == "https://fallback.test"
     assert result.phone == "043-7654321"
+
+
+@pytest.mark.asyncio
+async def test_openai_extract_parseert_wp_uitsplitsing(monkeypatch):
+    class _FakeUitsplitsingResponse:
+        output_text = (
+            '{"wp_gevonden": 100, "context": "ctx", "zekerheid": "hoog", '
+            '"man": 60, "vrouw": 40, "voltijd": 80, "deeltijd": 20, '
+            '"eigen_personeel": 70, "uitzend": 20, "detachering": 10, "wsw": 0, '
+            '"pct_op_locatie": 90}'
+        )
+
+    class _FakeUitsplitsingResponses(_FakeResponses):
+        async def create(self, **kwargs):
+            self.kwargs = kwargs
+            return _FakeUitsplitsingResponse()
+
+    class _FakeUitsplitsingOpenAI(_FakeOpenAI):
+        def __init__(self, api_key):
+            self.api_key = api_key
+            self.responses = _FakeUitsplitsingResponses()
+            _FakeUitsplitsingOpenAI.last_responses = self.responses
+
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "openai_model", "gpt-test")
+
+    import openai
+    monkeypatch.setattr(openai, "AsyncOpenAI", _FakeUitsplitsingOpenAI)
+
+    result = await live._llm_extract("Testbedrijf", "Markt 1", "Er werken 100 medewerkers.")
+
+    assert result["man"] == 60
+    assert result["vrouw"] == 40
+    assert result["voltijd"] == 80
+    assert result["deeltijd"] == 20
+    assert result["eigen_personeel"] == 70
+    assert result["uitzend"] == 20
+    assert result["detachering"] == 10
+    assert result["wsw"] == 0
+    assert result["pct_op_locatie"] == 90
+
+
+@pytest.mark.asyncio
+async def test_web_search_jaarverslag_wp_geeft_uitsplitsing_door(monkeypatch):
+    class _FakeJaarverslagResponse:
+        output_text = (
+            '{"wp_gevonden": 100, "context": "ctx", "zekerheid": "hoog", "reden": "t", '
+            '"is_limburg_specifiek": true, "is_fte": false, "peilmoment": "2026", '
+            '"bron_url": "https://example.test/jaarverslag.pdf", '
+            '"man": 60, "vrouw": 40, "voltijd": 80, "deeltijd": 20, '
+            '"eigen_personeel": 70, "uitzend": 20, "detachering": 10, "wsw": 0, '
+            '"pct_op_locatie": 90}'
+        )
+
+    class _FakeJaarverslagResponses(_FakeResponses):
+        async def create(self, **kwargs):
+            self.kwargs = kwargs
+            return _FakeJaarverslagResponse()
+
+    class _FakeJaarverslagOpenAI(_FakeOpenAI):
+        def __init__(self, api_key):
+            self.api_key = api_key
+            self.responses = _FakeJaarverslagResponses()
+            _FakeJaarverslagOpenAI.last_responses = self.responses
+
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "openai_model", "gpt-test")
+
+    import openai
+    monkeypatch.setattr(openai, "AsyncOpenAI", _FakeJaarverslagOpenAI)
+
+    result = await live._web_search_jaarverslag_wp("Testbedrijf", 2026)
+
+    assert result.man == 60
+    assert result.vrouw == 40
+    assert result.voltijd == 80
+    assert result.deeltijd == 20
+    assert result.eigen_personeel == 70
+    assert result.uitzend == 20
+    assert result.detachering == 10
+    assert result.wsw == 0
+    assert result.pct_op_locatie == 0.9
