@@ -9,9 +9,12 @@ import re
 from typing import Any, TypedDict
 
 import httpx
+from langchain_core.output_parsers import JsonOutputParser
 
 from ..config import get_settings
 from .base import AgentFinding, LocationInfo, PlacesResult
+
+_JSON_PARSER = JsonOutputParser()
 
 settings = get_settings()
 USER_AGENT = "EtilVestigingsregisterBot/1.0 (contact: info@etil.nl)"
@@ -246,13 +249,8 @@ Regels:
         input=prompt,
         max_output_tokens=700,
     )
-    raw = response.output_text
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(0))
-    except json.JSONDecodeError:
+    data = await _parse_json_met_herstel(client, _extraction_model(), response.output_text)
+    if not data:
         return None
     website = data.get("website_url")
     phone = data.get("telefoonnummer")
@@ -298,15 +296,8 @@ Antwoord uitsluitend met JSON:
         input=prompt,
         max_output_tokens=800,
     )
-    raw = response.output_text
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(0))
-    except json.JSONDecodeError:
-        return None
-    if not data.get("wp_gevonden"):
+    data = await _parse_json_met_herstel(client, _extraction_model(), response.output_text)
+    if not data or not data.get("wp_gevonden"):
         return None
     return AgentFinding(
         wp_gevonden=int(data["wp_gevonden"]),
@@ -383,13 +374,8 @@ Antwoord uitsluitend met JSON:
         input=prompt,
         max_output_tokens=500,
     )
-    raw = response.output_text
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(0))
-    except json.JSONDecodeError:
+    data = await _parse_json_met_herstel(client, _extraction_model(), response.output_text)
+    if not data:
         return None
 
     # Directe PDF-URL gevonden tijdens de search? Gebruik die meteen.
@@ -447,6 +433,34 @@ async def _scrape_pdf_van_pagina(pagina_url: str, jaar: int) -> str | None:
 
 def _extraction_model() -> str:
     return settings.openai_model_extraction or settings.openai_model
+
+
+async def _parse_json_met_herstel(client, model: str, ruwe_tekst: str) -> dict | None:
+    """Parseert JSON uit LLM-output (robuuster dan een kale regex — herkent ook
+    JSON in markdown-codeblokken). Mislukt dat, dan volgt één goedkope
+    hersteloproep die het model vraagt dezelfde inhoud naar geldige JSON te
+    herformatteren (zonder tools, met json_object-mode — dat mag hier wel,
+    want OpenAI's web_search-tool en json_object-mode zijn onderling
+    incompatibel: 'Web Search cannot be used with JSON mode'). Geeft None terug
+    als ook de hersteloproep niet tot geldige JSON leidt."""
+    try:
+        return _JSON_PARSER.parse(ruwe_tekst)
+    except Exception:
+        pass
+
+    try:
+        herstel_prompt = (
+            "De volgende tekst zou geldige JSON moeten zijn maar is dat niet. "
+            "Herformatteer ALLEEN de inhoud naar exact geldige JSON, zonder "
+            "uitleg, markdown-opmaak of extra tekst:\n\n" + ruwe_tekst[:4000]
+        )
+        herstel_response = await client.responses.create(
+            model=model, input=herstel_prompt, max_output_tokens=800,
+            text={"format": {"type": "json_object"}},
+        )
+        return _JSON_PARSER.parse(herstel_response.output_text)
+    except Exception:
+        return None
 
 
 async def _llm_extract(naam: str, adres: str | None, tekst: str) -> dict | None:
@@ -871,15 +885,8 @@ Antwoord uitsluitend met JSON:
         input=prompt,
         max_output_tokens=800,
     )
-    raw = response.output_text
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(0))
-    except json.JSONDecodeError:
-        return None
-    if not data.get("wp_gevonden"):
+    data = await _parse_json_met_herstel(client, _extraction_model(), response.output_text)
+    if not data or not data.get("wp_gevonden"):
         return None
     pct = data.get("pct_op_locatie")
     return AgentFinding(

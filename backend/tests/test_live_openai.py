@@ -219,3 +219,67 @@ async def test_run_geeft_none_als_geen_pdf_gevonden(monkeypatch):
     result = await live.LiveJaarverslagAgent().run("Testbedrijf", 2026)
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_parse_json_met_herstel_parseert_geldige_json_direct():
+    """Geldige JSON wordt meteen geparsed, zonder hersteloproep (geen extra kosten)."""
+    client = _FakeOpenAI(api_key="test-key")
+
+    resultaat = await live._parse_json_met_herstel(
+        client, "gpt-test", '{"wp_gevonden": 100, "context": "ctx"}',
+    )
+
+    assert resultaat == {"wp_gevonden": 100, "context": "ctx"}
+    assert client.responses.kwargs is None  # geen hersteloproep gedaan
+
+
+@pytest.mark.asyncio
+async def test_parse_json_met_herstel_valt_terug_op_hersteloproep(monkeypatch):
+    """Bij ongeldige JSON wordt één goedkope hersteloproep gedaan (geen tools,
+    wel json_object-mode) om het model de output te laten herformatteren."""
+    class _HerstelResponse:
+        output_text = '{"wp_gevonden": 42}'
+
+    class _HerstelResponses(_FakeResponses):
+        async def create(self, **kwargs):
+            self.kwargs = kwargs
+            return _HerstelResponse()
+
+    class _HerstelOpenAI(_FakeOpenAI):
+        def __init__(self, api_key):
+            self.api_key = api_key
+            self.responses = _HerstelResponses()
+
+    client = _HerstelOpenAI(api_key="test-key")
+
+    resultaat = await live._parse_json_met_herstel(
+        client, "gpt-test", "Zeker, hier is het antwoord: {wp_gevonden: 42} (geen geldige json)",
+    )
+
+    assert resultaat == {"wp_gevonden": 42}
+    assert client.responses.kwargs["text"]["format"]["type"] == "json_object"
+    assert "tools" not in client.responses.kwargs
+
+
+@pytest.mark.asyncio
+async def test_parse_json_met_herstel_geeft_none_als_herstel_ook_faalt():
+    """Faalt ook de hersteloproep, dan geeft de functie None terug in plaats
+    van een exception te gooien — consistent met het bestaande 'niets gevonden'-gedrag."""
+    class _NogSteedsFoutResponse:
+        output_text = "nog steeds geen json"
+
+    class _NogSteedsFoutResponses(_FakeResponses):
+        async def create(self, **kwargs):
+            return _NogSteedsFoutResponse()
+
+    class _NogSteedsFoutOpenAI(_FakeOpenAI):
+        def __init__(self, api_key):
+            self.api_key = api_key
+            self.responses = _NogSteedsFoutResponses()
+
+    client = _NogSteedsFoutOpenAI(api_key="test-key")
+
+    resultaat = await live._parse_json_met_herstel(client, "gpt-test", "helemaal geen json")
+
+    assert resultaat is None
