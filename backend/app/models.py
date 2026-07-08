@@ -101,6 +101,15 @@ class AgentResult(Base):
     bron_type: Mapped[str | None] = mapped_column(String(50))  # website|jaarverslag|media
     raw_output: Mapped[dict | None] = mapped_column(JSON)
     llm_zekerheid: Mapped[str | None] = mapped_column(String(10))
+    eigen_personeel: Mapped[int | None] = mapped_column(Integer)
+    uitzend: Mapped[int | None] = mapped_column(Integer)
+    detachering: Mapped[int | None] = mapped_column(Integer)
+    wsw: Mapped[int | None] = mapped_column(Integer)
+    man: Mapped[int | None] = mapped_column(Integer)
+    vrouw: Mapped[int | None] = mapped_column(Integer)
+    voltijd: Mapped[int | None] = mapped_column(Integer)
+    deeltijd: Mapped[int | None] = mapped_column(Integer)
+    pct_op_locatie: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     company: Mapped[Company] = relationship(back_populates="agent_results")

@@ -32,6 +32,15 @@ class AgentFinding:
     is_fte: bool = False
     peilmoment: str | None = None
     raw: dict = field(default_factory=dict)
+    eigen_personeel: int | None = None
+    uitzend: int | None = None
+    detachering: int | None = None
+    wsw: int | None = None
+    man: int | None = None
+    vrouw: int | None = None
+    voltijd: int | None = None
+    deeltijd: int | None = None
+    pct_op_locatie: float | None = None
 
 
 class LookupProvider(Protocol):
