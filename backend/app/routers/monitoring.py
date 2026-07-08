@@ -22,6 +22,7 @@ def monitoring_status(db: Session = Depends(get_db)):
     batch = _actieve_watchlist(db)
     if batch is None:
         return {"batch": None, "totaal": 0, "gecontroleerd": 0,
+                "bronnen_gevonden": 0, "bronnen_ontbreken": 0,
                 "nieuwe_bevindingen": 0, "fouten": 0, "companies": []}
 
     companies = db.query(Company).filter_by(batch_id=batch.id).all()
@@ -54,6 +55,7 @@ def monitoring_status(db: Session = Depends(get_db)):
             "laatst_gecontroleerd_op": (status.laatst_gecontroleerd_op.isoformat() + "Z"
                                         if status and status.laatst_gecontroleerd_op else None),
             "laatste_bron_url": status.laatste_bron_url if status else None,
+            "bron_status": "gevonden" if status and status.laatste_bron_url else "ontbreekt",
             "nieuwe_bevinding": comp.id in bevindingen,
             "fout": fouten_map.get(comp.id),
             "wp_kandidaat": cand.wp_kandidaat if cand else None,
@@ -61,10 +63,13 @@ def monitoring_status(db: Session = Depends(get_db)):
         })
 
     gecontroleerd = sum(1 for c in out if c["laatst_gecontroleerd_op"])
+    bronnen_gevonden = sum(1 for c in out if c["laatste_bron_url"])
     return {
         "batch": {"id": batch.id, "naam": batch.naam, "jaar": batch.jaar},
         "totaal": len(companies),
         "gecontroleerd": gecontroleerd,
+        "bronnen_gevonden": bronnen_gevonden,
+        "bronnen_ontbreken": len(companies) - bronnen_gevonden,
         "nieuwe_bevindingen": len(bevindingen),
         "fouten": len(fouten_map),
         "companies": out,

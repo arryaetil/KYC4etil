@@ -12,6 +12,7 @@ def test_monitoring_status_zonder_watchlist_geeft_lege_staat(client):
     assert response.status_code == 200
     assert response.json() == {
         "batch": None, "totaal": 0, "gecontroleerd": 0,
+        "bronnen_gevonden": 0, "bronnen_ontbreken": 0,
         "nieuwe_bevindingen": 0, "fouten": 0, "companies": [],
     }
 
@@ -48,13 +49,17 @@ def test_monitoring_status_met_actieve_watchlist(client, db_session):
     assert data["batch"] == {"id": batch_id, "naam": "watchlist", "jaar": 2026}
     assert data["totaal"] == 2
     assert data["gecontroleerd"] == 1
+    assert data["bronnen_gevonden"] == 1
+    assert data["bronnen_ontbreken"] == 1
     assert data["nieuwe_bevindingen"] == 1
     assert data["fouten"] == 0
 
     per_naam = {c["naam"]: c for c in data["companies"]}
     assert per_naam["Gecontroleerde Organisatie"]["nieuwe_bevinding"] is True
+    assert per_naam["Gecontroleerde Organisatie"]["bron_status"] == "gevonden"
     assert per_naam["Gecontroleerde Organisatie"]["wp_kandidaat"] == 50
     assert per_naam["Nog Niet Gecontroleerd"]["laatst_gecontroleerd_op"] is None
+    assert per_naam["Nog Niet Gecontroleerd"]["bron_status"] == "ontbreekt"
 
 
 def test_monitoring_run_zonder_watchlist_geeft_404(client):

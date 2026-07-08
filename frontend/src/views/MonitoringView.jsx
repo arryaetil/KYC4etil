@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react";
-import {AlertTriangle, ListChecks, RefreshCw, Sparkles} from "lucide-react";
+import {AlertTriangle, FileSearch, ListChecks, RefreshCw, Sparkles} from "lucide-react";
 import {classNames} from "../lib/format.js";
 import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
@@ -76,9 +76,10 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
               Controle gestart om {formatDatumTijd(gestartOm.toISOString())}. Het overzicht ververst vanzelf.
             </p>
           ) : null}
-          <div className="mb-4 grid gap-3 md:grid-cols-4">
+          <div className="mb-4 grid gap-3 md:grid-cols-5">
             <Metric title="Totaal" value={status.totaal} />
             <Metric title="Gecontroleerd" value={`${status.gecontroleerd}/${status.totaal}`} />
+            <Metric title="Bronnen" value={`${status.bronnen_gevonden || 0}/${status.totaal}`} />
             <Metric title="Nieuwe bevindingen" value={
               <span className={classNames(status.nieuwe_bevindingen > 0 && "text-emerald-700")}>
                 {status.nieuwe_bevindingen}
@@ -99,13 +100,11 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
                 </tr>
               </thead>
               <tbody>
-                {companies.map((company) => {
-                  const klikbaar = company.nieuwe_bevinding;
-                  return (
+                {companies.map((company) => (
                     <tr
                       key={company.company_id}
-                      className={classNames("border-t border-line", klikbaar && "cursor-pointer hover:bg-panel")}
-                      onClick={klikbaar ? () => openCompany(batch.id, company.company_id) : undefined}
+                      className="cursor-pointer border-t border-line hover:bg-panel"
+                      onClick={() => openCompany(batch.id, company.company_id)}
                     >
                       <td className="px-4 py-3">
                         <div className="font-semibold">{company.naam}</div>
@@ -142,13 +141,16 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
                             </span>
                             {company.wp_kandidaat != null && <LabelBadge label={company.confidence_label} />}
                           </div>
+                        ) : !company.laatste_bron_url ? (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
+                            <FileSearch size={11} />Bron ontbreekt
+                          </span>
                         ) : (
                           <span className="text-slate-500">Geen wijziging</span>
                         )}
                       </td>
                     </tr>
-                  );
-                })}
+                ))}
                 {!companies.length ? (
                   <tr>
                     <td className="px-4 py-8 text-center text-slate-500" colSpan="4">
