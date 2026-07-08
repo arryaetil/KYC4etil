@@ -40,3 +40,13 @@ def test_nieuwe_monitoringlijst_ontmarkeert_de_vorige(client, db_session):
 
     assert eerste_batch.is_monitoringlijst is False
     assert tweede_batch.is_monitoringlijst is True
+
+
+def test_monitoringlijst_batch_verschijnt_niet_in_hoofdoverzicht(client, db_session):
+    _upload(client, "gewone-batch")
+    _upload(client, "watchlist-test", monitoringlijst=True)
+
+    namen = [b["naam"] for b in client.get("/batches").json()]
+
+    assert "gewone-batch" in namen
+    assert "watchlist-test" not in namen

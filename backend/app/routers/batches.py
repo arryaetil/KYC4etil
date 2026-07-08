@@ -171,7 +171,8 @@ def list_batches(db: Session = Depends(get_db)):
              "totaal": b.totaal, "verwerkt": b.verwerkt,
              "created_at": b.created_at.isoformat() + "Z" if b.created_at else None,
              "completed_at": b.completed_at.isoformat() + "Z" if b.completed_at else None}
-            for b in db.query(Batch).order_by(Batch.created_at.desc()).all()]
+            for b in db.query(Batch).filter(Batch.is_monitoringlijst.isnot(True))
+                .order_by(Batch.created_at.desc()).all()]
 
 
 @router.get("/{batch_id}")
