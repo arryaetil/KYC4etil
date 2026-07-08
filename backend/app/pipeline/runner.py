@@ -77,6 +77,11 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
             peilmoment=finding.peilmoment, bron_url=finding.bron_url,
             bron_type=finding.bron_type, llm_zekerheid=finding.zekerheid,
             raw_output=finding.raw or None,
+            eigen_personeel=finding.eigen_personeel, uitzend=finding.uitzend,
+            detachering=finding.detachering, wsw=finding.wsw,
+            man=finding.man, vrouw=finding.vrouw,
+            voltijd=finding.voltijd, deeltijd=finding.deeltijd,
+            pct_op_locatie=finding.pct_op_locatie,
         )
         db.add(ar)
         db.flush()
