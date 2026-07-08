@@ -1,5 +1,5 @@
-import {useEffect, useRef, useState} from "react";
-import {AlertTriangle, FileUp, ListChecks, RefreshCw, Sparkles} from "lucide-react";
+import {useEffect, useState} from "react";
+import {AlertTriangle, ListChecks, RefreshCw, Sparkles} from "lucide-react";
 import {classNames} from "../lib/format.js";
 import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
@@ -15,7 +15,6 @@ function formatDatumTijd(iso) {
 }
 
 export function MonitoringView({api, user, onLogout, openDashboard, openCompany}) {
-  const fileRef = useRef(null);
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,22 +45,6 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
     }
   }
 
-  async function watchlistUploaden(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setBusy(true);
-    setError("");
-    try {
-      await api.uploadMonitoringlijst(file);
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-      event.target.value = "";
-    }
-  }
-
   const batch = status?.batch;
   const companies = status?.companies || [];
 
@@ -73,10 +56,6 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
       actions={
         <>
           <IconButton icon={ListChecks} onClick={openDashboard}>Dashboard</IconButton>
-          <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={watchlistUploaden} />
-          <IconButton icon={FileUp} variant="quiet" onClick={() => fileRef.current?.click()} disabled={busy}>
-            {batch ? "Watchlist vervangen" : "Watchlist uploaden"}
-          </IconButton>
           {batch ? (
             <IconButton icon={RefreshCw} variant="primary" onClick={nuControleren} disabled={busy}>
               {busy ? "Bezig…" : "Nu controleren"}
@@ -88,7 +67,7 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
       {error ? <Alert message={error} /> : null}
       {!batch ? (
         <div className="rounded-lg border border-dashed border-line bg-white p-8 text-center text-sm text-slate-600">
-          Nog geen watchlist ingesteld. Upload een CSV met organisaties om wekelijkse jaarverslag-monitoring te starten.
+          Nog geen vaste monitorlijst ingesteld. Laat de backend-seed draaien om de jaarverslag-monitoring te starten.
         </div>
       ) : (
         <>
