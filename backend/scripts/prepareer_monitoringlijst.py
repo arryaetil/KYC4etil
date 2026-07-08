@@ -11,6 +11,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 LEEG_CBNR = {"", "0", "000000"}
 
 
+# xlrd geeft cijferkolommen soms als float terug (bv. 1110.0 i.p.v. "001110"),
+# afhankelijk van hoe de cel in het bronbestand is opgemaakt. Zonder deze
+# normalisatie zou str() op een float een ".0"-staart opleveren die nergens
+# anders in de data voorkomt.
 def _tekst(waarde) -> str:
     if waarde is None:
         return ""
@@ -19,6 +23,11 @@ def _tekst(waarde) -> str:
     return str(waarde).strip()
 
 
+# Testbatch Jaarverslagen.xls bevat hetzelfde cbnr soms als float ("1110.0")
+# en soms als string ("001110") — afhankelijk van het tabblad. Een naieve
+# str(...).strip() zou deze twee vormen als verschillende organisaties zien
+# en zo één echte organisatie onterecht dupliceren. Strip de ".0"-staart en
+# zero-pad naar 6 cijfers zodat beide vormen op dezelfde sleutel uitkomen.
 def _cbnr(waarde) -> str:
     tekst = _tekst(waarde)
     if tekst.endswith(".0") and tekst[:-2].isdigit():
@@ -74,6 +83,9 @@ def dedupliceer_organisaties(*groepen: list[dict]) -> list[dict]:
             cb_er = org.get("cb_er") or None
             if not naam:
                 continue
+            # casefold() zodat naamvarianten met afwijkende hoofdletters (o.a. door
+            # de xlrd-inlezing van verschillende tabbladen) toch als dezelfde
+            # organisatie worden herkend.
             sleutel = ("cb_er", cb_er) if cb_er else ("naam", naam.casefold())
             if sleutel in gezien:
                 continue
