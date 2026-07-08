@@ -74,4 +74,13 @@ class MockJaarverslagAgent:
             is_limburg_specifiek=finding.get("limburg_specifiek", False),
             is_fte=finding.get("is_fte", False),
             peilmoment=finding.get("peilmoment"),
+            eigen_personeel=finding.get("eigen_personeel"),
+            uitzend=finding.get("uitzend"),
+            detachering=finding.get("detachering"),
+            wsw=finding.get("wsw"),
+            man=finding.get("man"),
+            vrouw=finding.get("vrouw"),
+            voltijd=finding.get("voltijd"),
+            deeltijd=finding.get("deeltijd"),
+            pct_op_locatie=finding.get("pct_op_locatie"),
         )

@@ -3,12 +3,12 @@
   "Mondriaan": {
     "places": {"website": "https://www.mondriaan.eu", "phone": "088-5066262", "adres_match": true},
     "locaties": {"nl": 25, "lb": 25},
-    "jaarverslag": {"wp": 2281, "context": "Eind 2025 telde Mondriaan 2.281 medewerkers, werkzaam op onze locaties in Limburg.", "zekerheid": "hoog", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.mondriaan.eu/jaarverslag-2025.pdf"}
+    "jaarverslag": {"wp": 2281, "context": "Eind 2025 telde Mondriaan 2.281 medewerkers, werkzaam op onze locaties in Limburg. Van hen zijn 1.650 man en 631 vrouw; 1.780 werken voltijd en 501 in deeltijd.", "zekerheid": "hoog", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.mondriaan.eu/jaarverslag-2025.pdf", "man": 1650, "vrouw": 631, "voltijd": 1780, "deeltijd": 501}
   },
   "Okechamp B.V.": {
     "places": {"website": "https://www.okechamp.nl", "phone": "077-3979900", "adres_match": true},
     "locaties": {"nl": 1, "lb": 1},
-    "jaarverslag": {"wp": 138, "context": "Het gemiddeld aantal medewerkers bedroeg in het verslagjaar 138.", "zekerheid": "hoog", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.okechamp.nl/jaarverslag-2025.pdf"}
+    "jaarverslag": {"wp": 138, "context": "Het gemiddeld aantal medewerkers bedroeg in het verslagjaar 138, waarvan 70 man en 60 vrouw.", "zekerheid": "hoog", "limburg_specifiek": true, "peilmoment": "2025", "url": "https://www.okechamp.nl/jaarverslag-2025.pdf", "man": 70, "vrouw": 60}
   },
   "Jumbo Supermarkten B.V. - Filiaal": {
     "places": {"website": "https://www.jumbo.com", "phone": "077-3540000", "adres_match": true},

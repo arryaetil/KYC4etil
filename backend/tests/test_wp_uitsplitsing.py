@@ -1,4 +1,6 @@
 """Tests voor automatische WP-uitsplitsing-extractie door de jaarverslag-agent."""
+import pytest
+
 from app.models import AgentResult, Batch, Company
 from app.providers.base import AgentFinding
 
@@ -46,3 +48,29 @@ def test_agent_result_slaat_uitsplitsing_velden_op(db_session):
     assert opgehaald.voltijd == 80
     assert opgehaald.deeltijd == 20
     assert opgehaald.pct_op_locatie == 0.9
+
+
+@pytest.mark.asyncio
+async def test_mock_jaarverslag_agent_geeft_uitsplitsing_door():
+    from app.providers.mock import MockJaarverslagAgent
+
+    finding = await MockJaarverslagAgent().run("Mondriaan", 2025)
+
+    assert finding is not None
+    assert finding.man == 1650
+    assert finding.vrouw == 631
+    assert finding.voltijd == 1780
+    assert finding.deeltijd == 501
+
+
+@pytest.mark.asyncio
+async def test_mock_jaarverslag_agent_zonder_uitsplitsing_geeft_none():
+    from app.providers.mock import MockJaarverslagAgent
+
+    finding = await MockJaarverslagAgent().run("Jumbo Supermarkten B.V. - Filiaal", 2025)
+
+    assert finding is not None
+    assert finding.man is None
+    assert finding.vrouw is None
+    assert finding.eigen_personeel is None
+    assert finding.pct_op_locatie is None
