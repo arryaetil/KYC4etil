@@ -6,6 +6,7 @@ user-agent en max 1 request/sec per domein (doc §7)."""
 import asyncio
 import json
 import re
+from typing import Any, TypedDict
 
 import httpx
 
@@ -136,7 +137,91 @@ async def _scrape_email(website_url: str) -> str | None:
     return None
 
 
+def _normaliseer_duckduckgo_url(href: str) -> str:
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    parsed = urlparse(href)
+    if "duckduckgo.com" in parsed.netloc and parsed.path.startswith("/l/"):
+        target = parse_qs(parsed.query).get("uddg", [None])[0]
+        return unquote(target) if target else href
+    return href
+
+
+async def _duckduckgo_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
+    """Zoek publieke bronnen via DuckDuckGo HTML en parse resultaten met BeautifulSoup."""
+    from bs4 import BeautifulSoup
+
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True,
+                                     headers={"User-Agent": USER_AGENT}) as client:
+            response = await client.post(
+                "https://html.duckduckgo.com/html/",
+                data={"q": query, "kl": "nl-nl"},
+            )
+            response.raise_for_status()
+    except Exception:
+        return []
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    results: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in soup.select(".result"):
+        link = item.select_one("a.result__a")
+        if not link or not link.get("href"):
+            continue
+        url = _normaliseer_duckduckgo_url(link["href"])
+        if not url.startswith(("http://", "https://")) or url in seen:
+            continue
+        seen.add(url)
+        snippet = item.select_one(".result__snippet")
+        results.append({
+            "title": link.get_text(" ", strip=True),
+            "url": url,
+            "snippet": snippet.get_text(" ", strip=True) if snippet else "",
+        })
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def _is_directory_result(url: str) -> bool:
+    from urllib.parse import urlparse
+
+    host = urlparse(url).netloc.lower()
+    blocked = (
+        "google.", "facebook.", "linkedin.", "instagram.", "x.com",
+        "twitter.", "yelp.", "tripadvisor.", "drimble.", "oozo.",
+        "bedrijvenpagina.", "openingstijden.", "telefoonboek.",
+    )
+    return any(part in host for part in blocked)
+
+
 async def _web_search_contact(naam: str, gemeente: str | None) -> PlacesResult | None:
+    ddg_results = await _duckduckgo_search(
+        f"{naam} {gemeente or ''} officiele website telefoon contact".strip(),
+        max_results=6,
+    )
+    for result in ddg_results:
+        url = result["url"]
+        if _is_directory_result(url):
+            continue
+        phone = None
+        try:
+            tekst = await _fetch_text(url)
+            phone_match = re.search(
+                r"(?:\+31|0)\s?(?:\d[\s\-().]?){8,12}",
+                tekst,
+            )
+            phone = phone_match.group(0).strip() if phone_match else None
+        except Exception:
+            pass
+        return PlacesResult(
+            website=url,
+            phone=phone,
+            adres=None,
+            raw={"bron": "duckduckgo", "query_result": result},
+        )
+
     if not settings.openai_api_key:
         return None
 
@@ -178,7 +263,7 @@ Regels:
                         raw={"bron": "openai_web_search", **data})
 
 
-async def _web_search_wp(naam: str, gemeente: str | None) -> AgentFinding | None:
+async def _openai_web_search_wp(naam: str, gemeente: str | None) -> AgentFinding | None:
     """Directe WP-zoekopdracht via OpenAI web search.
     Fase C nieuws-fallback (doc §7): ingezet als website-scraping niets oplevert."""
     if not settings.openai_api_key:
@@ -237,6 +322,15 @@ Antwoord uitsluitend met JSON:
     )
 
 
+async def _web_search_wp(naam: str, gemeente: str | None) -> AgentFinding | None:
+    results = await _duckduckgo_search(
+        f"{naam} {gemeente or ''} medewerkers werknemers personeel headcount".strip(),
+        max_results=5,
+    )
+    finding = await _extract_wp_from_search_results(naam, gemeente, results)
+    return finding or await _openai_web_search_wp(naam, gemeente)
+
+
 async def _zoek_jaarverslag_pdf(naam: str, jaar: int) -> str | None:
     """Zoek jaarverslag-PDF: probeer eerst het huidige jaar, daarna jaar-1 als fallback.
     Sommige organisaties publiceren het verslag al in het lopende jaar (bijv. bestuursverslag 2025)."""
@@ -251,6 +345,18 @@ async def _zoek_jaarverslag_pdf(naam: str, jaar: int) -> str | None:
 async def _zoek_jaarverslag_pdf_voor_jaar(naam: str, zoekjaar: int) -> str | None:
     """Tweestaps: zoek eerst jaarverslag-pagina (HTML) via web search, scrape daarna PDF-link.
     Web search geeft HTML-pagina's veel betrouwbaarder terug dan directe .pdf URLs."""
+    ddg_results = await _duckduckgo_search(
+        f"{naam} jaarverslag {zoekjaar} bestuursverslag annual report download pdf",
+        max_results=8,
+    )
+    for result in ddg_results:
+        url = result["url"]
+        if ".pdf" in url.lower():
+            return url
+        pdf_from_page = await _scrape_pdf_van_pagina(url, zoekjaar)
+        if pdf_from_page:
+            return pdf_from_page
+
     if not settings.openai_api_key:
         return None
 
@@ -497,6 +603,172 @@ TOOLS = [
 ]
 
 
+class WebsiteResearchState(TypedDict, total=False):
+    naam: str
+    adres: str | None
+    website_url: str | None
+    gemeente: str | None
+    best: AgentFinding | None
+
+
+class JaarverslagResearchState(TypedDict, total=False):
+    naam: str
+    jaar: int
+    pdf_url: str | None
+    finding: AgentFinding | None
+
+
+def _finding_from_website_data(data: dict[str, Any], website_url: str) -> AgentFinding:
+    return AgentFinding(
+        wp_gevonden=data["wp_gevonden"], context=data.get("context"),
+        zekerheid=data.get("zekerheid", "laag"), reden=data.get("reden"),
+        bron_url=website_url.rstrip("/"), bron_type="website",
+        is_totaal_meerdere_vestigingen=data.get("is_totaal_meerdere_vestigingen", False),
+        is_limburg_specifiek=data.get("is_limburg_specifiek"),
+        is_fte=data.get("is_fte", False), peilmoment=data.get("peilmoment"),
+        raw={**data, "research_graph": "website"},
+    )
+
+
+def _baseline_jaarverslag_finding(pdf_url: str) -> AgentFinding:
+    return AgentFinding(
+        wp_gevonden=None, context=None, zekerheid="laag",
+        reden="Jaarverslag gevonden, geen WP-getal geextraheerd",
+        bron_url=pdf_url, bron_type="jaarverslag",
+        raw={"research_graph": "jaarverslag", "pdf_url": pdf_url},
+    )
+
+
+async def _extract_wp_from_search_results(
+    naam: str, gemeente: str | None, results: list[dict[str, str]]
+) -> AgentFinding | None:
+    if not settings.openai_api_key:
+        return None
+    for result in results[:3]:
+        try:
+            tekst = await _fetch_text(result["url"])
+        except Exception:
+            continue
+        data = await _llm_extract(naam, gemeente, tekst)
+        if not data or not data.get("wp_gevonden"):
+            continue
+        return AgentFinding(
+            wp_gevonden=int(data["wp_gevonden"]),
+            context=data.get("context"),
+            zekerheid=data.get("zekerheid", "laag"),
+            reden=data.get("reden"),
+            bron_url=result["url"],
+            bron_type="media",
+            is_totaal_meerdere_vestigingen=data.get("is_totaal_meerdere_vestigingen", False),
+            is_limburg_specifiek=data.get("is_limburg_specifiek"),
+            is_fte=data.get("is_fte", False),
+            peilmoment=data.get("peilmoment"),
+            raw={**data, "research_source": "duckduckgo", "search_result": result},
+        )
+    return None
+
+
+def _build_website_research_graph():
+    from langgraph.graph import END, StateGraph
+
+    async def inspect_website(state: WebsiteResearchState) -> dict[str, AgentFinding | None]:
+        website_url = state.get("website_url")
+        if not website_url:
+            return {"best": None}
+        data = await _tool_use_loop(state["naam"], state.get("adres"), website_url.rstrip("/"))
+        await asyncio.sleep(1.0)  # rate limit per domein
+        if data and data.get("wp_gevonden"):
+            return {"best": _finding_from_website_data(data, website_url)}
+        return {"best": None}
+
+    async def web_search_fallback(state: WebsiteResearchState) -> dict[str, AgentFinding | None]:
+        return {"best": await _web_search_wp(state["naam"], state.get("gemeente"))}
+
+    def after_website(state: WebsiteResearchState) -> str:
+        return END if state.get("best") is not None else "web_search_fallback"
+
+    graph = StateGraph(WebsiteResearchState)
+    graph.add_node("inspect_website", inspect_website)
+    graph.add_node("web_search_fallback", web_search_fallback)
+    graph.set_entry_point("inspect_website")
+    graph.add_conditional_edges("inspect_website", after_website)
+    graph.add_edge("web_search_fallback", END)
+    return graph.compile()
+
+
+async def _run_website_research_graph(
+    naam: str, adres: str | None, website_url: str | None, gemeente: str | None
+) -> AgentFinding | None:
+    graph = _build_website_research_graph()
+    result = await graph.ainvoke({
+        "naam": naam,
+        "adres": adres,
+        "website_url": website_url,
+        "gemeente": gemeente,
+        "best": None,
+    })
+    return result.get("best")
+
+
+def _build_jaarverslag_research_graph():
+    from langgraph.graph import END, StateGraph
+
+    async def find_pdf(state: JaarverslagResearchState) -> dict[str, str | None]:
+        return {"pdf_url": await _zoek_jaarverslag_pdf(state["naam"], state["jaar"])}
+
+    async def extract_pdf(state: JaarverslagResearchState) -> dict[str, AgentFinding | None]:
+        pdf_url = state.get("pdf_url")
+        if not pdf_url:
+            return {"finding": None}
+        try:
+            return {"finding": await LiveJaarverslagAgent().run_with_pdf(state["naam"], pdf_url)}
+        except Exception:
+            return {"finding": None}
+
+    async def web_search_fallback(state: JaarverslagResearchState) -> dict[str, AgentFinding | None]:
+        return {"finding": await _web_search_jaarverslag_wp(state["naam"], state["jaar"])}
+
+    async def baseline_source(state: JaarverslagResearchState) -> dict[str, AgentFinding | None]:
+        pdf_url = state.get("pdf_url")
+        return {"finding": _baseline_jaarverslag_finding(pdf_url) if pdf_url else None}
+
+    def after_find_pdf(state: JaarverslagResearchState) -> str:
+        if state.get("pdf_url"):
+            return "extract_pdf"
+        return "web_search_fallback" if settings.jaarverslag_web_fallback else END
+
+    def after_extract_pdf(state: JaarverslagResearchState) -> str:
+        if state.get("finding"):
+            return END
+        return "web_search_fallback" if settings.jaarverslag_web_fallback else "baseline_source"
+
+    def after_web_search(state: JaarverslagResearchState) -> str:
+        return END if state.get("finding") else "baseline_source"
+
+    graph = StateGraph(JaarverslagResearchState)
+    graph.add_node("find_pdf", find_pdf)
+    graph.add_node("extract_pdf", extract_pdf)
+    graph.add_node("web_search_fallback", web_search_fallback)
+    graph.add_node("baseline_source", baseline_source)
+    graph.set_entry_point("find_pdf")
+    graph.add_conditional_edges("find_pdf", after_find_pdf)
+    graph.add_conditional_edges("extract_pdf", after_extract_pdf)
+    graph.add_conditional_edges("web_search_fallback", after_web_search)
+    graph.add_edge("baseline_source", END)
+    return graph.compile()
+
+
+async def _run_jaarverslag_research_graph(naam: str, jaar: int) -> AgentFinding | None:
+    graph = _build_jaarverslag_research_graph()
+    result = await graph.ainvoke({
+        "naam": naam,
+        "jaar": jaar,
+        "pdf_url": None,
+        "finding": None,
+    })
+    return result.get("finding")
+
+
 async def _tool_use_loop(naam: str, adres: str | None, start_url: str) -> dict | None:
     """Multi-turn tool-use-loop: het model beslist zelf welke pagina's te bezoeken
     (via bezoek_pagina) totdat het meld_resultaat aanroept of het paginabudget
@@ -556,31 +828,7 @@ async def _tool_use_loop(naam: str, adres: str | None, start_url: str) -> dict |
 class LiveWebsiteAgent:
     async def run(self, naam: str, adres: str | None, website_url: str | None,
                   gemeente: str | None = None) -> AgentFinding | None:
-        best: AgentFinding | None = None
-
-        # Fase A+B: tool-use-loop laat het model zelf de website doorzoeken
-        if website_url:
-            data = await _tool_use_loop(naam, adres, website_url.rstrip("/"))
-            await asyncio.sleep(1.0)  # rate limit per domein
-            if data and data.get("wp_gevonden"):
-                finding = AgentFinding(
-                    wp_gevonden=data["wp_gevonden"], context=data.get("context"),
-                    zekerheid=data.get("zekerheid", "laag"), reden=data.get("reden"),
-                    bron_url=website_url.rstrip("/"), bron_type="website",
-                    is_totaal_meerdere_vestigingen=data.get("is_totaal_meerdere_vestigingen", False),
-                    is_limburg_specifiek=data.get("is_limburg_specifiek"),
-                    is_fte=data.get("is_fte", False), peilmoment=data.get("peilmoment"),
-                    raw=data,
-                )
-                if finding.zekerheid == "hoog":
-                    return finding
-                best = best or finding
-
-        # Fase C: nieuws-fallback via directe web search als scraping niets opleverde
-        if best is None:
-            best = await _web_search_wp(naam, gemeente)
-
-        return best
+        return await _run_website_research_graph(naam, adres, website_url, gemeente)
 
 
 async def _web_search_jaarverslag_wp(naam: str, jaar: int) -> AgentFinding | None:
@@ -662,25 +910,7 @@ class LiveJaarverslagAgent:
         wordt de gevonden bron_url alsnog teruggegeven (zonder wp_gevonden) zodat de
         jaarverslag-monitoring een baseline-URL heeft om toekomstige wijzigingen aan te
         toetsen — anders gaat een gevonden jaarverslag-link onnodig verloren."""
-        pdf_url = await _zoek_jaarverslag_pdf(naam, jaar)
-        if pdf_url:
-            try:
-                result = await self.run_with_pdf(naam, pdf_url)
-                if result:
-                    return result
-            except Exception:
-                pass
-        if settings.jaarverslag_web_fallback:
-            fallback = await _web_search_jaarverslag_wp(naam, jaar)
-            if fallback:
-                return fallback
-        if pdf_url:
-            return AgentFinding(
-                wp_gevonden=None, context=None, zekerheid="laag",
-                reden="Jaarverslag gevonden, geen WP-getal geëxtraheerd",
-                bron_url=pdf_url, bron_type="jaarverslag",
-            )
-        return None
+        return await _run_jaarverslag_research_graph(naam, jaar)
 
     async def run_with_pdf(self, naam: str, pdf_url: str) -> AgentFinding | None:
         import fitz  # PyMuPDF
