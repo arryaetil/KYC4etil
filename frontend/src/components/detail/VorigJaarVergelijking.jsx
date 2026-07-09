@@ -19,7 +19,7 @@ export function VorigJaarVergelijking({vorig_jaar, huidig_wp, collapsible}) {
           <AlertTriangle size={17} className="mt-0.5 shrink-0" />
           <div>
             <strong>Grote afwijking (&gt;25%)</strong> — controleer of dit plausibel is vóór goedkeuring.
-            Groen label sluit een grote jaarfluctuatie niet uit.
+            Label "eenduidig" sluit een grote jaarfluctuatie niet uit.
           </div>
         </div>
       ) : null}

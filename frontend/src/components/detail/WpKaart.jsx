@@ -61,7 +61,7 @@ export function WpKaart({candidate, wp_historie, vorig_jaar, api, onRefresh}) {
       {candidate?.is_schatting && (
         <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-          Proportionele schatting — niet geschikt voor groen label.
+          Proportionele schatting — niet geschikt voor label "eenduidig".
         </div>
       )}
       {isHoog && (

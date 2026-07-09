@@ -26,13 +26,13 @@ export function ScoreBreakdown({breakdown, label}) {
   const penalties = breakdown.penalties || {};
   const hasBonuses = Object.keys(bonuses).length > 0;
   const hasPenalties = Object.keys(penalties).length > 0;
-  const isNietGroen = label === "middel" || label === "laag";
+  const isNietEenduidig = label === "middel" || label === "laag";
 
   return (
     <div className="space-y-3 text-sm">
-      {isNietGroen && (hasPenalties || zekerheid !== "hoog") ? (
+      {isNietEenduidig && (hasPenalties || zekerheid !== "hoog") ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900">
-          <div className="mb-1.5 font-semibold text-xs uppercase">Waarom niet groen?</div>
+          <div className="mb-1.5 font-semibold text-xs uppercase">Waarom niet eenduidig?</div>
           <ul className="space-y-1">
             {zekerheid !== "hoog" ? (
               <li className="flex items-start gap-1.5">

@@ -118,7 +118,7 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
           ) : (
             <IconButton icon={Play} variant="primary" onClick={runBatch} disabled={busy}>Run</IconButton>
           )}
-          <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Groen goedkeuren</IconButton>
+          <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Eenduidige goedkeuren</IconButton>
           <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.xlsx`, "export.xlsx")}>Export</IconButton>
           <IconButton icon={Phone} onClick={() => openBellijst(batchId)}>Bellijst</IconButton>
           <div className="relative inline-flex">
@@ -144,9 +144,9 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
           label === "fouten" ? "border-red-400 text-red-700 font-medium" : "border-line",
         )} value={label} onChange={(event) => setLabel(event.target.value)} aria-label="Filter op confidence-label">
           <option value="">Alle labels</option>
-          <option value="hoog">Groen</option>
-          <option value="middel">Geel</option>
-          <option value="laag">Rood</option>
+          <option value="hoog">Eenduidig</option>
+          <option value="middel">Twijfelachtig</option>
+          <option value="laag">Onduidelijk</option>
           <option value="fouten">{batch?.fouten > 0 ? `Fouten (${batch.fouten})` : "Fouten"}</option>
         </select>
       </div>
