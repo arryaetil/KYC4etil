@@ -42,33 +42,42 @@ async def test_openai_extract_parseert_json(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_openai_web_search_contact_fallback(monkeypatch):
-    class ContactResponse:
-        output_text = '{"website_url": "https://example.test", "telefoonnummer": "043-1234567", "adres": "Markt 1", "reden": "gevonden"}'
+async def test_web_search_contact_valt_terug_op_serper_als_duckduckgo_niets_geeft(monkeypatch):
+    async def fake_ddg(query, max_results=6):
+        return []
 
-    class ContactResponses(_FakeResponses):
-        async def create(self, **kwargs):
-            self.kwargs = kwargs
-            return ContactResponse()
+    async def fake_serper(query, max_results=6):
+        return [{"title": "Testbedrijf", "url": "https://example.test",
+                  "snippet": "", "bron": "serper"}]
 
-    class ContactOpenAI(_FakeOpenAI):
-        def __init__(self, api_key):
-            self.api_key = api_key
-            self.responses = ContactResponses()
-            ContactOpenAI.last_responses = self.responses
+    async def fake_fetch_text(url):
+        return "Bel ons op 043-1234567 voor meer info."
 
-    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
-    monkeypatch.setattr(live.settings, "openai_model", "gpt-test")
-
-    import openai
-    monkeypatch.setattr(openai, "AsyncOpenAI", ContactOpenAI)
+    monkeypatch.setattr(live, "_duckduckgo_search", fake_ddg)
+    monkeypatch.setattr(live, "_serper_search", fake_serper)
+    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
 
     result = await live._web_search_contact("Testbedrijf", "Maastricht")
 
     assert result.website == "https://example.test"
     assert result.phone == "043-1234567"
-    assert ContactOpenAI.last_responses.kwargs["tools"][0]["type"] == "web_search"
-    assert "text" not in ContactOpenAI.last_responses.kwargs
+    assert result.raw["bron"] == "serper"
+
+
+@pytest.mark.asyncio
+async def test_web_search_contact_geeft_none_als_geen_zoekresultaten(monkeypatch):
+    async def fake_ddg(query, max_results=6):
+        return []
+
+    async def fake_serper(query, max_results=6):
+        return []
+
+    monkeypatch.setattr(live, "_duckduckgo_search", fake_ddg)
+    monkeypatch.setattr(live, "_serper_search", fake_serper)
+
+    result = await live._web_search_contact("Testbedrijf", "Maastricht")
+
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -152,7 +161,6 @@ async def test_web_search_jaarverslag_wp_geeft_uitsplitsing_door(monkeypatch):
         output_text = (
             '{"wp_gevonden": 100, "context": "ctx", "zekerheid": "hoog", "reden": "t", '
             '"is_limburg_specifiek": true, "is_fte": false, "peilmoment": "2026", '
-            '"bron_url": "https://example.test/jaarverslag.pdf", '
             '"man": 60, "vrouw": 40, "voltijd": 80, "deeltijd": 20, '
             '"eigen_personeel": 70, "uitzend": 20, "detachering": 10, "wsw": 0, '
             '"pct_op_locatie": 90}'
@@ -169,14 +177,25 @@ async def test_web_search_jaarverslag_wp_geeft_uitsplitsing_door(monkeypatch):
             self.responses = _FakeJaarverslagResponses()
             _FakeJaarverslagOpenAI.last_responses = self.responses
 
+    async def fake_web_search(query, max_results=5):
+        return [{"title": "Testbedrijf jaarverslag", "url": "https://example.test/jaarverslag.pdf",
+                  "snippet": "", "bron": "serper"}]
+
+    async def fake_fetch_text(url):
+        return "Jaarverslag 2026: er werken 100 medewerkers."
+
     monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
     monkeypatch.setattr(live.settings, "openai_model", "gpt-test")
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
 
     import openai
     monkeypatch.setattr(openai, "AsyncOpenAI", _FakeJaarverslagOpenAI)
 
     result = await live._web_search_jaarverslag_wp("Testbedrijf", 2026)
 
+    assert result.bron_type == "jaarverslag"
+    assert result.bron_url == "https://example.test/jaarverslag.pdf"
     assert result.man == 60
     assert result.vrouw == 40
     assert result.voltijd == 80
