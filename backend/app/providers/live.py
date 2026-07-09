@@ -56,8 +56,39 @@ Tekst:
 {tekst}"""
 
 
+async def _serper_places(query: str) -> dict | None:
+    """Lokale Google Maps-achtige resultaten voor contactgegevens — veel
+    goedkoper dan Google Places Text Search ($1/1000 i.p.v. $32-35/1000).
+    NB: dit endpoint geeft alleen resultaten bij een plaatsnaam in de query
+    en is daarom ONGESCHIKT voor de landelijke locatie-telling in
+    LivePlacesProvider.locations() (doc §7); daar blijft Google Places nodig
+    totdat de KvK-koppeling er is."""
+    if not settings.serper_api_key:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(
+                "https://google.serper.dev/places",
+                headers={"X-API-KEY": settings.serper_api_key, "Content-Type": "application/json"},
+                json={"q": query, "gl": "nl", "hl": "nl", "num": 1},
+            )
+            r.raise_for_status()
+            places = r.json().get("places") or []
+    except httpx.HTTPError:
+        return None
+    return places[0] if places else None
+
+
 class LivePlacesProvider:
     async def lookup(self, naam: str, gemeente: str | None) -> PlacesResult | None:
+        place = await _serper_places(f"{naam} {gemeente or ''}".strip())
+        if place:
+            return PlacesResult(
+                website=place.get("website"),
+                phone=place.get("phoneNumber"),
+                adres=place.get("address"),
+                raw={"bron": "serper_places", **place},
+            )
         if not settings.google_places_api_key:
             return await _web_search_contact(naam, gemeente)
         try:
