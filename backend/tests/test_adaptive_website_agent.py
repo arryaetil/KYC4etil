@@ -45,6 +45,7 @@ HTML_MET_LINKS = """
 
 @pytest.mark.asyncio
 async def test_haal_pagina_op_geeft_tekst_en_links(monkeypatch):
+    monkeypatch.setattr(live.settings, "playwright_enabled", False)
     monkeypatch.setattr(live.httpx, "AsyncClient", _FakeHtmlClient(HTML_MET_LINKS))
 
     resultaat = await live._haal_pagina_op("https://voorbeeld.test/over-ons")
@@ -58,6 +59,27 @@ async def test_haal_pagina_op_geeft_tekst_en_links(monkeypatch):
     assert "https://voorbeeld.test/negeer-ook-dit" not in urls  # footer, genegeerd
     # geen duplicaten
     assert urls.count("https://voorbeeld.test/over-ons/specialisten") == 1
+
+
+@pytest.mark.asyncio
+async def test_haal_pagina_op_gebruikt_playwright_fallback_bij_weinig_tekst(monkeypatch):
+    monkeypatch.setattr(live.settings, "playwright_enabled", True)
+    monkeypatch.setattr(live.httpx, "AsyncClient", _FakeHtmlClient("<html><body><div id='root'></div></body></html>"))
+
+    async def fake_fetch_html_playwright(url):
+        return """
+        <html><body>
+        <p>Ons team bestaat uit 14 medewerkers in Weert.</p>
+        <a href="/team">Team</a>
+        </body></html>
+        """
+
+    monkeypatch.setattr(live, "_fetch_html_playwright", fake_fetch_html_playwright)
+
+    resultaat = await live._haal_pagina_op("https://voorbeeld.test")
+
+    assert "14 medewerkers" in resultaat["tekst"]
+    assert resultaat["links"] == [{"tekst": "Team", "url": "https://voorbeeld.test/team"}]
 
 
 class _FakeToolCall:

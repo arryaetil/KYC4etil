@@ -175,6 +175,40 @@ async def test_check_company_jaarverslag_slaat_uitsplitsing_op(db_session, monke
     assert ar.pct_op_locatie == 0.9
 
 
+@pytest.mark.asyncio
+async def test_check_company_jaarverslag_crasht_niet_als_reconciliatie_afwijst(db_session, monkeypatch):
+    """Als reconciliatie de gevonden bron afwijst (bv. cross-company-mismatch),
+    moet check_company_jaarverslag dit gracieus afhandelen i.p.v. te crashen op
+    bereken_confidence(None, ...) — dit trof eerder de wekelijkse monitoring-scheduler."""
+    from app.pipeline import monitoring as monitoring_module
+
+    batch = Batch(naam="test-batch-monitoring-afgewezen", jaar=2026, totaal=1)
+    db_session.add(batch)
+    db_session.flush()
+    company = Company(batch_id=batch.id, naam="Testbedrijf")
+    db_session.add(company)
+    db_session.commit()
+
+    # Context bevat het WP-getal niet -> _candidate_hard_gate wijst deze af,
+    # reconcilieer() geeft dus finding=None terug.
+    finding = AgentFinding(
+        wp_gevonden=100, context="geen letterlijke vermelding van het getal", zekerheid="hoog",
+        reden="t", bron_url="https://example.test/jaarverslag.pdf", bron_type="jaarverslag",
+    )
+
+    mock_jaarverslag = MagicMock()
+    mock_jaarverslag.run = AsyncMock(return_value=finding)
+    monkeypatch.setattr(monitoring_module, "get_providers",
+                        lambda: (None, None, mock_jaarverslag))
+
+    resultaat = await monitoring_module.check_company_jaarverslag(db_session, company, 2026)
+
+    assert resultaat is True  # bron_url is wel gewijzigd/gedetecteerd
+    # Geen candidate aangemaakt met het afgewezen getal
+    from app.models import Candidate
+    assert db_session.query(Candidate).filter_by(company_id=company.id).one_or_none() is None
+
+
 def test_valideer_wp_uitsplitsing_zonder_agent_result_geeft_leeg():
     from app.pipeline.wp_uitsplitsing import valideer_wp_uitsplitsing
 
@@ -329,3 +363,15 @@ def test_company_detail_toont_agent_uitsplitsing(client, db_session):
     assert ar["detachering"] == 10
     assert ar["wsw"] == 0
     assert ar["pct_op_locatie"] == 0.9
+
+
+def test_company_update_route_is_niet_dubbel_geregistreerd():
+    from app.main import app
+
+    matches = [
+        route for route in app.routes
+        if getattr(route, "path", None) == "/batches/{batch_id}/companies/{company_id}"
+        and "PATCH" in getattr(route, "methods", set())
+    ]
+
+    assert len(matches) == 1

@@ -21,6 +21,7 @@ Thumbs.db
 # Logs
 *.log
 nohup.out
+backend/evals/*.jsonl
 
 # Frontend
 frontend/node_modules/

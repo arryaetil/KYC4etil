@@ -1,6 +1,8 @@
 """Reconciliatie (doc §7 stap 3) en multi-locatiestrategie (doc §10)."""
 from dataclasses import dataclass
 from enum import Enum
+import re
+from urllib.parse import urlparse
 
 from ..providers.base import AgentFinding
 
@@ -44,6 +46,108 @@ class ReconciliatieResultaat:
     reden: str
 
 
+def _is_vacature_of_jobs_url(url: str | None) -> bool:
+    if not url:
+        return False
+    parsed = urlparse(url.lower())
+    haystack = f"{parsed.netloc} {parsed.path} {parsed.query}"
+    markers = (
+        "job", "jobs", "vacature", "vacatures", "career", "careers",
+        "werken-bij", "werkenbij", "recruitment",
+    )
+    return any(marker in haystack for marker in markers)
+
+
+def _is_onwaarschijnlijke_jaarverslag_url(url: str | None) -> bool:
+    if not url:
+        return False
+    parsed = urlparse(url.lower())
+    haystack = f"{parsed.netloc} {parsed.path} {parsed.query}"
+    negatieve_markers = (
+        "avg", "privacy", "cookie", "voorwaarden", "disclaimer", "klachten",
+        "reglement", "protocol", "brochure", "flyer", "vacature", "job",
+    )
+    if any(marker in haystack for marker in negatieve_markers):
+        return True
+    # Veel echte jaarverslagen hebben opaque CDN/PDF-URLs. Alleen duidelijke negatieve
+    # documenttypen afwijzen; document-identiteit blijft verder bij de bronvalidatie.
+    return False
+
+
+def _vereist_context_steun(finding: AgentFinding) -> bool:
+    """Alleen risicobronnen blokkeren op ontbrekende context.
+
+    Officiële website/team-pagina's zijn bij kleine bedrijven juist leidend. Veel live
+    website-agenten geven al een getal terug zonder een nette raw-contextsnippet te
+    persistenteren; die mogen niet massaal wegvallen. Search/media en jaarverslag zijn
+    riskanter voor verkeerde scope of verkeerd gelezen snippets en blijven strenger.
+    """
+    return finding.bron_type in {"media", "jaarverslag"}
+
+
+def _is_juridische_holding_shell(finding: AgentFinding) -> bool:
+    if finding.bron_type != "jaarverslag" or not finding.wp_gevonden:
+        return False
+    haystack = " ".join(filter(None, [
+        finding.bron_url or "",
+        finding.context or "",
+        finding.reden or "",
+    ])).lower()
+    holding_marker = "holding" in haystack
+    legal_shell_marker = (
+        "outside the netherlands" in haystack
+        or "employed outside the netherlands" in haystack
+        or "buiten nederland" in haystack
+    )
+    return finding.wp_gevonden <= 10 and finding.is_fte and (holding_marker or legal_shell_marker)
+
+
+def _context_ondersteunt_wp_getal(finding: AgentFinding) -> bool:
+    """Voorkomt dat een LLM een getal kiest dat niet in de geciteerde context staat.
+
+    Dit vangt zoekresultaten af waar een vacatureaantal of verkeerd gelezen
+    deeltal als totaal aantal werkzame personen wordt gebruikt.
+    """
+    if not finding.wp_gevonden:
+        return True
+    context = (finding.context or "").lower()
+    if not context:
+        return False
+    wp = str(finding.wp_gevonden)
+    variants = {
+        wp,
+        f"{finding.wp_gevonden:,}".replace(",", "."),
+        f"{finding.wp_gevonden:,}".replace(",", " "),
+    }
+    if any(variant in context for variant in variants):
+        return True
+    # Sta compacte duizendtallen toe als de context "2.235" bevat en het model 2235 retourneert.
+    digits_only = re.sub(r"\D", "", context)
+    if wp in digits_only:
+        return True
+    aantallen = [
+        int(match)
+        for match in re.findall(r"\b\d{1,3}\b", context)
+        if int(match) < 100
+    ]
+    return bool(aantallen) and sum(aantallen) == finding.wp_gevonden
+
+
+def _candidate_hard_gate(finding: AgentFinding) -> str | None:
+    if _is_vacature_of_jobs_url(finding.bron_url):
+        return "bron is een vacature/jobs-pagina en telt vacatures, niet werkzame personen"
+    if finding.bron_type == "jaarverslag" and _is_onwaarschijnlijke_jaarverslag_url(finding.bron_url):
+        return "bron lijkt geen jaarverslag/jaarrekening maar een ander documenttype"
+    if _is_juridische_holding_shell(finding):
+        return "jaarverslag lijkt een juridische holding/shell te beschrijven, niet de vestiging"
+    if _vereist_context_steun(finding) and not _context_ondersteunt_wp_getal(finding):
+        return (
+            f"context ondersteunt gekozen WP-getal {finding.wp_gevonden} niet letterlijk; "
+            "niet veilig als kandidaat"
+        )
+    return None
+
+
 def reconcilieer(
     website: AgentFinding | None,
     jaarverslag: AgentFinding | None,
@@ -53,9 +157,22 @@ def reconcilieer(
     """Beslisregels doc §7 stap 3."""
     w = website if website and website.wp_gevonden else None
     j = jaarverslag if jaarverslag and jaarverslag.wp_gevonden else None
+    afgewezen: list[str] = []
+    for label, finding in (("website", w), ("jaarverslag", j)):
+        if finding:
+            reden = _candidate_hard_gate(finding)
+            if reden:
+                afgewezen.append(f"{label}: {reden}")
+                if label == "website":
+                    w = None
+                else:
+                    j = None
     multi = count_nl is not None and count_nl > 1 and count_lb != count_nl
 
     if not w and not j:
+        if afgewezen:
+            return ReconciliatieResultaat(None, None, False, 0.0, 0, False,
+                                          "bronnen afgewezen door hard gate: " + "; ".join(afgewezen))
         return ReconciliatieResultaat(None, None, False, 0.0, 0, False,
                                       "geen bron gevonden")
 
@@ -75,11 +192,21 @@ def reconcilieer(
                                       f"({count_lb}/{count_nl} vestigingen); website-hint: {w.wp_gevonden}")
 
     bron = w or j
-    # Eén bron met een niet-Limburg-totaal bij multi-locatie -> schatting
-    if multi and bron.is_limburg_specifiek is False:
-        schatting, penalty = proportionele_schatting(bron.wp_gevonden, count_nl, count_lb)
-        return ReconciliatieResultaat(bron, schatting, True, penalty, 1, False,
-                                      f"nationaal totaal {bron.wp_gevonden} proportioneel verdeeld "
-                                      f"({count_lb}/{count_nl} vestigingen)")
+    # Eén bron met een niet-Limburg-specifiek getal (bv. landelijk concerntotaal) mag NOOIT
+    # zomaar als kandidaat voor déze vestiging gelden — dat getal is per definitie te hoog.
+    if bron.is_limburg_specifiek is False:
+        if count_nl:
+            schatting, penalty = proportionele_schatting(bron.wp_gevonden, count_nl, count_lb)
+            return ReconciliatieResultaat(bron, schatting, True, penalty, 1, False,
+                                          f"nationaal totaal {bron.wp_gevonden} proportioneel verdeeld "
+                                          f"({count_lb}/{count_nl} vestigingen)")
+        # Geen vestigingscount bekend -> geen enkele manier om het landelijke getal te
+        # herleiden naar déze locatie (doc §7); dan liever geen kandidaat dan een vals-
+        # betrouwbaar landelijk getal (kan anders zelfs 🟢 hoog worden, zoals bij een
+        # generieke jaarverslag-zoekopdracht die het cijfer van een heel ander bedrijf
+        # oppikt — precies het scenario waar deze regel tegen beschermt).
+        return ReconciliatieResultaat(None, None, False, 0.0, 1, False,
+                                      f"enige bron ({bron.bron_type}) is niet-Limburg-specifiek "
+                                      f"en aantal vestigingen onbekend — niet herleidbaar naar deze locatie")
     return ReconciliatieResultaat(bron, bron.wp_gevonden, False, 0.0, 1, False,
                                   f"enige bron: {bron.bron_type}")

@@ -6,12 +6,14 @@ user-agent en max 1 request/sec per domein (doc §7)."""
 import asyncio
 import json
 import re
+import unicodedata
 from typing import Any, TypedDict
 
 import httpx
 from langchain_core.output_parsers import JsonOutputParser
 
 from ..config import get_settings
+from ..pipeline.evidence import IdentityClass
 from .base import AgentFinding, LocationInfo, PlacesResult
 
 _JSON_PARSER = JsonOutputParser()
@@ -315,6 +317,83 @@ async def _zoek_jaarverslag_pdf(naam: str, jaar: int) -> str | None:
     return None
 
 
+def _naam_tokens(naam: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKD", naam).encode("ascii", "ignore").decode("ascii")
+    tokens = re.findall(r"[a-z0-9]+", normalized.lower())
+    stopwoorden = {
+        "bv", "b", "v", "nv", "n", "v", "stichting", "groep", "holding", "the",
+        "de", "het", "en", "van", "der", "den", "te", "in", "op", "aan",
+        "filiaal", "koninklijke",
+    }
+    return [token for token in tokens if len(token) >= 3 and token not in stopwoorden]
+
+
+def _tekst_lijkt_bij_bedrijf_te_horen(naam: str, tekst: str) -> bool:
+    """Conservatieve naam-check tegen cross-company hits.
+
+    Een bron hoeft niet exact dezelfde juridische naam te gebruiken, maar bij twee
+    of meer betekenisvolle naamdelen moeten er minstens twee terugkomen. Bij een
+    eenwoordnaam volstaat dat ene token.
+    """
+    tokens = _naam_tokens(naam)
+    if not tokens:
+        return True
+    haystack = unicodedata.normalize("NFKD", tekst).encode("ascii", "ignore").decode("ascii").lower()
+    matches = sum(1 for token in tokens if re.search(rf"\b{re.escape(token)}\b", haystack))
+    minimum = 1 if len(tokens) == 1 else min(2, len(tokens))
+    return matches >= minimum
+
+
+def _is_vacature_of_jobs_url(url: str | None) -> bool:
+    if not url:
+        return False
+    lowered = url.lower()
+    markers = (
+        "/job", "/jobs", "vacature", "vacatures", "career", "careers",
+        "werken-bij", "werkenbij", "recruitment",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+async def _classificeer_jaarverslag_bron_identiteit(
+    naam: str, pdf_url: str | None,
+) -> IdentityClass:
+    """Classificeert of een gevonden jaarverslag-PDF waarschijnlijk bij het bedrijf hoort.
+
+    Dit vangt de duurste foutklasse af: een generieke jaarverslag-zoekopdracht die
+    een PDF van een ander bedrijf vindt. Brand/group matches blijven toegestaan,
+    maar moeten later via scope-reconciliatie beoordeeld worden.
+    """
+    if not pdf_url:
+        return IdentityClass.UNKNOWN
+    try:
+        import fitz  # PyMuPDF
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True,
+                                     headers={"User-Agent": USER_AGENT}) as client:
+            r = await client.get(pdf_url)
+            r.raise_for_status()
+        doc = fitz.open(stream=r.content, filetype="pdf")
+        eerste_paginas = "\n".join(doc.load_page(i).get_text() for i in range(min(5, len(doc))))
+    except Exception:
+        return IdentityClass.UNKNOWN
+
+    tokens = _naam_tokens(naam)
+    if not tokens:
+        return IdentityClass.UNKNOWN
+    haystack = unicodedata.normalize("NFKD", eerste_paginas).encode("ascii", "ignore").decode("ascii").lower()
+    matches = sum(1 for token in tokens if re.search(rf"\b{re.escape(token)}\b", haystack))
+    if matches >= min(2, len(tokens)):
+        return IdentityClass.EXACT_ENTITY
+    if matches == 1:
+        return IdentityClass.SAME_BRAND_OR_GROUP
+    return IdentityClass.MISMATCH
+
+
+async def _valideer_jaarverslag_bron(naam: str, pdf_url: str | None) -> bool:
+    identity = await _classificeer_jaarverslag_bron_identiteit(naam, pdf_url)
+    return identity != IdentityClass.MISMATCH
+
+
 async def _zoek_jaarverslag_pdf_voor_jaar(naam: str, zoekjaar: int) -> str | None:
     """Tweestaps: zoek eerst jaarverslag-pagina (HTML) via web search, scrape daarna PDF-link.
     Web search geeft HTML-pagina's veel betrouwbaarder terug dan directe .pdf URLs."""
@@ -454,38 +533,67 @@ async def _fetch_text_playwright(url: str) -> str:
     return soup.get_text(separator="\n", strip=True)
 
 
+async def _fetch_html_playwright(url: str) -> str:
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        )
+        try:
+            ctx = await browser.new_context(user_agent=USER_AGENT)
+            page = await ctx.new_page()
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            return await page.content()
+        finally:
+            await browser.close()
+
+
+def _pagina_data_uit_html(html: str, url: str) -> dict:
+    from urllib.parse import urljoin, urlparse
+
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+
+    eigen_domein = urlparse(url).netloc
+    links: list[dict] = []
+    seen: set[str] = set()
+    for a in soup.find_all("a", href=True):
+        if a.find_parent(["nav", "footer"]) is not None:
+            continue
+        absolute = urljoin(url, a["href"])
+        if urlparse(absolute).netloc != eigen_domein:
+            continue
+        if absolute in seen:
+            continue
+        seen.add(absolute)
+        links.append({"tekst": a.get_text(strip=True), "url": absolute})
+
+    for tag in soup(["script", "style", "nav", "footer"]):
+        tag.decompose()
+    tekst = soup.get_text(separator="\n", strip=True)
+    return {"tekst": tekst, "links": links}
+
+
 async def _haal_pagina_op(url: str) -> dict:
     """Haalt een pagina op en geeft zowel de opgeschoonde tekst als de links terug
     die het model kan gebruiken om zelf verder te navigeren. Alleen links binnen
     hetzelfde domein worden meegegeven; nav/footer/script/style zijn al verwijderd."""
-    from urllib.parse import urljoin, urlparse
-
     async with httpx.AsyncClient(timeout=30, follow_redirects=True,
                                  headers={"User-Agent": USER_AGENT}) as client:
         r = await client.get(url)
         r.raise_for_status()
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(r.text, "html.parser")
+        pagina = _pagina_data_uit_html(r.text, url)
 
-        eigen_domein = urlparse(url).netloc
-        links: list[dict] = []
-        seen: set[str] = set()
-        for a in soup.find_all("a", href=True):
-            if a.find_parent(["nav", "footer"]) is not None:
-                continue
-            absolute = urljoin(url, a["href"])
-            if urlparse(absolute).netloc != eigen_domein:
-                continue
-            if absolute in seen:
-                continue
-            seen.add(absolute)
-            links.append({"tekst": a.get_text(strip=True), "url": absolute})
-
-        for tag in soup(["script", "style", "nav", "footer"]):
-            tag.decompose()
-        tekst = soup.get_text(separator="\n", strip=True)
-
-    return {"tekst": tekst, "links": links}
+    if settings.playwright_enabled and len(pagina["tekst"]) < 500:
+        try:
+            rendered_html = await _fetch_html_playwright(url)
+            rendered = _pagina_data_uit_html(rendered_html, url)
+            if len(rendered["tekst"]) > len(pagina["tekst"]):
+                return rendered
+        except Exception:
+            pass
+    return pagina
 
 
 AGENT_PROMPT = """Je bent een data-extractie agent voor het Vestigingsregister Limburg.
@@ -564,6 +672,7 @@ class JaarverslagResearchState(TypedDict, total=False):
     naam: str
     jaar: int
     pdf_url: str | None
+    source_identity_class: str | None
     finding: AgentFinding | None
 
 
@@ -623,9 +732,19 @@ async def _extract_wp_van_zoekresultaten(
     for result in results:
         if len(bevindingen) >= max_bronnen:
             break
+        if _is_vacature_of_jobs_url(result["url"]):
+            continue
         try:
             tekst = await _fetch_text(result["url"])
         except Exception:
+            continue
+        bron_context = " ".join([
+            result.get("title", ""),
+            result.get("snippet", ""),
+            result.get("url", ""),
+            tekst[:20000],
+        ])
+        if not _tekst_lijkt_bij_bedrijf_te_horen(naam, bron_context):
             continue
         data = await _llm_extract(naam, gemeente, tekst)
         if not data or not data.get("wp_gevonden"):
@@ -709,12 +828,25 @@ def _build_jaarverslag_research_graph():
     async def find_pdf(state: JaarverslagResearchState) -> dict[str, str | None]:
         return {"pdf_url": await _zoek_jaarverslag_pdf(state["naam"], state["jaar"])}
 
+    async def valideer_bron(state: JaarverslagResearchState) -> dict[str, str | None]:
+        pdf_url = state.get("pdf_url")
+        identity = await _classificeer_jaarverslag_bron_identiteit(state["naam"], pdf_url)
+        if pdf_url and identity != IdentityClass.MISMATCH:
+            return {"pdf_url": pdf_url, "source_identity_class": identity.value}
+        return {"pdf_url": None, "source_identity_class": identity.value}
+
     async def extract_pdf(state: JaarverslagResearchState) -> dict[str, AgentFinding | None]:
         pdf_url = state.get("pdf_url")
         if not pdf_url:
             return {"finding": None}
         try:
-            return {"finding": await LiveJaarverslagAgent().run_with_pdf(state["naam"], pdf_url)}
+            finding = await LiveJaarverslagAgent().run_with_pdf(state["naam"], pdf_url)
+            if finding:
+                finding.raw = {
+                    **(finding.raw or {}),
+                    "identity_class": state.get("source_identity_class") or IdentityClass.UNKNOWN.value,
+                }
+            return {"finding": finding}
         except Exception:
             return {"finding": None}
 
@@ -726,6 +858,11 @@ def _build_jaarverslag_research_graph():
         return {"finding": _baseline_jaarverslag_finding(pdf_url) if pdf_url else None}
 
     def after_find_pdf(state: JaarverslagResearchState) -> str:
+        if state.get("pdf_url"):
+            return "valideer_bron"
+        return "web_search_fallback" if settings.jaarverslag_web_fallback else END
+
+    def after_valideer_bron(state: JaarverslagResearchState) -> str:
         if state.get("pdf_url"):
             return "extract_pdf"
         return "web_search_fallback" if settings.jaarverslag_web_fallback else END
@@ -740,11 +877,13 @@ def _build_jaarverslag_research_graph():
 
     graph = StateGraph(JaarverslagResearchState)
     graph.add_node("find_pdf", find_pdf)
+    graph.add_node("valideer_bron", valideer_bron)
     graph.add_node("extract_pdf", extract_pdf)
     graph.add_node("web_search_fallback", web_search_fallback)
     graph.add_node("baseline_source", baseline_source)
     graph.set_entry_point("find_pdf")
     graph.add_conditional_edges("find_pdf", after_find_pdf)
+    graph.add_conditional_edges("valideer_bron", after_valideer_bron)
     graph.add_conditional_edges("extract_pdf", after_extract_pdf)
     graph.add_conditional_edges("web_search_fallback", after_web_search)
     graph.add_edge("baseline_source", END)
@@ -757,6 +896,7 @@ async def _run_jaarverslag_research_graph(naam: str, jaar: int) -> AgentFinding 
         "naam": naam,
         "jaar": jaar,
         "pdf_url": None,
+        "source_identity_class": None,
         "finding": None,
     })
     return result.get("finding")

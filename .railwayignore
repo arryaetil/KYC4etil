@@ -1,0 +1,13 @@
+.git
+.claude
+.pytest_cache
+.superpowers
+.impeccable
+*.db
+*.db-journal
+*.xls
+*.xlsx
+docs/~$*
+backend/evals/*.jsonl
+frontend/node_modules
+frontend/dist

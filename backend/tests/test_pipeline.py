@@ -8,9 +8,10 @@ from app.providers.base import AgentFinding
 
 
 def finding(wp=10, bron="website", zekerheid="hoog", limburg=True, fte=False,
-            totaal_meerdere=False, peilmoment="2026"):
-    return AgentFinding(wp_gevonden=wp, context="ctx", zekerheid=zekerheid, reden="t",
-                        bron_url="https://x", bron_type=bron,
+            totaal_meerdere=False, peilmoment="2026", context=None, url="https://x"):
+    return AgentFinding(wp_gevonden=wp, context=context or f"{wp} medewerkers",
+                        zekerheid=zekerheid, reden="t",
+                        bron_url=url, bron_type=bron,
                         is_totaal_meerdere_vestigingen=totaal_meerdere,
                         is_limburg_specifiek=limburg, is_fte=fte, peilmoment=peilmoment)
 
@@ -66,6 +67,84 @@ def test_reconciliatie_multi_locatie_schatting():
     r = reconcilieer(None, finding(wp=17000, bron="jaarverslag", limburg=False), 400, 15)
     assert r.is_schatting and r.wp_kandidaat == 638
 
+def test_reconciliatie_landelijk_totaal_zonder_vestigingscount_geen_kandidaat():
+    r = reconcilieer(None, finding(wp=6158, bron="jaarverslag", limburg=False), None, None)
+    assert r.finding is None
+    assert r.wp_kandidaat is None
+    assert not r.is_schatting
+
+def test_reconciliatie_weigert_vacaturepagina_als_wp_kandidaat():
+    r = reconcilieer(
+        finding(wp=4, bron="media", url="https://jobs.ikea.com/nl/plaats/heerlen-jobs/4",
+                context="Heerlen: 4"),
+        None, 1, 1,
+    )
+    assert r.finding is None
+    assert r.wp_kandidaat is None
+    assert "vacature/jobs-pagina" in r.reden
+
+def test_reconciliatie_weigert_context_die_wp_getal_niet_ondersteunt():
+    r = reconcilieer(
+        finding(wp=6500, bron="media", context="650 voltijdsbanen bij BAM"),
+        None, 1, 1,
+    )
+    assert r.finding is None
+    assert r.wp_kandidaat is None
+    assert "context ondersteunt gekozen WP-getal" in r.reden
+
+def test_reconciliatie_accepteert_website_zonder_gepersistenteerde_context():
+    r = reconcilieer(
+        AgentFinding(
+            wp_gevonden=5, context=None, zekerheid="hoog", reden="team-pagina",
+            bron_url="https://example.test/over-ons", bron_type="website",
+            is_limburg_specifiek=True,
+        ),
+        None, 1, 1,
+    )
+    assert r.wp_kandidaat == 5
+
+def test_reconciliatie_weigert_media_zonder_gepersistenteerde_context():
+    r = reconcilieer(
+        AgentFinding(
+            wp_gevonden=5, context=None, zekerheid="hoog", reden="zoekresultaat",
+            bron_url="https://example.test/over-ons", bron_type="media",
+            is_limburg_specifiek=True,
+        ),
+        None, 1, 1,
+    )
+    assert r.wp_kandidaat is None
+
+def test_reconciliatie_weigert_onwaarschijnlijk_jaarverslag_documenttype():
+    r = reconcilieer(
+        finding(
+            wp=5, bron="jaarverslag",
+            url="https://example.test/uploads/AVG-verklaring-2025.pdf",
+            context="5 medewerkers",
+        ),
+        None, 1, 1,
+    )
+    assert r.wp_kandidaat is None
+    assert "ander documenttype" in r.reden
+
+def test_reconciliatie_weigert_juridische_holding_shell_als_vestiging():
+    r = reconcilieer(
+        finding(
+            wp=2, bron="jaarverslag", fte=True,
+            url="https://example.test/holding-bv-annual-report-fy25.pdf",
+            context="The average number of staff employed by the Company, converted into full-time equivalents, amounted to 2, of which 0 were employed outside the Netherlands.",
+        ),
+        None, 1, 1,
+    )
+    assert r.wp_kandidaat is None
+    assert "holding/shell" in r.reden
+
+def test_reconciliatie_accepteert_context_met_aantoonbare_optelsom():
+    r = reconcilieer(
+        finding(wp=13, context="Ons team: 3 huisartsen, 6 assistentes, 2 praktijkondersteuners en 2 POH-GGZ."),
+        None, 1, 1,
+    )
+    assert r.wp_kandidaat == 13
+
 
 # --- confidence ---
 
@@ -78,6 +157,11 @@ def kwargs(**over):
 def test_confidence_single_locatie_website_is_groen():
     s = bereken_confidence(finding(), **kwargs())
     assert s.label == "hoog" and s.score >= 0.80
+
+def test_confidence_media_bron_wordt_niet_groen():
+    s = bereken_confidence(finding(bron="media", zekerheid="hoog"), **kwargs())
+    assert s.label != "hoog"
+    assert s.score < 0.80
 
 def test_confidence_schatting_nooit_groen():
     s = bereken_confidence(finding(bron="jaarverslag", limburg=False), **kwargs(

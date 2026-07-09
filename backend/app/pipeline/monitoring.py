@@ -64,6 +64,16 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     db.flush()
 
     rec = reconcilieer(None, finding, None, None)
+    if rec.finding is None:
+        # Reconciliatie kan de bevinding alsnog afwijzen (bv. cross-company-mismatch of
+        # niet-Limburg-specifiek zonder vestigingscount) — dan is er wel een nieuwe
+        # bron_url gedetecteerd, maar geen bruikbare WP-kandidaat. Bestaande candidate
+        # blijft ongemoeid, net als bij "url gewijzigd maar geen wp_gevonden" hierboven.
+        _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "skipped", t0,
+             error=f"bron afgewezen door reconciliatie: {rec.reden}"[:1000])
+        db.commit()
+        return True
+
     score = bereken_confidence(
         rec.finding, None, None, adres_validated=False,
         n_bronnen=rec.n_bronnen, bronnen_consistent=rec.bronnen_consistent,

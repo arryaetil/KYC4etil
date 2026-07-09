@@ -51,12 +51,19 @@ def bereken_confidence(
     if locatie_bron == "places":
         penalties["places_fuzzy"] = s.penalty_places_fuzzy
 
+    # Media/search-resultaten zijn reviewer-signalen, maar nog niet gekalibreerd
+    # als zelfstandige groene kandidaatbron.
+    if finding.bron_type == "media":
+        penalties["media_source_cap"] = 0.25
+
     score = score + sum(bonuses.values()) - sum(penalties.values())
     score = max(0.0, min(1.0, round(score, 4)))
 
     # Harde domeinregel: schatting nooit label 🟢 (doc §9)
     if is_schatting:
         score = min(score, s.drempel_middel - 0.01)
+    if finding.bron_type == "media":
+        score = min(score, s.drempel_hoog - 0.01)
 
     label = "hoog" if score >= s.drempel_hoog else "middel" if score >= s.drempel_middel else "laag"
 
