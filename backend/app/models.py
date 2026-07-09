@@ -110,6 +110,7 @@ class AgentResult(Base):
     voltijd: Mapped[int | None] = mapped_column(Integer)
     deeltijd: Mapped[int | None] = mapped_column(Integer)
     pct_op_locatie: Mapped[float | None] = mapped_column(Float)
+    bron_pagina: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     company: Mapped[Company] = relationship(back_populates="agent_results")

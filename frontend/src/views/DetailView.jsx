@@ -1,6 +1,6 @@
 import {useEffect, useState} from "react";
 import {AlertTriangle, ListChecks} from "lucide-react";
-import {classNames} from "../lib/format.js";
+import {classNames, bronLink} from "../lib/format.js";
 import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
 import {Alert} from "../components/Alert.jsx";
@@ -83,7 +83,9 @@ export function DetailView({api, user, onLogout, batchId, companyId, openBatch})
                     </div>
                     <blockquote className="border-l-4 border-etil pl-3 text-sm text-slate-700">{result.context || "Geen citaat"}</blockquote>
                     {result.bron_url ? (
-                      <a className="mt-2 inline-block text-sm font-medium text-etil underline" href={result.bron_url} target="_blank" rel="noreferrer">Bron openen</a>
+                      <a className="mt-2 inline-block text-sm font-medium text-etil underline" href={bronLink(result)} target="_blank" rel="noreferrer">
+                        Bron openen{result.bron_pagina ? ` (pagina ${result.bron_pagina})` : ""}
+                      </a>
                     ) : null}
                   </div>
                 ))}

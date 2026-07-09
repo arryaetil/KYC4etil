@@ -309,7 +309,7 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
             "detachering": ar.detachering, "wsw": ar.wsw,
             "man": ar.man, "vrouw": ar.vrouw,
             "voltijd": ar.voltijd, "deeltijd": ar.deeltijd,
-            "pct_op_locatie": ar.pct_op_locatie,
+            "pct_op_locatie": ar.pct_op_locatie, "bron_pagina": ar.bron_pagina,
         } for ar in comp.agent_results],
         "pipeline_fouten": [{
             "stap": pr.stap, "error": pr.error,
@@ -460,24 +460,3 @@ def upsert_vastgoed(batch_id: str, company_id: str, body: VastgoedBody,
     return {"company_id": company_id, "bron": vg.bron,
             "updated_at": vg.updated_at.isoformat() + "Z"}
 
-
-class CompanyUpdateBody(BaseModel):
-    naam: str | None = None
-    gemeente: str | None = None
-    adres: str | None = None
-    sbi_code: str | None = None
-    cb_er: str | None = None
-    kvk_nummer: str | None = None
-
-
-@router.patch("/{batch_id}/companies/{company_id}")
-def update_company(batch_id: str, company_id: str, body: CompanyUpdateBody,
-                   db: Session = Depends(get_db)):
-    """Werkt basisvelden van een vestiging bij."""
-    comp = db.get(Company, company_id)
-    if not comp or comp.batch_id != batch_id:
-        raise HTTPException(404, "company niet gevonden")
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(comp, field, value)
-    db.commit()
-    return {"company_id": company_id}

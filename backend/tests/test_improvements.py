@@ -176,3 +176,54 @@ async def test_runner_draait_agents_ook_bij_lookup_failed():
     mock_website.run.assert_called_once()
     # En het gevonden WP moet in de candidate zitten
     assert candidate.wp_kandidaat == 5
+
+
+# --- Verbetering 5: jaarverslag-agent draait altijd mee, ook bij hoog-zekerheid ---
+
+@pytest.mark.asyncio
+async def test_runner_slaat_jaarverslag_agent_niet_over_bij_hoog_zekerheid():
+    """Reviewers willen zoveel mogelijk bronnen kunnen vergelijken (human-in-the-loop);
+    de jaarverslag-agent moet dus altijd meedraaien, ook als de website-agent al een
+    hoog-zekerheidsbevinding heeft. Dit dient ook als tegencheck op die bevinding."""
+    from unittest.mock import MagicMock, AsyncMock, patch
+    from app.pipeline.runner import verwerk_company
+
+    db = MagicMock()
+    db.flush = MagicMock()
+    db.add = MagicMock()
+
+    batch = MagicMock()
+    batch.id = "batch-1"
+    batch.jaar = 2025
+
+    company = MagicMock()
+    company.id = "comp-1"
+    company.naam = "TestBedrijf"
+    company.adres = None
+    company.gemeente = "Maastricht"
+    company.kvk_nummer = None
+    company.website_url = None
+    company.telefoonnummer = None
+
+    hoog_finding = AgentFinding(
+        wp_gevonden=100, context="100 medewerkers", zekerheid="hoog",
+        reden="website", bron_url="https://example.com", bron_type="website",
+        is_limburg_specifiek=True,
+    )
+
+    mock_lookup = MagicMock()
+    mock_lookup.lookup = AsyncMock(return_value=None)
+    mock_lookup.locations = AsyncMock(return_value=LocationInfo(count_nl=None, count_lb=None, bron="web_search"))
+    mock_lookup.scrape_email = AsyncMock(return_value=None)
+
+    mock_website = MagicMock()
+    mock_website.run = AsyncMock(return_value=hoog_finding)
+
+    mock_jaarverslag = MagicMock()
+    mock_jaarverslag.run = AsyncMock(return_value=None)
+
+    with patch("app.pipeline.runner.get_providers",
+               return_value=(mock_lookup, mock_website, mock_jaarverslag)):
+        await verwerk_company(db, company, batch)
+
+    mock_jaarverslag.run.assert_called_once_with("TestBedrijf", 2025)

@@ -155,6 +155,26 @@ async def test_openai_extract_parseert_wp_uitsplitsing(monkeypatch):
     assert result["pct_op_locatie"] == 90
 
 
+def test_vind_paginanummer_vindt_juiste_pagina():
+    pagina_teksten = [
+        (1, "Voorwoord van de directie."),
+        (2, "In 2024 waren er 2294 medewerkers en vrijwilligers actief."),
+        (3, "Financiële verantwoording."),
+    ]
+    resultaat = live._vind_paginanummer(
+        "In 2024 waren er 2294 medewerkers en vrijwilligers actief.", pagina_teksten,
+    )
+    assert resultaat == 2
+
+
+def test_vind_paginanummer_geeft_none_als_context_ontbreekt():
+    assert live._vind_paginanummer(None, [(1, "tekst")]) is None
+
+
+def test_vind_paginanummer_geeft_none_als_niet_gevonden():
+    assert live._vind_paginanummer("dit staat nergens in", [(1, "andere tekst")]) is None
+
+
 @pytest.mark.asyncio
 async def test_web_search_jaarverslag_wp_geeft_uitsplitsing_door(monkeypatch):
     class _FakeJaarverslagResponse:

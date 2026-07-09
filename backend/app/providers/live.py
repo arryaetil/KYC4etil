@@ -813,11 +813,13 @@ class LiveJaarverslagAgent:
             r.raise_for_status()
         doc = fitz.open(stream=r.content, filetype="pdf")
         keywords = ["medewerker", "personeel", "headcount", "fte", "employee", "werknemer"]
-        relevant = [page.get_text() for page in doc
+        # (paginanummer, tekst) i.p.v. alles samenvoegen, zodat we achteraf kunnen
+        # terugvinden op welke pagina de context van de LLM daadwerkelijk stond.
+        relevant = [(i + 1, page.get_text()) for i, page in enumerate(doc)
                     if any(k in page.get_text().lower() for k in keywords)]
         if not relevant:
             return None
-        data = await _llm_extract(naam, None, "\n\n".join(relevant))
+        data = await _llm_extract(naam, None, "\n\n".join(tekst for _, tekst in relevant))
         if not data or not data.get("wp_gevonden"):
             return None
         pct = data.get("pct_op_locatie")
@@ -832,5 +834,20 @@ class LiveJaarverslagAgent:
             man=data.get("man"), vrouw=data.get("vrouw"),
             voltijd=data.get("voltijd"), deeltijd=data.get("deeltijd"),
             pct_op_locatie=_pct_op_locatie_fractie(pct),
+            bron_pagina=_vind_paginanummer(data.get("context"), relevant),
             raw=data,
         )
+
+
+def _vind_paginanummer(context: str | None, pagina_teksten: list[tuple[int, str]]) -> int | None:
+    """Zoekt op welke PDF-pagina de door de LLM geciteerde context daadwerkelijk
+    staat, zodat de bron direct op de juiste pagina geopend kan worden."""
+    if not context:
+        return None
+    fragment = context.strip()[:80].lower()
+    if not fragment:
+        return None
+    for paginanummer, tekst in pagina_teksten:
+        if fragment in tekst.lower():
+            return paginanummer
+    return None

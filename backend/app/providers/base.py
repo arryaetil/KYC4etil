@@ -41,6 +41,7 @@ class AgentFinding:
     voltijd: int | None = None
     deeltijd: int | None = None
     pct_op_locatie: float | None = None
+    bron_pagina: int | None = None  # 1-indexed PDF-paginanummer waar context vandaan komt
 
 
 class LookupProvider(Protocol):

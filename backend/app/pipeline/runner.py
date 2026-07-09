@@ -56,14 +56,13 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
         company.naam, company.adres, enrichment.website_url, gemeente=company.gemeente)
     _log(db, batch.id, company.id, "website_agent", "ok" if w_finding else "skipped", t0)
     t0 = time.monotonic()
-    # Sla jaarverslag-agent over als website-agent al een hoog-zekerheidsbevinding heeft.
-    # Dit bespaart 1-2 extra LLM-calls per bedrijf (kostenoptimalisatie).
-    if w_finding and getattr(w_finding, "zekerheid", None) == "hoog":
-        j_finding = None
-        _log(db, batch.id, company.id, "jaarverslag_agent", "skipped", t0)
-    else:
-        j_finding = await jaarverslag_agent.run(company.naam, batch.jaar)
-        _log(db, batch.id, company.id, "jaarverslag_agent", "ok" if j_finding else "skipped", t0)
+    # Jaarverslag-agent draait altijd mee, ook bij een hoog-zekerheidsbevinding van de
+    # website-agent: reviewers willen zoveel mogelijk relevante bronnen kunnen vergelijken
+    # (human-in-the-loop), en een tweede bron dient tevens als tegencheck op de website-
+    # extractie (voorheen kon een verkeerd geclassificeerde "hoog"-bevinding hierdoor
+    # ongecontroleerd blijven staan).
+    j_finding = await jaarverslag_agent.run(company.naam, batch.jaar)
+    _log(db, batch.id, company.id, "jaarverslag_agent", "ok" if j_finding else "skipped", t0)
 
     agent_result_ids = {}
     for finding in (w_finding, j_finding):
@@ -81,7 +80,7 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
             detachering=finding.detachering, wsw=finding.wsw,
             man=finding.man, vrouw=finding.vrouw,
             voltijd=finding.voltijd, deeltijd=finding.deeltijd,
-            pct_op_locatie=finding.pct_op_locatie,
+            pct_op_locatie=finding.pct_op_locatie, bron_pagina=finding.bron_pagina,
         )
         db.add(ar)
         db.flush()
