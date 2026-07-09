@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     openai_model_extraction: str = ""          # leeg = fallback naar openai_model
     jaarverslag_web_fallback: bool = False     # Fase C fallback: extra OpenAI-call als PDF mislukt
     max_website_pages: int = 3                 # max pagina's per bedrijf voor website-agent (kostenbeheersing)
+    extra_bronnen_aantal: int = 2               # extra publieke media-bronnen naast website/jaarverslag (human-in-the-loop; 0 = uit)
     playwright_enabled: bool = False  # zet op true in Railway nadat Chromium getest is
     frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174"
     frontend_url: str = "http://localhost:5173"  # publieke URL voor chat-links in emails

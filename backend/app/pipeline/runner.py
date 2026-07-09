@@ -64,13 +64,24 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
     j_finding = await jaarverslag_agent.run(company.naam, batch.jaar)
     _log(db, batch.id, company.id, "jaarverslag_agent", "ok" if j_finding else "skipped", t0)
 
+    # Extra publieke bronnen (LinkedIn, KvK-vermeldingen, nieuws, etc.) — ook voor kleine
+    # bedrijven zonder jaarverslag. Puur human-in-the-loop-keuzemateriaal; telt niet mee
+    # in reconciliatie/confidence-score.
+    t0 = time.monotonic()
+    uitgesloten_urls = {f.bron_url for f in (w_finding, j_finding) if f and f.bron_url}
+    extra_findings = await website_agent.extra_bronnen(company.naam, company.gemeente, uitgesloten_urls)
+    _log(db, batch.id, company.id, "extra_bronnen",
+         "ok" if extra_findings else "skipped", t0)
+
     agent_result_ids = {}
-    for finding in (w_finding, j_finding):
+    for finding in (w_finding, j_finding, *extra_findings):
         if finding is None:
             continue
+        is_extra = finding in extra_findings
         ar = AgentResult(
             company_id=company.id, batch_id=batch.id,
-            agent_type="website" if finding.bron_type in ("website", "media") else "jaarverslag",
+            agent_type="extra_bron" if is_extra
+            else "website" if finding.bron_type in ("website", "media") else "jaarverslag",
             wp_gevonden=finding.wp_gevonden, wp_context=finding.context,
             is_limburg_specifiek=finding.is_limburg_specifiek, is_fte=finding.is_fte,
             peilmoment=finding.peilmoment, bron_url=finding.bron_url,

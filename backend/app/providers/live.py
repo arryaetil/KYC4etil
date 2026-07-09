@@ -588,12 +588,41 @@ def _baseline_jaarverslag_finding(pdf_url: str) -> AgentFinding:
     )
 
 
-async def _extract_wp_from_search_results(
-    naam: str, gemeente: str | None, results: list[dict[str, str]], bron_type: str = "media"
-) -> AgentFinding | None:
+def _finding_van_zoekresultaat(naam: str, data: dict, result: dict, bron_type: str) -> AgentFinding:
+    return AgentFinding(
+        wp_gevonden=int(data["wp_gevonden"]),
+        context=data.get("context"),
+        zekerheid=data.get("zekerheid", "laag"),
+        reden=data.get("reden"),
+        bron_url=result["url"],
+        bron_type=bron_type,
+        is_totaal_meerdere_vestigingen=data.get("is_totaal_meerdere_vestigingen", False),
+        is_limburg_specifiek=data.get("is_limburg_specifiek"),
+        is_fte=data.get("is_fte", False),
+        peilmoment=data.get("peilmoment"),
+        eigen_personeel=data.get("eigen_personeel"), uitzend=data.get("uitzend"),
+        detachering=data.get("detachering"), wsw=data.get("wsw"),
+        man=data.get("man"), vrouw=data.get("vrouw"),
+        voltijd=data.get("voltijd"), deeltijd=data.get("deeltijd"),
+        pct_op_locatie=_pct_op_locatie_fractie(data.get("pct_op_locatie")),
+        raw={**data, "research_source": result.get("bron", "duckduckgo"), "search_result": result},
+    )
+
+
+async def _extract_wp_van_zoekresultaten(
+    naam: str, gemeente: str | None, results: list[dict[str, str]],
+    bron_type: str = "media", max_bronnen: int = 1,
+) -> list[AgentFinding]:
+    """Doorloopt zoekresultaten en extraheert WP-bevindingen; stopt zodra
+    max_bronnen gevonden is (max_bronnen=1 repliceert het oude 'stop bij eerste
+    hit'-gedrag, hogere waarden verzamelen meerdere bronnen voor het
+    human-in-the-loop-overzicht)."""
     if not settings.openai_api_key:
-        return None
-    for result in results[:3]:
+        return []
+    bevindingen: list[AgentFinding] = []
+    for result in results:
+        if len(bevindingen) >= max_bronnen:
+            break
         try:
             tekst = await _fetch_text(result["url"])
         except Exception:
@@ -601,25 +630,35 @@ async def _extract_wp_from_search_results(
         data = await _llm_extract(naam, gemeente, tekst)
         if not data or not data.get("wp_gevonden"):
             continue
-        return AgentFinding(
-            wp_gevonden=int(data["wp_gevonden"]),
-            context=data.get("context"),
-            zekerheid=data.get("zekerheid", "laag"),
-            reden=data.get("reden"),
-            bron_url=result["url"],
-            bron_type=bron_type,
-            is_totaal_meerdere_vestigingen=data.get("is_totaal_meerdere_vestigingen", False),
-            is_limburg_specifiek=data.get("is_limburg_specifiek"),
-            is_fte=data.get("is_fte", False),
-            peilmoment=data.get("peilmoment"),
-            eigen_personeel=data.get("eigen_personeel"), uitzend=data.get("uitzend"),
-            detachering=data.get("detachering"), wsw=data.get("wsw"),
-            man=data.get("man"), vrouw=data.get("vrouw"),
-            voltijd=data.get("voltijd"), deeltijd=data.get("deeltijd"),
-            pct_op_locatie=_pct_op_locatie_fractie(data.get("pct_op_locatie")),
-            raw={**data, "research_source": result.get("bron", "duckduckgo"), "search_result": result},
-        )
-    return None
+        bevindingen.append(_finding_van_zoekresultaat(naam, data, result, bron_type))
+    return bevindingen
+
+
+async def _extract_wp_from_search_results(
+    naam: str, gemeente: str | None, results: list[dict[str, str]], bron_type: str = "media"
+) -> AgentFinding | None:
+    bevindingen = await _extract_wp_van_zoekresultaten(naam, gemeente, results[:3], bron_type, max_bronnen=1)
+    return bevindingen[0] if bevindingen else None
+
+
+async def verzamel_extra_media_bronnen(
+    naam: str, gemeente: str | None, uitsluiten: set[str] | None = None,
+) -> list[AgentFinding]:
+    """Verzamelt tot settings.extra_bronnen_aantal aanvullende publieke bronnen
+    (LinkedIn, KvK-vermeldingen, nieuwsartikelen, etc.) naast website/jaarverslag —
+    ook voor kleine bedrijven zonder jaarverslag. Telt niet mee in de reconciliatie/
+    confidence-score; dient puur als extra keuzemateriaal voor de reviewer."""
+    if settings.extra_bronnen_aantal <= 0:
+        return []
+    results = await _web_search(
+        f"{naam} {gemeente or ''} medewerkers werknemers personeel headcount".strip(),
+        max_results=settings.extra_bronnen_aantal + 3,
+    )
+    uitsluiten = uitsluiten or set()
+    results = [r for r in results if r["url"] not in uitsluiten]
+    return await _extract_wp_van_zoekresultaten(
+        naam, gemeente, results, bron_type="media", max_bronnen=settings.extra_bronnen_aantal,
+    )
 
 
 def _build_website_research_graph():
@@ -783,6 +822,10 @@ class LiveWebsiteAgent:
     async def run(self, naam: str, adres: str | None, website_url: str | None,
                   gemeente: str | None = None) -> AgentFinding | None:
         return await _run_website_research_graph(naam, adres, website_url, gemeente)
+
+    async def extra_bronnen(self, naam: str, gemeente: str | None,
+                            uitsluiten: set[str] | None = None) -> list[AgentFinding]:
+        return await verzamel_extra_media_bronnen(naam, gemeente, uitsluiten)
 
 
 async def _web_search_jaarverslag_wp(naam: str, jaar: int) -> AgentFinding | None:

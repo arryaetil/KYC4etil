@@ -113,6 +113,7 @@ async def test_verwerk_company_slaat_uitsplitsing_op_van_jaarverslag_agent():
 
     mock_website = MagicMock()
     mock_website.run = AsyncMock(return_value=None)
+    mock_website.extra_bronnen = AsyncMock(return_value=[])
 
     mock_jaarverslag = MagicMock()
     mock_jaarverslag.run = AsyncMock(return_value=j_finding)

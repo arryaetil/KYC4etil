@@ -53,6 +53,8 @@ class LookupProvider(Protocol):
 class WebsiteAgent(Protocol):
     async def run(self, naam: str, adres: str | None, website_url: str | None,
                   gemeente: str | None = None) -> AgentFinding | None: ...
+    async def extra_bronnen(self, naam: str, gemeente: str | None,
+                            uitsluiten: set[str] | None = None) -> list[AgentFinding]: ...
 
 
 class JaarverslagAgent(Protocol):

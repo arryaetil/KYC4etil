@@ -155,6 +155,69 @@ async def test_openai_extract_parseert_wp_uitsplitsing(monkeypatch):
     assert result["pct_op_locatie"] == 90
 
 
+@pytest.mark.asyncio
+async def test_verzamel_extra_media_bronnen_verzamelt_meerdere(monkeypatch):
+    zoekresultaten = [
+        {"title": "LinkedIn", "url": "https://linkedin.com/company/testbedrijf", "snippet": "", "bron": "serper"},
+        {"title": "KvK", "url": "https://kvk.nl/testbedrijf", "snippet": "", "bron": "serper"},
+        {"title": "Nieuws", "url": "https://nieuws.test/testbedrijf", "snippet": "", "bron": "serper"},
+    ]
+
+    async def fake_web_search(query, max_results=5):
+        return zoekresultaten
+
+    teksten = {
+        "https://linkedin.com/company/testbedrijf": "50 medewerkers volgens LinkedIn.",
+        "https://kvk.nl/testbedrijf": "geen relevante informatie",
+        "https://nieuws.test/testbedrijf": "60 medewerkers meldt het nieuwsartikel.",
+    }
+
+    async def fake_fetch_text(url):
+        return teksten[url]
+
+    async def fake_llm_extract(naam, gemeente, tekst):
+        if "50 medewerkers" in tekst:
+            return {"wp_gevonden": 50, "context": tekst, "zekerheid": "middel"}
+        if "60 medewerkers" in tekst:
+            return {"wp_gevonden": 60, "context": tekst, "zekerheid": "laag"}
+        return {"wp_gevonden": None}
+
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "extra_bronnen_aantal", 2)
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(live, "_llm_extract", fake_llm_extract)
+
+    resultaat = await live.verzamel_extra_media_bronnen("Testbedrijf", "Maastricht")
+
+    assert len(resultaat) == 2
+    assert {r.wp_gevonden for r in resultaat} == {50, 60}
+    assert all(r.bron_type == "media" for r in resultaat)
+
+
+@pytest.mark.asyncio
+async def test_verzamel_extra_media_bronnen_sluit_bekende_urls_uit(monkeypatch):
+    async def fake_web_search(query, max_results=5):
+        return [{"title": "Website", "url": "https://example.test", "snippet": "", "bron": "serper"}]
+
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "extra_bronnen_aantal", 2)
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+
+    resultaat = await live.verzamel_extra_media_bronnen(
+        "Testbedrijf", "Maastricht", uitsluiten={"https://example.test"},
+    )
+
+    assert resultaat == []
+
+
+@pytest.mark.asyncio
+async def test_verzamel_extra_media_bronnen_uit_via_config(monkeypatch):
+    monkeypatch.setattr(live.settings, "extra_bronnen_aantal", 0)
+    resultaat = await live.verzamel_extra_media_bronnen("Testbedrijf", "Maastricht")
+    assert resultaat == []
+
+
 def test_vind_paginanummer_vindt_juiste_pagina():
     pagina_teksten = [
         (1, "Voorwoord van de directie."),

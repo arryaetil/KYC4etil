@@ -73,6 +73,9 @@ class _WebsiteAgent:
             peilmoment="2026",
         )
 
+    async def extra_bronnen(self, naam, gemeente, uitsluiten=None):
+        return []
+
 
 class _JaarverslagAgent:
     async def run(self, naam, jaar):

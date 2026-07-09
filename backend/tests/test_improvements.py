@@ -164,6 +164,7 @@ async def test_runner_draait_agents_ook_bij_lookup_failed():
 
     mock_website = MagicMock()
     mock_website.run = AsyncMock(return_value=wp_finding)  # agent vindt wél iets
+    mock_website.extra_bronnen = AsyncMock(return_value=[])
 
     mock_jaarverslag = MagicMock()
     mock_jaarverslag.run = AsyncMock(return_value=None)
@@ -218,6 +219,7 @@ async def test_runner_slaat_jaarverslag_agent_niet_over_bij_hoog_zekerheid():
 
     mock_website = MagicMock()
     mock_website.run = AsyncMock(return_value=hoog_finding)
+    mock_website.extra_bronnen = AsyncMock(return_value=[])
 
     mock_jaarverslag = MagicMock()
     mock_jaarverslag.run = AsyncMock(return_value=None)

@@ -58,6 +58,10 @@ class MockWebsiteAgent:
             peilmoment=finding.get("peilmoment"),
         )
 
+    async def extra_bronnen(self, naam: str, gemeente: str | None,
+                            uitsluiten: set[str] | None = None) -> list[AgentFinding]:
+        return []  # mock-modus blijft deterministisch voor de testset
+
 
 class MockJaarverslagAgent:
     def __init__(self):
