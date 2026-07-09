@@ -9,7 +9,8 @@ from ..models import (AgentResult, Batch, CallListItem, Candidate, Company,
                       Enrichment, PipelineRun)
 from ..providers import get_providers
 from .confidence import bereken_confidence
-from .reconcile import Strategie, bepaal_strategie, reconcilieer
+from .reconcile import (Strategie, bepaal_strategie, reconcilieer,
+                        signaleer_afwijkende_extra_bronnen)
 
 
 def _now():
@@ -102,6 +103,7 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
 
     # STAP 3 — reconciliatie
     rec = reconcilieer(w_finding, j_finding, loc.count_nl, loc.count_lb)
+    reviewer_signaal = signaleer_afwijkende_extra_bronnen(rec.wp_kandidaat, extra_findings)
 
     # STAP 4 — confidence
     if rec.finding is not None:
@@ -125,6 +127,7 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
             reconciliatie_reden=rec.reden,
             confidence_score=score.score, confidence_label=label,
             score_breakdown=score.breakdown, strategie=definitieve_strategie.value,
+            reviewer_signaal=reviewer_signaal,
         )
     else:
         candidate = Candidate(

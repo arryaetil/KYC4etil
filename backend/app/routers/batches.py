@@ -323,7 +323,8 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
             "confidence_score": cand.confidence_score,
             "confidence_label": cand.confidence_label,
             "score_breakdown": cand.score_breakdown,
-            "strategie": cand.strategie, "status": cand.status},
+            "strategie": cand.strategie, "status": cand.status,
+            "reviewer_signaal": cand.reviewer_signaal},
         "vorig_jaar": vorige,
         "wp_historie": [{
             "wp_jaar": r.wp_jaar, "wp_waarde": r.wp_waarde,

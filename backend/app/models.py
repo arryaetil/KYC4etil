@@ -131,6 +131,7 @@ class Candidate(Base):
     score_breakdown: Mapped[dict | None] = mapped_column(JSON)
     strategie: Mapped[str | None] = mapped_column(String(30))
     status: Mapped[str] = mapped_column(String(30), default="pending")  # pending|approved|corrected|to_chat|to_call
+    reviewer_signaal: Mapped[str | None] = mapped_column(Text)  # actiegerichte melding, geen scoreverandering
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     company: Mapped[Company] = relationship(back_populates="candidate")

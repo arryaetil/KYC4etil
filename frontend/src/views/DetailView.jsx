@@ -40,6 +40,12 @@ export function DetailView({api, user, onLogout, batchId, companyId, openBatch})
       {detail ? (
         <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
           <section className="space-y-5">
+            {candidate?.reviewer_signaal ? (
+              <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+                <span>{candidate.reviewer_signaal}</span>
+              </div>
+            ) : null}
             <VestigingsgegevensKaart
               company={detail.company}
               enrichment={detail.enrichment}

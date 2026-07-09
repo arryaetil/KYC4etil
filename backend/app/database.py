@@ -80,6 +80,11 @@ def ensure_lightweight_migrations() -> None:
             ]:
                 _add_column_if_missing(conn, "agent_results", existing_ar, name, ddl_type)
 
+    if "candidates" in tables:
+        existing_cand = {col["name"] for col in inspector.get_columns("candidates")}
+        with engine.begin() as conn:
+            _add_column_if_missing(conn, "candidates", existing_cand, "reviewer_signaal", "TEXT")
+
     if "chat_sessions" in tables:
         existing_cs = {col["name"] for col in inspector.get_columns("chat_sessions")}
         with engine.begin() as conn:

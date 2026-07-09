@@ -210,3 +210,29 @@ def reconcilieer(
                                       f"en aantal vestigingen onbekend — niet herleidbaar naar deze locatie")
     return ReconciliatieResultaat(bron, bron.wp_gevonden, False, 0.0, 1, False,
                                   f"enige bron: {bron.bron_type}")
+
+
+def signaleer_afwijkende_extra_bronnen(
+    wp_kandidaat: int | None, extra_bronnen: list[AgentFinding], drempel: float = 0.20,
+) -> str | None:
+    """Zuiver informatief signaal voor de reviewer — verandert NOOIT de confidence-
+    score of het label. Extra bronnen kunnen immers een andere, gelijknamige entiteit
+    betreffen (bv. 'Huisartsenpraktijk Centrum X' vs 'Huisartsenpraktijk X') zonder dat
+    de gekozen kandidaat daarmee fout is; dat verifiëren hoort bij de reviewer, niet bij
+    een automatische score-aanpassing."""
+    if not wp_kandidaat or not extra_bronnen:
+        return None
+    afwijkend = [
+        (bron, abs(bron.wp_gevonden - wp_kandidaat) / max(bron.wp_gevonden, wp_kandidaat))
+        for bron in extra_bronnen
+        if bron.wp_gevonden and abs(bron.wp_gevonden - wp_kandidaat) / max(bron.wp_gevonden, wp_kandidaat) > drempel
+    ]
+    if not afwijkend:
+        return None
+    details = "; ".join(f"{bron.bron_url} noemt {bron.wp_gevonden} ({verschil:.0%} afwijking)"
+                        for bron, verschil in afwijkend)
+    return (
+        f"Let op: extra bron(nen) wijken sterk af van de gekozen kandidaat ({wp_kandidaat}): {details}. "
+        "Controleer adres/telefoonnummer voordat je goedkeurt — dit kan een gelijknamige "
+        "maar andere vestiging/entiteit betreffen."
+    )

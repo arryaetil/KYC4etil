@@ -3,7 +3,8 @@ import pytest
 
 from app.pipeline.confidence import bereken_confidence
 from app.pipeline.reconcile import (Strategie, bepaal_strategie,
-                                    proportionele_schatting, reconcilieer)
+                                    proportionele_schatting, reconcilieer,
+                                    signaleer_afwijkende_extra_bronnen)
 from app.providers.base import AgentFinding
 
 
@@ -184,3 +185,23 @@ def test_confidence_fte_penalty():
 def test_confidence_breakdown_aanwezig():
     s = bereken_confidence(finding(), **kwargs())
     assert set(s.breakdown) >= {"zekerheid_llm", "base_score", "penalties", "bonuses"}
+
+
+# --- reviewer-signaal (informatief, verandert nooit de score) ---
+
+def test_signaal_geeft_niets_bij_geen_afwijkende_bronnen():
+    extra = [finding(wp=21, url="https://a"), finding(wp=20, url="https://b")]
+    assert signaleer_afwijkende_extra_bronnen(21, extra) is None
+
+
+def test_signaal_markeert_sterk_afwijkende_bron():
+    extra = [finding(wp=13, url="https://andere-praktijk.test")]
+    signaal = signaleer_afwijkende_extra_bronnen(21, extra)
+    assert signaal is not None
+    assert "andere-praktijk.test" in signaal
+    assert "13" in signaal
+
+
+def test_signaal_geeft_niets_zonder_kandidaat_of_extra_bronnen():
+    assert signaleer_afwijkende_extra_bronnen(None, [finding(wp=13)]) is None
+    assert signaleer_afwijkende_extra_bronnen(21, []) is None
