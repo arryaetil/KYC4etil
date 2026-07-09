@@ -306,12 +306,15 @@ async def _web_search_wp(naam: str, gemeente: str | None) -> AgentFinding | None
     return await _extract_wp_from_search_results(naam, gemeente, results)
 
 
-async def _zoek_jaarverslag_pdf(naam: str, jaar: int, website_url: str | None = None) -> str | None:
+async def _zoek_jaarverslag_pdf(
+    naam: str, jaar: int, website_url: str | None = None, uitgesloten: set[str] | None = None,
+) -> str | None:
     """Zoek jaarverslag-PDF: probeer eerst het huidige jaar, daarna jaar-1 als fallback.
     Sommige organisaties publiceren het verslag al in het lopende jaar (bijv. bestuursverslag 2025)."""
     # Probeer huidig jaar eerst, daarna jaar-1
     for zoekjaar in (jaar, jaar - 1):
-        result = await _zoek_jaarverslag_pdf_voor_jaar(naam, zoekjaar, website_url=website_url)
+        result = await _zoek_jaarverslag_pdf_voor_jaar(
+            naam, zoekjaar, website_url=website_url, uitgesloten=uitgesloten)
         if result:
             return result
     return None
@@ -396,6 +399,7 @@ async def _valideer_jaarverslag_bron(naam: str, pdf_url: str | None) -> bool:
 
 async def _zoek_jaarverslag_pdf_voor_jaar(
     naam: str, zoekjaar: int, website_url: str | None = None,
+    uitgesloten: set[str] | None = None,
 ) -> str | None:
     """Tweestaps: zoek eerst jaarverslag-pagina (HTML) via web search, scrape daarna PDF-link.
     Web search geeft HTML-pagina's veel betrouwbaarder terug dan directe .pdf URLs.
@@ -403,14 +407,18 @@ async def _zoek_jaarverslag_pdf_voor_jaar(
     Zoekt eerst site:-scoped binnen het eigen domein (indien bekend) — dat is veel
     minder gevoelig voor niet-determinisme dan een open zoekopdracht: het echte
     jaarverslag staat vrijwel altijd op de eigen website, en site:-scoping voorkomt
-    dat een open zoekopdracht toevallig een ander (vaak fout) document oppikt."""
+    dat een open zoekopdracht toevallig een ander (vaak fout) document oppikt.
+
+    uitgesloten bevat PDF-URL's die al geprobeerd/afgewezen zijn (bv. door de
+    identiteitscheck) — die worden overgeslagen zodat een retry een ANDER
+    resultaat kan proberen in plaats van dezelfde foute bron opnieuw te vinden."""
     domein = _domein_van_url(website_url)
     if domein:
         site_results = await _web_search(
             f"site:{domein} jaarverslag {zoekjaar} bestuursverslag jaarverantwoording",
             max_results=5,
         )
-        gevonden = await _eerste_pdf_uit_resultaten(site_results, zoekjaar)
+        gevonden = await _eerste_pdf_uit_resultaten(site_results, zoekjaar, uitgesloten)
         if gevonden:
             return gevonden
 
@@ -418,16 +426,21 @@ async def _zoek_jaarverslag_pdf_voor_jaar(
         f"{naam} jaarverslag {zoekjaar} bestuursverslag annual report download pdf",
         max_results=8,
     )
-    return await _eerste_pdf_uit_resultaten(results, zoekjaar)
+    return await _eerste_pdf_uit_resultaten(results, zoekjaar, uitgesloten)
 
 
-async def _eerste_pdf_uit_resultaten(results: list[dict[str, str]], zoekjaar: int) -> str | None:
+async def _eerste_pdf_uit_resultaten(
+    results: list[dict[str, str]], zoekjaar: int, uitgesloten: set[str] | None = None,
+) -> str | None:
+    uitgesloten = uitgesloten or set()
     for result in results:
         url = result["url"]
+        if url in uitgesloten:
+            continue
         if ".pdf" in url.lower():
             return url
         pdf_from_page = await _scrape_pdf_van_pagina(url, zoekjaar)
-        if pdf_from_page:
+        if pdf_from_page and pdf_from_page not in uitgesloten:
             return pdf_from_page
     return None
 
@@ -702,6 +715,9 @@ class JaarverslagResearchState(TypedDict, total=False):
     jaar: int
     website_url: str | None
     pdf_url: str | None
+    laatste_pdf_url: str | None
+    afgewezen_urls: set[str]
+    pogingen: int
     source_identity_class: str | None
     finding: AgentFinding | None
 
@@ -855,21 +871,36 @@ async def _run_website_research_graph(
 def _build_jaarverslag_research_graph():
     from langgraph.graph import END, StateGraph
 
-    async def find_pdf(state: JaarverslagResearchState) -> dict[str, str | None]:
-        return {"pdf_url": await _zoek_jaarverslag_pdf(
-            state["naam"], state["jaar"], website_url=state.get("website_url"))}
+    async def find_pdf(state: JaarverslagResearchState) -> dict:
+        afgewezen = state.get("afgewezen_urls") or set()
+        pdf_url = await _zoek_jaarverslag_pdf(
+            state["naam"], state["jaar"], website_url=state.get("website_url"),
+            uitgesloten=afgewezen,
+        )
+        return {
+            "pdf_url": pdf_url,
+            "laatste_pdf_url": pdf_url or state.get("laatste_pdf_url"),
+            "pogingen": state.get("pogingen", 0) + 1,
+        }
 
-    async def valideer_bron(state: JaarverslagResearchState) -> dict[str, str | None]:
+    async def valideer_bron(state: JaarverslagResearchState) -> dict:
         pdf_url = state.get("pdf_url")
         identity = await _classificeer_jaarverslag_bron_identiteit(state["naam"], pdf_url)
         if pdf_url and identity != IdentityClass.MISMATCH:
             return {"pdf_url": pdf_url, "source_identity_class": identity.value}
-        return {"pdf_url": None, "source_identity_class": identity.value}
+        # Afgewezen (verkeerd bedrijf): uitsluiten zodat een retry een ANDER
+        # zoekresultaat probeert i.p.v. dezelfde foute bron opnieuw te vinden.
+        afgewezen = set(state.get("afgewezen_urls") or set())
+        if pdf_url:
+            afgewezen.add(pdf_url)
+        return {"pdf_url": None, "source_identity_class": identity.value, "afgewezen_urls": afgewezen}
 
-    async def extract_pdf(state: JaarverslagResearchState) -> dict[str, AgentFinding | None]:
+    async def extract_pdf(state: JaarverslagResearchState) -> dict:
         pdf_url = state.get("pdf_url")
         if not pdf_url:
             return {"finding": None}
+        afgewezen = set(state.get("afgewezen_urls") or set())
+        afgewezen.add(pdf_url)  # bij een retry niet nogmaals dezelfde (mogelijk lege) bron proberen
         try:
             finding = await LiveJaarverslagAgent().run_with_pdf(state["naam"], pdf_url)
             if finding:
@@ -877,16 +908,19 @@ def _build_jaarverslag_research_graph():
                     **(finding.raw or {}),
                     "identity_class": state.get("source_identity_class") or IdentityClass.UNKNOWN.value,
                 }
-            return {"finding": finding}
+            return {"finding": finding, "afgewezen_urls": afgewezen}
         except Exception:
-            return {"finding": None}
+            return {"finding": None, "afgewezen_urls": afgewezen}
 
-    async def web_search_fallback(state: JaarverslagResearchState) -> dict[str, AgentFinding | None]:
+    async def web_search_fallback(state: JaarverslagResearchState) -> dict:
         return {"finding": await _web_search_jaarverslag_wp(state["naam"], state["jaar"])}
 
-    async def baseline_source(state: JaarverslagResearchState) -> dict[str, AgentFinding | None]:
-        pdf_url = state.get("pdf_url")
+    async def baseline_source(state: JaarverslagResearchState) -> dict:
+        pdf_url = state.get("laatste_pdf_url")
         return {"finding": _baseline_jaarverslag_finding(pdf_url) if pdf_url else None}
+
+    def mag_opnieuw(state: JaarverslagResearchState) -> bool:
+        return state.get("pogingen", 0) < settings.jaarverslag_max_pogingen
 
     def after_find_pdf(state: JaarverslagResearchState) -> str:
         if state.get("pdf_url"):
@@ -896,11 +930,19 @@ def _build_jaarverslag_research_graph():
     def after_valideer_bron(state: JaarverslagResearchState) -> str:
         if state.get("pdf_url"):
             return "extract_pdf"
+        # Afgewezen bron: probeer een ANDER zoekresultaat i.p.v. meteen op te geven
+        # (dit was letterlijk het Mondriaan/Salon Handmade-scenario).
+        if mag_opnieuw(state):
+            return "find_pdf"
         return "web_search_fallback" if settings.jaarverslag_web_fallback else END
 
     def after_extract_pdf(state: JaarverslagResearchState) -> str:
         if state.get("finding"):
             return END
+        # Geldige bron, maar geen WP-getal erin (bv. een kwaliteitsverslag i.p.v. de
+        # jaarverantwoording) -> ook dit is retry-waardig, geen definitieve mislukking.
+        if mag_opnieuw(state):
+            return "find_pdf"
         return "web_search_fallback" if settings.jaarverslag_web_fallback else "baseline_source"
 
     def after_web_search(state: JaarverslagResearchState) -> str:
@@ -930,6 +972,9 @@ async def _run_jaarverslag_research_graph(
         "jaar": jaar,
         "website_url": website_url,
         "pdf_url": None,
+        "laatste_pdf_url": None,
+        "afgewezen_urls": set(),
+        "pogingen": 0,
         "source_identity_class": None,
         "finding": None,
     })

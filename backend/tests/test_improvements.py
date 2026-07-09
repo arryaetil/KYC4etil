@@ -81,7 +81,7 @@ async def test_live_jaarverslag_agent_zoekt_pdf_via_web_search():
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
         result = await agent.run("Mondriaan", 2025)
-    mock_zoek.assert_called_once_with("Mondriaan", 2025, website_url=None)
+    mock_zoek.assert_called_once_with("Mondriaan", 2025, website_url=None, uitgesloten=set())
     assert result is None  # PDF niet gevonden, Fase-C fallback ook None
 
 
@@ -127,6 +127,44 @@ async def test_live_jaarverslag_agent_keurt_pdf_van_ander_bedrijf_af():
 
     assert result is None
     mock_extract.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_live_jaarverslag_agent_probeert_opnieuw_na_afgewezen_bron():
+    """Als de eerste gevonden PDF wordt afgewezen (verkeerd bedrijf), moet de graaf
+    een ANDER zoekresultaat proberen i.p.v. meteen op te geven — dit was letterlijk
+    het Mondriaan/Salon Handmade-scenario in productie."""
+    from app.providers import live
+
+    zoek_calls = []
+
+    async def fake_zoek_pdf(naam, jaar, website_url=None, uitgesloten=None):
+        zoek_calls.append(set(uitgesloten or set()))
+        if not zoek_calls[-1]:
+            return "https://onverwant-bedrijf.test/jaarverslag.pdf"
+        return "https://echte-bron.test/jaarverslag.pdf"
+
+    async def fake_identiteit(naam, pdf_url):
+        if "onverwant-bedrijf" in (pdf_url or ""):
+            return IdentityClass.MISMATCH
+        return IdentityClass.EXACT_ENTITY
+
+    goede_finding = AgentFinding(
+        wp_gevonden=21, context="21 medewerkers", zekerheid="hoog",
+        reden="jaarverslag", bron_url="https://echte-bron.test/jaarverslag.pdf",
+        bron_type="jaarverslag",
+    )
+
+    with patch("app.providers.live._zoek_jaarverslag_pdf", new=fake_zoek_pdf), \
+         patch("app.providers.live._classificeer_jaarverslag_bron_identiteit", new=fake_identiteit), \
+         patch("app.providers.live.LiveJaarverslagAgent.run_with_pdf",
+               new=AsyncMock(return_value=goede_finding)):
+        result = await live.LiveJaarverslagAgent().run("Testbedrijf", 2025)
+
+    assert result is not None
+    assert result.bron_url == "https://echte-bron.test/jaarverslag.pdf"
+    assert len(zoek_calls) == 2  # eerste poging afgewezen, tweede poging geslaagd
+    assert "https://onverwant-bedrijf.test/jaarverslag.pdf" in zoek_calls[1]  # uitgesloten bij retry
 
 
 @pytest.mark.asyncio

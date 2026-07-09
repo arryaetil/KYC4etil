@@ -350,7 +350,7 @@ async def test_web_search_jaarverslag_wp_geeft_uitsplitsing_door(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_geeft_bron_url_door_als_pdf_gevonden_maar_geen_wp_geextraheerd(monkeypatch):
-    async def fake_zoek_pdf(naam, jaar, website_url=None):
+    async def fake_zoek_pdf(naam, jaar, website_url=None, uitgesloten=None):
         return "https://example.test/jaarverslag-2025.pdf"
 
     async def fake_run_with_pdf(self, naam, pdf_url):
@@ -370,7 +370,7 @@ async def test_run_geeft_bron_url_door_als_pdf_gevonden_maar_geen_wp_geextraheer
 
 @pytest.mark.asyncio
 async def test_run_geeft_none_als_geen_pdf_gevonden(monkeypatch):
-    async def fake_zoek_pdf(naam, jaar, website_url=None):
+    async def fake_zoek_pdf(naam, jaar, website_url=None, uitgesloten=None):
         return None
 
     monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek_pdf)
