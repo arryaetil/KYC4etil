@@ -67,7 +67,7 @@ class MockJaarverslagAgent:
     def __init__(self):
         self.data = _load()
 
-    async def run(self, naam: str, jaar: int) -> AgentFinding | None:
+    async def run(self, naam: str, jaar: int, website_url: str | None = None) -> AgentFinding | None:
         finding = self.data.get(naam, {}).get("jaarverslag")
         if not finding:
             return None

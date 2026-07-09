@@ -30,7 +30,8 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         status = JaarverslagMonitoring(company_id=company.id)
         db.add(status)
 
-    finding = await jaarverslag_agent.run(company.naam, jaar)
+    website_url = (company.enrichment.website_url if company.enrichment else None) or company.website_url
+    finding = await jaarverslag_agent.run(company.naam, jaar, website_url=website_url)
     status.laatst_gecontroleerd_op = _now()
 
     if finding is None or not finding.bron_url:

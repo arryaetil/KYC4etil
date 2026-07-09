@@ -81,7 +81,7 @@ async def test_live_jaarverslag_agent_zoekt_pdf_via_web_search():
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
         result = await agent.run("Mondriaan", 2025)
-    mock_zoek.assert_called_once_with("Mondriaan", 2025)
+    mock_zoek.assert_called_once_with("Mondriaan", 2025, website_url=None)
     assert result is None  # PDF niet gevonden, Fase-C fallback ook None
 
 

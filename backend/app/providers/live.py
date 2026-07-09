@@ -306,12 +306,12 @@ async def _web_search_wp(naam: str, gemeente: str | None) -> AgentFinding | None
     return await _extract_wp_from_search_results(naam, gemeente, results)
 
 
-async def _zoek_jaarverslag_pdf(naam: str, jaar: int) -> str | None:
+async def _zoek_jaarverslag_pdf(naam: str, jaar: int, website_url: str | None = None) -> str | None:
     """Zoek jaarverslag-PDF: probeer eerst het huidige jaar, daarna jaar-1 als fallback.
     Sommige organisaties publiceren het verslag al in het lopende jaar (bijv. bestuursverslag 2025)."""
     # Probeer huidig jaar eerst, daarna jaar-1
     for zoekjaar in (jaar, jaar - 1):
-        result = await _zoek_jaarverslag_pdf_voor_jaar(naam, zoekjaar)
+        result = await _zoek_jaarverslag_pdf_voor_jaar(naam, zoekjaar, website_url=website_url)
         if result:
             return result
     return None
@@ -394,13 +394,34 @@ async def _valideer_jaarverslag_bron(naam: str, pdf_url: str | None) -> bool:
     return identity != IdentityClass.MISMATCH
 
 
-async def _zoek_jaarverslag_pdf_voor_jaar(naam: str, zoekjaar: int) -> str | None:
+async def _zoek_jaarverslag_pdf_voor_jaar(
+    naam: str, zoekjaar: int, website_url: str | None = None,
+) -> str | None:
     """Tweestaps: zoek eerst jaarverslag-pagina (HTML) via web search, scrape daarna PDF-link.
-    Web search geeft HTML-pagina's veel betrouwbaarder terug dan directe .pdf URLs."""
+    Web search geeft HTML-pagina's veel betrouwbaarder terug dan directe .pdf URLs.
+
+    Zoekt eerst site:-scoped binnen het eigen domein (indien bekend) — dat is veel
+    minder gevoelig voor niet-determinisme dan een open zoekopdracht: het echte
+    jaarverslag staat vrijwel altijd op de eigen website, en site:-scoping voorkomt
+    dat een open zoekopdracht toevallig een ander (vaak fout) document oppikt."""
+    domein = _domein_van_url(website_url)
+    if domein:
+        site_results = await _web_search(
+            f"site:{domein} jaarverslag {zoekjaar} bestuursverslag jaarverantwoording",
+            max_results=5,
+        )
+        gevonden = await _eerste_pdf_uit_resultaten(site_results, zoekjaar)
+        if gevonden:
+            return gevonden
+
     results = await _web_search(
         f"{naam} jaarverslag {zoekjaar} bestuursverslag annual report download pdf",
         max_results=8,
     )
+    return await _eerste_pdf_uit_resultaten(results, zoekjaar)
+
+
+async def _eerste_pdf_uit_resultaten(results: list[dict[str, str]], zoekjaar: int) -> str | None:
     for result in results:
         url = result["url"]
         if ".pdf" in url.lower():
@@ -409,6 +430,14 @@ async def _zoek_jaarverslag_pdf_voor_jaar(naam: str, zoekjaar: int) -> str | Non
         if pdf_from_page:
             return pdf_from_page
     return None
+
+
+def _domein_van_url(website_url: str | None) -> str | None:
+    if not website_url:
+        return None
+    from urllib.parse import urlparse
+    netloc = urlparse(website_url).netloc
+    return netloc.removeprefix("www.") or None
 
 
 async def _scrape_pdf_van_pagina(pagina_url: str, jaar: int) -> str | None:
@@ -671,6 +700,7 @@ class WebsiteResearchState(TypedDict, total=False):
 class JaarverslagResearchState(TypedDict, total=False):
     naam: str
     jaar: int
+    website_url: str | None
     pdf_url: str | None
     source_identity_class: str | None
     finding: AgentFinding | None
@@ -826,7 +856,8 @@ def _build_jaarverslag_research_graph():
     from langgraph.graph import END, StateGraph
 
     async def find_pdf(state: JaarverslagResearchState) -> dict[str, str | None]:
-        return {"pdf_url": await _zoek_jaarverslag_pdf(state["naam"], state["jaar"])}
+        return {"pdf_url": await _zoek_jaarverslag_pdf(
+            state["naam"], state["jaar"], website_url=state.get("website_url"))}
 
     async def valideer_bron(state: JaarverslagResearchState) -> dict[str, str | None]:
         pdf_url = state.get("pdf_url")
@@ -890,11 +921,14 @@ def _build_jaarverslag_research_graph():
     return graph.compile()
 
 
-async def _run_jaarverslag_research_graph(naam: str, jaar: int) -> AgentFinding | None:
+async def _run_jaarverslag_research_graph(
+    naam: str, jaar: int, website_url: str | None = None,
+) -> AgentFinding | None:
     graph = _build_jaarverslag_research_graph()
     result = await graph.ainvoke({
         "naam": naam,
         "jaar": jaar,
+        "website_url": website_url,
         "pdf_url": None,
         "source_identity_class": None,
         "finding": None,
@@ -978,15 +1012,19 @@ async def _web_search_jaarverslag_wp(naam: str, jaar: int) -> AgentFinding | Non
 
 
 class LiveJaarverslagAgent:
-    async def run(self, naam: str, jaar: int) -> AgentFinding | None:
+    async def run(self, naam: str, jaar: int, website_url: str | None = None) -> AgentFinding | None:
         """Fase A: zoek jaarverslag-PDF via web search; Fase B: extraheer WP uit PDF.
         Fase C (optioneel): directe WP-zoekopdracht op jaarverslagdata als PDF-pad mislukt.
         Fase C is standaard uitgeschakeld (JAARVERSLAG_WEB_FALLBACK=false) voor kostenbeheersing.
         Vindt Fase A wel een PDF maar levert geen van beide paden een WP-getal op, dan
         wordt de gevonden bron_url alsnog teruggegeven (zonder wp_gevonden) zodat de
         jaarverslag-monitoring een baseline-URL heeft om toekomstige wijzigingen aan te
-        toetsen — anders gaat een gevonden jaarverslag-link onnodig verloren."""
-        return await _run_jaarverslag_research_graph(naam, jaar)
+        toetsen — anders gaat een gevonden jaarverslag-link onnodig verloren.
+
+        website_url wordt, indien bekend, gebruikt om de PDF-zoekopdracht eerst binnen
+        het eigen domein te laten zoeken (site:-scoped) — dat is veel minder gevoelig
+        voor niet-determinisme/mismatches dan een open zoekopdracht op alleen de naam."""
+        return await _run_jaarverslag_research_graph(naam, jaar, website_url=website_url)
 
     async def run_with_pdf(self, naam: str, pdf_url: str) -> AgentFinding | None:
         import fitz  # PyMuPDF

@@ -218,6 +218,64 @@ async def test_verzamel_extra_media_bronnen_uit_via_config(monkeypatch):
     assert resultaat == []
 
 
+@pytest.mark.asyncio
+async def test_zoek_jaarverslag_pdf_probeert_eerst_site_scoped_zoekopdracht(monkeypatch):
+    """Bij een bekend domein moet eerst site:-scoped gezocht worden — dat is veel
+    minder gevoelig voor niet-determinisme dan een open zoekopdracht op alleen de naam
+    (zie Mondriaan-casus: open zoeken vond soms een onverwant kwaliteitsverslag)."""
+    gedane_queries = []
+
+    async def fake_web_search(query, max_results=8):
+        gedane_queries.append(query)
+        if query.startswith("site:mondriaan.eu"):
+            return [{"title": "Jaarverantwoording", "url": "https://mondriaan.eu/jaarverantwoording-2026.pdf",
+                      "snippet": "", "bron": "serper"}]
+        return [{"title": "Kwaliteitsverslag (fout document)", "url": "https://mondriaan.eu/kwaliteitsverslag.pdf",
+                  "snippet": "", "bron": "serper"}]
+
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+
+    resultaat = await live._zoek_jaarverslag_pdf_voor_jaar(
+        "Mondriaan", 2026, website_url="https://www.mondriaan.eu/",
+    )
+
+    assert resultaat == "https://mondriaan.eu/jaarverantwoording-2026.pdf"
+    assert gedane_queries[0].startswith("site:mondriaan.eu")
+
+
+@pytest.mark.asyncio
+async def test_zoek_jaarverslag_pdf_valt_terug_op_open_zoekopdracht_zonder_domein_resultaat(monkeypatch):
+    async def fake_web_search(query, max_results=8):
+        if query.startswith("site:"):
+            return []
+        return [{"title": "Jaarverslag", "url": "https://example.test/jaarverslag.pdf",
+                  "snippet": "", "bron": "serper"}]
+
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+
+    resultaat = await live._zoek_jaarverslag_pdf_voor_jaar(
+        "Testbedrijf", 2026, website_url="https://www.example.test/",
+    )
+
+    assert resultaat == "https://example.test/jaarverslag.pdf"
+
+
+@pytest.mark.asyncio
+async def test_zoek_jaarverslag_pdf_zonder_bekend_domein_zoekt_alleen_open(monkeypatch):
+    gedane_queries = []
+
+    async def fake_web_search(query, max_results=8):
+        gedane_queries.append(query)
+        return []
+
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+
+    await live._zoek_jaarverslag_pdf_voor_jaar("Testbedrijf", 2026, website_url=None)
+
+    assert len(gedane_queries) == 1
+    assert not gedane_queries[0].startswith("site:")
+
+
 def test_vind_paginanummer_vindt_juiste_pagina():
     pagina_teksten = [
         (1, "Voorwoord van de directie."),
@@ -292,7 +350,7 @@ async def test_web_search_jaarverslag_wp_geeft_uitsplitsing_door(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_geeft_bron_url_door_als_pdf_gevonden_maar_geen_wp_geextraheerd(monkeypatch):
-    async def fake_zoek_pdf(naam, jaar):
+    async def fake_zoek_pdf(naam, jaar, website_url=None):
         return "https://example.test/jaarverslag-2025.pdf"
 
     async def fake_run_with_pdf(self, naam, pdf_url):
@@ -312,7 +370,7 @@ async def test_run_geeft_bron_url_door_als_pdf_gevonden_maar_geen_wp_geextraheer
 
 @pytest.mark.asyncio
 async def test_run_geeft_none_als_geen_pdf_gevonden(monkeypatch):
-    async def fake_zoek_pdf(naam, jaar):
+    async def fake_zoek_pdf(naam, jaar, website_url=None):
         return None
 
     monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek_pdf)

@@ -78,7 +78,7 @@ class _WebsiteAgent:
 
 
 class _JaarverslagAgent:
-    async def run(self, naam, jaar):
+    async def run(self, naam, jaar, website_url=None):
         return None
 
 

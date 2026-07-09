@@ -65,7 +65,8 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
         j_finding = None
         _log(db, batch.id, company.id, "jaarverslag_agent", "skipped", t0)
     else:
-        j_finding = await jaarverslag_agent.run(company.naam, batch.jaar)
+        j_finding = await jaarverslag_agent.run(company.naam, batch.jaar,
+                                                website_url=enrichment.website_url)
         _log(db, batch.id, company.id, "jaarverslag_agent", "ok" if j_finding else "skipped", t0)
 
     # Extra publieke bronnen (LinkedIn, KvK-vermeldingen, nieuws, etc.) — ook voor kleine
