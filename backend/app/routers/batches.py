@@ -243,14 +243,27 @@ def list_companies(batch_id: str, label: str | None = None, db: Session = Depend
         if pr.company_id:
             fouten_map[pr.company_id] = pr.error or "onbekende fout"
 
+    # Losse WP-vondsten die niet als officiële kandidaat zijn gekozen (bv. afgewezen
+    # door een hard gate) -- als ruwe indicatie tonen i.p.v. niets, zodat de reviewer
+    # altijd een getal ziet zodra er iets gevonden is (het label/de kleur blijft het
+    # vertrouwenssignaal, dit getal is uitdrukkelijk niet bevestigd).
+    ruwe_wp_map: dict[str, int] = {}
+    for ar in (db.query(AgentResult)
+               .filter_by(batch_id=batch_id)
+               .filter(AgentResult.wp_gevonden.isnot(None))
+               .order_by(AgentResult.created_at)):
+        ruwe_wp_map.setdefault(ar.company_id, ar.wp_gevonden)
+
     out = []
     for comp in db.query(Company).filter_by(batch_id=batch_id):
         cand = comp.candidate
         if label and (not cand or cand.confidence_label != label):
             continue
+        heeft_kandidaat = cand is not None and cand.wp_kandidaat is not None
         out.append({
             "company_id": comp.id, "naam": comp.naam, "gemeente": comp.gemeente,
             "wp_kandidaat": cand.wp_kandidaat if cand else None,
+            "wp_gevonden_ruw": None if heeft_kandidaat else ruwe_wp_map.get(comp.id),
             "is_schatting": cand.is_schatting if cand else None,
             "confidence_score": cand.confidence_score if cand else None,
             "confidence_label": cand.confidence_label if cand else None,

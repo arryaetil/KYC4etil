@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models import AgentResult, Batch, Company, User
+from app.models import AgentResult, Batch, Candidate, Company, User
 from app.providers.base import AgentFinding, LocationInfo
 
 
@@ -363,6 +363,61 @@ def test_company_detail_toont_agent_uitsplitsing(client, db_session):
     assert ar["detachering"] == 10
     assert ar["wsw"] == 0
     assert ar["pct_op_locatie"] == 0.9
+
+
+def test_companies_lijst_toont_ruwe_wp_zonder_kandidaat(client, db_session):
+    """Als er geen officiële kandidaat is (bv. afgewezen door een hard gate), moet
+    de batch-lijst toch het ruw gevonden getal tonen i.p.v. niets — het label/de
+    kleur blijft het vertrouwenssignaal, dit is puur ter info voor de reviewer."""
+    batch = Batch(naam="ruwe-wp-test", jaar=2026, totaal=1)
+    db_session.add(batch)
+    db_session.flush()
+    company = Company(batch_id=batch.id, naam="Testbedrijf")
+    db_session.add(company)
+    db_session.flush()
+    db_session.add(AgentResult(
+        company_id=company.id, batch_id=batch.id, agent_type="jaarverslag",
+        wp_gevonden=44485, bron_type="jaarverslag",
+    ))
+    db_session.add(Candidate(
+        company_id=company.id, batch_id=batch.id,
+        wp_kandidaat=None, confidence_score=0.0, confidence_label="laag",
+        reconciliatie_reden="afgewezen: niet-Limburg-specifiek zonder vestigingscount",
+    ))
+    db_session.commit()
+
+    response = client.get(f"/batches/{batch.id}/companies")
+
+    assert response.status_code == 200
+    item = response.json()[0]
+    assert item["wp_kandidaat"] is None
+    assert item["wp_gevonden_ruw"] == 44485
+
+
+def test_companies_lijst_toont_geen_ruwe_wp_als_kandidaat_al_bekend(client, db_session):
+    batch = Batch(naam="ruwe-wp-test-2", jaar=2026, totaal=1)
+    db_session.add(batch)
+    db_session.flush()
+    company = Company(batch_id=batch.id, naam="Testbedrijf")
+    db_session.add(company)
+    db_session.flush()
+    db_session.add(AgentResult(
+        company_id=company.id, batch_id=batch.id, agent_type="website",
+        wp_gevonden=21, bron_type="website",
+    ))
+    db_session.add(Candidate(
+        company_id=company.id, batch_id=batch.id,
+        wp_kandidaat=21, confidence_score=0.9, confidence_label="hoog",
+        reconciliatie_reden="enige bron: website",
+    ))
+    db_session.commit()
+
+    response = client.get(f"/batches/{batch.id}/companies")
+
+    assert response.status_code == 200
+    item = response.json()[0]
+    assert item["wp_kandidaat"] == 21
+    assert item["wp_gevonden_ruw"] is None
 
 
 def test_company_update_route_is_niet_dubbel_geregistreerd():

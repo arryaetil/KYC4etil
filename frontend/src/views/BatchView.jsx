@@ -191,7 +191,15 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-3 font-medium">{company.wp_kandidaat ?? "-"}</td>
+                <td className="px-4 py-3 font-medium">
+                  {company.wp_kandidaat ?? (
+                    company.wp_gevonden_ruw != null ? (
+                      <span className="text-slate-400" title="Gevonden, maar niet bevestigd als kandidaat — controleer de bron">
+                        {company.wp_gevonden_ruw}*
+                      </span>
+                    ) : "-"
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
                     <LabelBadge label={company.confidence_label} />
