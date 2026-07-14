@@ -104,6 +104,36 @@ def test_reconciliatie_accepteert_website_zonder_gepersistenteerde_context():
     )
     assert r.wp_kandidaat == 5
 
+def test_reconciliatie_weigert_website_context_die_enkel_de_vraag_herhaalt():
+    """Regressie: BAM/Zuyderland gaven een 'context' die feitelijk gewoon de
+    extractievraag herhaalde ("Aantal werkzame personen bij X"), zonder citaat of
+    getal — dat mag niet als kandidaat doorglippen, ook al is bron_type website."""
+    r = reconcilieer(
+        AgentFinding(
+            wp_gevonden=13200, context="Aantal werkzame personen bij Koninklijke BAM Groep N.V.",
+            zekerheid="hoog", reden="t",
+            bron_url="https://www.bam.com/nl/contact/informatie-over-bam-locaties",
+            bron_type="website", is_limburg_specifiek=True,
+        ),
+        None, None, None,
+    )
+    assert r.wp_kandidaat is None
+    assert "context ondersteunt gekozen WP-getal" in r.reden
+
+def test_reconciliatie_accepteert_website_context_zonder_letterlijk_getal():
+    """Een naamlijst (bv. 'Anne, Maral, Heidi, Monique') noemt het aantal niet
+    letterlijk, maar is wél een echt citaat -- mag niet worden afgestraft."""
+    r = reconcilieer(
+        AgentFinding(
+            wp_gevonden=4, context="Medewerkers in deze vestiging: Anne, Maral, Heidi, Monique",
+            zekerheid="hoog", reden="team-pagina",
+            bron_url="https://hallux.nl/vestigingen/limburg/roermond/",
+            bron_type="website", is_limburg_specifiek=True,
+        ),
+        None, None, None,
+    )
+    assert r.wp_kandidaat == 4
+
 def test_reconciliatie_weigert_media_zonder_gepersistenteerde_context():
     r = reconcilieer(
         AgentFinding(

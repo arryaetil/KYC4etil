@@ -74,15 +74,35 @@ def _is_onwaarschijnlijke_jaarverslag_url(url: str | None) -> bool:
     return False
 
 
-def _vereist_context_steun(finding: AgentFinding) -> bool:
-    """Alleen risicobronnen blokkeren op ontbrekende context.
+_GENERIEKE_CONTEXT_PATROON = re.compile(
+    r"^\s*aantal\b[^.]{0,60}\b(werkzame personen|medewerkers)\b[^.]{0,20}\bbij\b",
+    re.IGNORECASE,
+)
 
-    Officiële website/team-pagina's zijn bij kleine bedrijven juist leidend. Veel live
-    website-agenten geven al een getal terug zonder een nette raw-contextsnippet te
-    persistenteren; die mogen niet massaal wegvallen. Search/media en jaarverslag zijn
-    riskanter voor verkeerde scope of verkeerd gelezen snippets en blijven strenger.
+
+def _is_generieke_vraagherhaling(context: str) -> bool:
+    """Herkent een 'context' die feitelijk gewoon de extractievraag herhaalt
+    (bv. "Aantal werkzame personen bij Koninklijke BAM Groep N.V.") zonder een
+    echt citaat te zijn — geen getal, geen namen, geen inhoud. Dit is precies het
+    patroon dat bij Zuyderland en Koninklijke BAM een niet-onderbouwd getal liet
+    doorglippen."""
+    return bool(_GENERIEKE_CONTEXT_PATROON.match(context.strip()))
+
+
+def _vereist_context_steun(finding: AgentFinding) -> bool:
+    """Context-steun is altijd verplicht voor risicovollere bron_types (media,
+    jaarverslag), én voor ELK bron_type zodra de context een kale herhaling van de
+    extractievraag blijkt te zijn i.p.v. een echt citaat.
+
+    Website/team-pagina's blijven verder vrijgesteld: veel legitieme vondsten (bv.
+    een naamlijst als "Anne, Maral, Heidi, Monique") noemen het getal zelf niet
+    letterlijk, en dat mag niet worden afgestraft — alleen een context die duidelijk
+    géén echt citaat is (de vraag herhaalt) wordt alsnog geblokkeerd.
     """
-    return finding.bron_type in {"media", "jaarverslag"}
+    context = (finding.context or "").strip()
+    if finding.bron_type in {"media", "jaarverslag"}:
+        return True
+    return bool(context) and _is_generieke_vraagherhaling(context)
 
 
 def _is_juridische_holding_shell(finding: AgentFinding) -> bool:
