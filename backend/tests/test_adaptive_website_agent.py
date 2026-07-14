@@ -62,24 +62,57 @@ async def test_haal_pagina_op_geeft_tekst_en_links(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_haal_pagina_op_gebruikt_playwright_fallback_bij_weinig_tekst(monkeypatch):
+async def test_haal_pagina_op_gebruikt_crawl4ai_fallback_bij_weinig_tekst(monkeypatch):
     monkeypatch.setattr(live.settings, "playwright_enabled", True)
     monkeypatch.setattr(live.httpx, "AsyncClient", _FakeHtmlClient("<html><body><div id='root'></div></body></html>"))
 
-    async def fake_fetch_html_playwright(url):
-        return """
-        <html><body>
-        <p>Ons team bestaat uit 14 medewerkers in Weert.</p>
-        <a href="/team">Team</a>
-        </body></html>
-        """
+    async def fake_haal_pagina_op_crawl4ai(url):
+        return {
+            "tekst": "Ons team bestaat uit 14 medewerkers in Weert.",
+            "links": [{"tekst": "Team", "url": "https://voorbeeld.test/team"}],
+        }
 
-    monkeypatch.setattr(live, "_fetch_html_playwright", fake_fetch_html_playwright)
+    monkeypatch.setattr(live, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
 
     resultaat = await live._haal_pagina_op("https://voorbeeld.test")
 
     assert "14 medewerkers" in resultaat["tekst"]
     assert resultaat["links"] == [{"tekst": "Team", "url": "https://voorbeeld.test/team"}]
+
+
+@pytest.mark.asyncio
+async def test_haal_pagina_op_valt_terug_op_http_als_crawl4ai_niet_beter_is(monkeypatch):
+    """Als de crawl4ai-fallback niet meer tekst oplevert dan de platte HTTP-poging,
+    moet het platte resultaat gebruikt worden (geen onnodige overschrijving)."""
+    monkeypatch.setattr(live.settings, "playwright_enabled", True)
+    monkeypatch.setattr(live.httpx, "AsyncClient", _FakeHtmlClient("<html><body><p>een tekst van precies dertig tk</p></body></html>"))
+
+    async def fake_haal_pagina_op_crawl4ai(url):
+        return {"tekst": "korter", "links": []}
+
+    monkeypatch.setattr(live, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
+
+    resultaat = await live._haal_pagina_op("https://voorbeeld.test")
+
+    assert resultaat["tekst"] == "een tekst van precies dertig tk"
+
+
+@pytest.mark.asyncio
+async def test_haal_pagina_op_negeert_crawl4ai_fout(monkeypatch):
+    """Als crawl4ai faalt (bv. browser niet beschikbaar), moet het platte
+    HTTP-resultaat gewoon gebruikt worden i.p.v. de hele opvraag te laten crashen."""
+    monkeypatch.setattr(live.settings, "playwright_enabled", True)
+    monkeypatch.setattr(live.httpx, "AsyncClient", _FakeHtmlClient("<html><body><div id='root'></div></body></html>"))
+
+    async def fake_haal_pagina_op_crawl4ai(url):
+        raise RuntimeError("browser niet beschikbaar")
+
+    monkeypatch.setattr(live, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
+
+    resultaat = await live._haal_pagina_op("https://voorbeeld.test")
+
+    assert resultaat["tekst"] == ""
+    assert resultaat["links"] == []
 
 
 class _FakeToolCall:

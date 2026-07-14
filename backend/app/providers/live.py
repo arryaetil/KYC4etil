@@ -552,43 +552,43 @@ async def _fetch_text(url: str) -> str:
         return soup.get_text(separator="\n", strip=True)
 
 
-async def _fetch_text_playwright(url: str) -> str:
-    """Playwright fallback voor JS-heavy websites (React/Vue/Angular).
-    Wacht op networkidle zodat lazy-loaded content ook geladen is."""
-    from playwright.async_api import async_playwright
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-        )
-        try:
-            ctx = await browser.new_context(user_agent=USER_AGENT)
-            page = await ctx.new_page()
-            await page.goto(url, wait_until="networkidle", timeout=30000)
-            content = await page.content()
-        finally:
-            await browser.close()
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(content, "html.parser")
-    for tag in soup(["script", "style", "nav", "footer"]):
-        tag.decompose()
-    return soup.get_text(separator="\n", strip=True)
+async def _haal_pagina_op_crawl4ai(url: str) -> dict:
+    """Rendert de pagina met een echte browser (Crawl4AI, op Playwright) en levert
+    schone, ruisvrije markdown + links terug — same-domein, net als de platte
+    HTTP-poging. Crawl4AI's PruningContentFilter verwijdert boilerplate (herhaalde
+    navigatie, sidebars) al vóórdat de tekst bij de extractie-LLM komt.
 
+    Duurder (echte browser opstarten) dan de platte HTTP-poging, daarom alleen
+    ingezet als fallback bij te weinig tekst (JS-zware sites: React/Vue/Angular)."""
+    from urllib.parse import urlparse
 
-async def _fetch_html_playwright(url: str) -> str:
-    from playwright.async_api import async_playwright
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-        )
-        try:
-            ctx = await browser.new_context(user_agent=USER_AGENT)
-            page = await ctx.new_page()
-            await page.goto(url, wait_until="networkidle", timeout=30000)
-            return await page.content()
-        finally:
-            await browser.close()
+    from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
+    from crawl4ai.content_filter_strategy import PruningContentFilter
+    from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+
+    browser_conf = BrowserConfig(headless=True, user_agent=USER_AGENT)
+    run_conf = CrawlerRunConfig(
+        cache_mode=CacheMode.BYPASS,
+        markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()),
+    )
+    async with AsyncWebCrawler(config=browser_conf) as crawler:
+        result = await crawler.arun(url=url, config=run_conf)
+
+    tekst = ""
+    if result.markdown:
+        tekst = result.markdown.fit_markdown or result.markdown.raw_markdown or ""
+
+    eigen_domein = urlparse(url).netloc
+    links: list[dict] = []
+    seen: set[str] = set()
+    for link in (result.links or {}).get("internal", []):
+        href = link.get("href")
+        if not href or href in seen or urlparse(href).netloc != eigen_domein:
+            continue
+        seen.add(href)
+        links.append({"tekst": link.get("text") or "", "url": href})
+
+    return {"tekst": tekst, "links": links}
 
 
 def _pagina_data_uit_html(html: str, url: str) -> dict:
@@ -629,8 +629,7 @@ async def _haal_pagina_op(url: str) -> dict:
 
     if settings.playwright_enabled and len(pagina["tekst"]) < 500:
         try:
-            rendered_html = await _fetch_html_playwright(url)
-            rendered = _pagina_data_uit_html(rendered_html, url)
+            rendered = await _haal_pagina_op_crawl4ai(url)
             if len(rendered["tekst"]) > len(pagina["tekst"]):
                 return rendered
         except Exception:

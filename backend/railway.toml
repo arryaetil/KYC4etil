@@ -1,6 +1,7 @@
 [build]
 
 [deploy]
+releaseCommand = "crawl4ai-setup"
 startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
