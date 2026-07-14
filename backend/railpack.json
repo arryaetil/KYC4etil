@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "python",
+  "steps": {
+    "crawl4ai-browser": {
+      "inputs": [{ "step": "build" }],
+      "commands": ["crawl4ai-setup"]
+    }
+  },
+  "deploy": {
+    "inputs": [{ "step": "crawl4ai-browser" }]
+  }
+}
