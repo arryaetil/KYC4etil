@@ -42,6 +42,8 @@ class AgentFinding:
     deeltijd: int | None = None
     pct_op_locatie: float | None = None
     bron_pagina: int | None = None  # 1-indexed PDF-paginanummer waar context vandaan komt
+    identity_class: str | None = None  # gevuld door IdentityScopeClassifier, zie pipeline/identity_scope.py
+    scope_class: str | None = None
 
 
 class LookupProvider(Protocol):

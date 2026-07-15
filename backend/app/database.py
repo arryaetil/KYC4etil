@@ -77,6 +77,7 @@ def ensure_lightweight_migrations() -> None:
                 ("man", "INTEGER"), ("vrouw", "INTEGER"),
                 ("voltijd", "INTEGER"), ("deeltijd", "INTEGER"),
                 ("pct_op_locatie", "FLOAT"), ("bron_pagina", "INTEGER"),
+                ("identity_class", "VARCHAR(30)"), ("scope_class", "VARCHAR(30)"),
             ]:
                 _add_column_if_missing(conn, "agent_results", existing_ar, name, ddl_type)
 

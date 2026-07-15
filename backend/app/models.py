@@ -111,6 +111,8 @@ class AgentResult(Base):
     deeltijd: Mapped[int | None] = mapped_column(Integer)
     pct_op_locatie: Mapped[float | None] = mapped_column(Float)
     bron_pagina: Mapped[int | None] = mapped_column(Integer)
+    identity_class: Mapped[str | None] = mapped_column(String(30))  # exact_entity|same_brand_or_group|possible_match|mismatch|unknown
+    scope_class: Mapped[str | None] = mapped_column(String(30))  # vestiging|limburg|nederland|concern|unknown
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     company: Mapped[Company] = relationship(back_populates="agent_results")
