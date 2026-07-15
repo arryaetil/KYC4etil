@@ -118,8 +118,11 @@ async def test_verwerk_company_slaat_uitsplitsing_op_van_jaarverslag_agent():
     mock_jaarverslag = MagicMock()
     mock_jaarverslag.run = AsyncMock(return_value=j_finding)
 
+    mock_classifier = MagicMock()
+    mock_classifier.classify = AsyncMock(return_value=("unknown", "unknown"))
+
     with patch("app.pipeline.runner.get_providers",
-               return_value=(mock_lookup, mock_website, mock_jaarverslag)):
+               return_value=(mock_lookup, mock_website, mock_jaarverslag, mock_classifier)):
         await verwerk_company(db, company, batch)
 
     jaarverslag_ar = next(
@@ -158,7 +161,7 @@ async def test_check_company_jaarverslag_slaat_uitsplitsing_op(db_session, monke
     mock_jaarverslag = MagicMock()
     mock_jaarverslag.run = AsyncMock(return_value=finding)
     monkeypatch.setattr(monitoring_module, "get_providers",
-                        lambda: (None, None, mock_jaarverslag))
+                        lambda: (None, None, mock_jaarverslag, None))
 
     resultaat = await monitoring_module.check_company_jaarverslag(db_session, company, 2026)
 
@@ -199,7 +202,7 @@ async def test_check_company_jaarverslag_crasht_niet_als_reconciliatie_afwijst(d
     mock_jaarverslag = MagicMock()
     mock_jaarverslag.run = AsyncMock(return_value=finding)
     monkeypatch.setattr(monitoring_module, "get_providers",
-                        lambda: (None, None, mock_jaarverslag))
+                        lambda: (None, None, mock_jaarverslag, None))
 
     resultaat = await monitoring_module.check_company_jaarverslag(db_session, company, 2026)
 

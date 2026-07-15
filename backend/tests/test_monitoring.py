@@ -147,7 +147,7 @@ def test_check_company_jaarverslag_slaat_url_op_zonder_wp_gevonden(monkeypatch):
         mock_jaarverslag = MagicMock()
         mock_jaarverslag.run = AsyncMock(return_value=finding)
         monkeypatch.setattr(monitoring_module, "get_providers",
-                            lambda: (None, None, mock_jaarverslag))
+                            lambda: (None, None, mock_jaarverslag, None))
 
         resultaat = asyncio.run(check_company_jaarverslag(db, company, 2026))
 
@@ -176,7 +176,7 @@ def test_check_company_jaarverslag_zonder_bron_url_wordt_overgeslagen(monkeypatc
         mock_jaarverslag = MagicMock()
         mock_jaarverslag.run = AsyncMock(return_value=None)
         monkeypatch.setattr(monitoring_module, "get_providers",
-                            lambda: (None, None, mock_jaarverslag))
+                            lambda: (None, None, mock_jaarverslag, None))
 
         resultaat = asyncio.run(check_company_jaarverslag(db, company, 2026))
 
@@ -205,7 +205,7 @@ def test_check_company_jaarverslag_zelfde_url_zonder_wp_geen_wijziging_tweede_ke
         mock_jaarverslag = MagicMock()
         mock_jaarverslag.run = AsyncMock(return_value=finding)
         monkeypatch.setattr(monitoring_module, "get_providers",
-                            lambda: (None, None, mock_jaarverslag))
+                            lambda: (None, None, mock_jaarverslag, None))
 
         eerste = asyncio.run(check_company_jaarverslag(db, company, 2026))
         tweede = asyncio.run(check_company_jaarverslag(db, company, 2026))

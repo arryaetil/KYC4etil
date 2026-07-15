@@ -1,4 +1,6 @@
 """Unit tests voor de kernlogica: strategie, schatting, reconciliatie, confidence."""
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from app.pipeline.confidence import bereken_confidence
@@ -235,3 +237,134 @@ def test_signaal_markeert_sterk_afwijkende_bron():
 def test_signaal_geeft_niets_zonder_kandidaat_of_extra_bronnen():
     assert signaleer_afwijkende_extra_bronnen(None, [finding(wp=13)]) is None
     assert signaleer_afwijkende_extra_bronnen(21, []) is None
+
+
+# --- identity/scope-classificatie wordt opgeslagen op AgentResult ---
+
+@pytest.mark.asyncio
+async def test_verwerk_company_slaat_identity_en_scope_classificatie_op():
+    from app.models import AgentResult
+    from app.pipeline.runner import verwerk_company
+    from app.providers.base import AgentFinding
+
+    db = MagicMock()
+    db.add = MagicMock()
+    db.flush = MagicMock()
+    batch = MagicMock(); batch.id = "batch-1"; batch.jaar = 2025
+    company = MagicMock()
+    company.id = "comp-1"; company.naam = "Salon Handmade"
+    company.adres = "Langstraat 8"; company.gemeente = "Weert"
+
+    w_finding = AgentFinding(
+        wp_gevonden=3, context="Boek bij een van onze 3 medewerkers.", zekerheid="hoog",
+        reden="mock", bron_url="https://www.salonhandmade.nl/afspraak", bron_type="website",
+        is_limburg_specifiek=True,
+    )
+    mock_lookup = MagicMock(); mock_lookup.lookup = AsyncMock(return_value=None)
+    mock_lookup.locations = AsyncMock(return_value=MagicMock(count_nl=1, count_lb=1, bron="mock"))
+    mock_lookup.scrape_email = AsyncMock(return_value=None)
+    mock_website = MagicMock()
+    mock_website.run = AsyncMock(return_value=w_finding)
+    mock_website.extra_bronnen = AsyncMock(return_value=[])
+    mock_jaarverslag = MagicMock(); mock_jaarverslag.run = AsyncMock(return_value=None)
+    mock_classifier = MagicMock()
+    mock_classifier.classify = AsyncMock(return_value=("exact_entity", "vestiging"))
+
+    with patch(
+        "app.pipeline.runner.get_providers",
+        return_value=(mock_lookup, mock_website, mock_jaarverslag, mock_classifier),
+    ):
+        await verwerk_company(db, company, batch)
+
+    website_ar = next(
+        call.args[0] for call in db.add.call_args_list
+        if isinstance(call.args[0], AgentResult) and call.args[0].agent_type == "website"
+    )
+    assert website_ar.identity_class == "exact_entity"
+    assert website_ar.scope_class == "vestiging"
+    mock_classifier.classify.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_verwerk_company_geeft_mismatch_door_voor_cross_company_website():
+    from app.models import AgentResult
+    from app.pipeline.runner import verwerk_company
+    from app.providers.base import AgentFinding
+
+    db = MagicMock()
+    db.add = MagicMock()
+    db.flush = MagicMock()
+    batch = MagicMock(); batch.id = "batch-2"; batch.jaar = 2025
+    company = MagicMock()
+    company.id = "comp-2"; company.naam = "Salon Handmade"
+    company.adres = "Langstraat 8"; company.gemeente = "Weert"
+
+    w_finding = AgentFinding(
+        wp_gevonden=25, context="Wij hebben 25 medewerkers in dienst.", zekerheid="hoog",
+        reden="mock", bron_url="https://www.andere-onderneming.nl/over-ons", bron_type="website",
+        is_limburg_specifiek=True,
+    )
+    mock_lookup = MagicMock(); mock_lookup.lookup = AsyncMock(return_value=None)
+    mock_lookup.locations = AsyncMock(return_value=MagicMock(count_nl=1, count_lb=1, bron="mock"))
+    mock_lookup.scrape_email = AsyncMock(return_value=None)
+    mock_website = MagicMock()
+    mock_website.run = AsyncMock(return_value=w_finding)
+    mock_website.extra_bronnen = AsyncMock(return_value=[])
+    mock_jaarverslag = MagicMock(); mock_jaarverslag.run = AsyncMock(return_value=None)
+    mock_classifier = MagicMock()
+    mock_classifier.classify = AsyncMock(return_value=("mismatch", "unknown"))
+
+    with patch(
+        "app.pipeline.runner.get_providers",
+        return_value=(mock_lookup, mock_website, mock_jaarverslag, mock_classifier),
+    ):
+        await verwerk_company(db, company, batch)
+
+    website_ar = next(
+        call.args[0] for call in db.add.call_args_list
+        if isinstance(call.args[0], AgentResult) and call.args[0].agent_type == "website"
+    )
+    assert website_ar.identity_class == "mismatch"
+
+
+@pytest.mark.asyncio
+async def test_verwerk_company_geeft_same_brand_or_group_door_voor_filiaal_jaarverslag():
+    from app.models import AgentResult
+    from app.pipeline.runner import verwerk_company
+    from app.providers.base import AgentFinding
+
+    db = MagicMock()
+    db.add = MagicMock()
+    db.flush = MagicMock()
+    batch = MagicMock(); batch.id = "batch-3"; batch.jaar = 2025
+    company = MagicMock()
+    company.id = "comp-3"; company.naam = "Jumbo Sittard"
+    company.adres = "Markt 1"; company.gemeente = "Sittard"
+
+    j_finding = AgentFinding(
+        wp_gevonden=1200, context="Jumbo Supermarkten telt landelijk 1200 medewerkers.",
+        zekerheid="middel", reden="mock",
+        bron_url="https://www.jumbo.com/jaarverslag", bron_type="jaarverslag",
+        is_limburg_specifiek=False,
+    )
+    mock_lookup = MagicMock(); mock_lookup.lookup = AsyncMock(return_value=None)
+    mock_lookup.locations = AsyncMock(return_value=MagicMock(count_nl=1, count_lb=1, bron="mock"))
+    mock_lookup.scrape_email = AsyncMock(return_value=None)
+    mock_website = MagicMock()
+    mock_website.run = AsyncMock(return_value=None)
+    mock_website.extra_bronnen = AsyncMock(return_value=[])
+    mock_jaarverslag = MagicMock(); mock_jaarverslag.run = AsyncMock(return_value=j_finding)
+    mock_classifier = MagicMock()
+    mock_classifier.classify = AsyncMock(return_value=("same_brand_or_group", "concern"))
+
+    with patch(
+        "app.pipeline.runner.get_providers",
+        return_value=(mock_lookup, mock_website, mock_jaarverslag, mock_classifier),
+    ):
+        await verwerk_company(db, company, batch)
+
+    jaarverslag_ar = next(
+        call.args[0] for call in db.add.call_args_list
+        if isinstance(call.args[0], AgentResult) and call.args[0].agent_type == "jaarverslag"
+    )
+    assert jaarverslag_ar.identity_class == "same_brand_or_group"

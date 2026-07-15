@@ -314,8 +314,11 @@ async def test_runner_draait_agents_ook_bij_lookup_failed():
     mock_jaarverslag = MagicMock()
     mock_jaarverslag.run = AsyncMock(return_value=None)
 
+    mock_classifier = MagicMock()
+    mock_classifier.classify = AsyncMock(return_value=("unknown", "unknown"))
+
     with patch("app.pipeline.runner.get_providers",
-               return_value=(mock_lookup, mock_website, mock_jaarverslag)):
+               return_value=(mock_lookup, mock_website, mock_jaarverslag, mock_classifier)):
         candidate = await verwerk_company(db, company, batch)
 
     # Agent moet aangeroepen zijn ondanks lookup_failed
@@ -370,8 +373,11 @@ async def test_runner_slaat_jaarverslag_agent_over_bij_hoog_zekerheid():
     mock_jaarverslag = MagicMock()
     mock_jaarverslag.run = AsyncMock(return_value=None)
 
+    mock_classifier = MagicMock()
+    mock_classifier.classify = AsyncMock(return_value=("unknown", "unknown"))
+
     with patch("app.pipeline.runner.get_providers",
-               return_value=(mock_lookup, mock_website, mock_jaarverslag)):
+               return_value=(mock_lookup, mock_website, mock_jaarverslag, mock_classifier)):
         await verwerk_company(db, company, batch)
 
     mock_jaarverslag.run.assert_not_called()

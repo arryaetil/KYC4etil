@@ -25,7 +25,7 @@ def _log(db: Session, batch_id: str, company_id: str | None, stap: str,
 
 
 async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candidate:
-    lookup, website_agent, jaarverslag_agent = get_providers()
+    lookup, website_agent, jaarverslag_agent, identity_scope_classifier = get_providers()
 
     # STAP 1 — verrijking
     t0 = time.monotonic()
@@ -83,6 +83,10 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
         if finding is None:
             continue
         is_extra = finding in extra_findings
+        identity_class, scope_class = await identity_scope_classifier.classify(
+            company.naam, company.adres, company.gemeente,
+            enrichment.website_url, finding,
+        )
         ar = AgentResult(
             company_id=company.id, batch_id=batch.id,
             agent_type="extra_bron" if is_extra
@@ -97,6 +101,7 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
             man=finding.man, vrouw=finding.vrouw,
             voltijd=finding.voltijd, deeltijd=finding.deeltijd,
             pct_op_locatie=finding.pct_op_locatie, bron_pagina=finding.bron_pagina,
+            identity_class=identity_class, scope_class=scope_class,
         )
         db.add(ar)
         db.flush()

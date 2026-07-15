@@ -22,7 +22,7 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     aangemaakt/bijgewerkt als er zowel een nieuwe URL als een bruikbaar WP-getal is.
     Retourneert True als er een wijziging is vastgesteld (nieuwe URL, met of zonder
     WP-getal)."""
-    _, _, jaarverslag_agent = get_providers()
+    _, _, jaarverslag_agent, _ = get_providers()
     t0 = time.monotonic()
 
     status = db.query(JaarverslagMonitoring).filter_by(company_id=company.id).one_or_none()

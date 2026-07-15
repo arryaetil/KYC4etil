@@ -82,12 +82,20 @@ class _JaarverslagAgent:
         return None
 
 
+class _Classifier:
+    async def classify(self, naam, adres, gemeente, website_url, finding):
+        return ("unknown", "unknown")
+
+
 @pytest.mark.asyncio
 async def test_pipeline_gebruikt_csv_website_zonder_google(monkeypatch):
     from app.providers import get_providers
     import app.pipeline.runner as runner
 
-    monkeypatch.setattr(runner, "get_providers", lambda: (_NoPlacesLookup(), _WebsiteAgent(), _JaarverslagAgent()))
+    monkeypatch.setattr(
+        runner, "get_providers",
+        lambda: (_NoPlacesLookup(), _WebsiteAgent(), _JaarverslagAgent(), _Classifier()),
+    )
 
     db = SessionLocal()
     try:
