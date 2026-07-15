@@ -9,6 +9,7 @@ from ..models import (AgentResult, Batch, CallListItem, Candidate, Company,
                       Enrichment, PipelineRun)
 from ..providers import get_providers
 from .confidence import bereken_confidence
+from .evidence import IdentityClass, ScopeClass
 from .reconcile import (Strategie, bepaal_strategie, reconcilieer,
                         signaleer_afwijkende_extra_bronnen)
 
@@ -79,14 +80,24 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
          "ok" if extra_findings else "skipped", t0)
 
     agent_result_ids = {}
+    t0 = time.monotonic()
+    classificatie_status = "skipped"
     for finding in (w_finding, j_finding, *extra_findings):
         if finding is None:
             continue
         is_extra = finding in extra_findings
-        identity_class, scope_class = await identity_scope_classifier.classify(
-            company.naam, company.adres, company.gemeente,
-            enrichment.website_url, finding,
-        )
+        if classificatie_status == "skipped":
+            classificatie_status = "ok"
+        try:
+            identity_class, scope_class = await identity_scope_classifier.classify(
+                company.naam, company.adres, company.gemeente,
+                enrichment.website_url, finding,
+            )
+        except Exception:
+            # Classificatie is puur informatief voor reviewers en mag nooit de hele
+            # bedrijfsverwerking (reconciliatie/confidence/candidate) laten falen.
+            classificatie_status = "error"
+            identity_class, scope_class = IdentityClass.UNKNOWN.value, ScopeClass.UNKNOWN.value
         ar = AgentResult(
             company_id=company.id, batch_id=batch.id,
             agent_type="extra_bron" if is_extra
@@ -106,6 +117,7 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
         db.add(ar)
         db.flush()
         agent_result_ids[id(finding)] = ar.id
+    _log(db, batch.id, company.id, "identity_scope_classificatie", classificatie_status, t0)
 
     # STAP 3 — reconciliatie
     rec = reconcilieer(w_finding, j_finding, loc.count_nl, loc.count_lb)

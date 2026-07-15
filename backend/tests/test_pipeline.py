@@ -368,3 +368,59 @@ async def test_verwerk_company_geeft_same_brand_or_group_door_voor_filiaal_jaarv
         if isinstance(call.args[0], AgentResult) and call.args[0].agent_type == "jaarverslag"
     )
     assert jaarverslag_ar.identity_class == "same_brand_or_group"
+
+
+@pytest.mark.asyncio
+async def test_verwerk_company_classificatie_fout_valt_terug_op_unknown_en_faalt_niet():
+    """Finding 1: een falende classify() (bv. transiente LLM-fout in live-modus) mag de
+    hele bedrijfsverwerking niet laten crashen — informatief-only, nooit een harde gate."""
+    from app.models import AgentResult, PipelineRun
+    from app.pipeline.runner import verwerk_company
+    from app.providers.base import AgentFinding
+
+    db = MagicMock()
+    db.add = MagicMock()
+    db.flush = MagicMock()
+    batch = MagicMock(); batch.id = "batch-4"; batch.jaar = 2025
+    company = MagicMock()
+    company.id = "comp-4"; company.naam = "Salon Handmade"
+    company.adres = "Langstraat 8"; company.gemeente = "Weert"
+
+    w_finding = AgentFinding(
+        wp_gevonden=3, context="Boek bij een van onze 3 medewerkers.", zekerheid="hoog",
+        reden="mock", bron_url="https://www.salonhandmade.nl/afspraak", bron_type="website",
+        is_limburg_specifiek=True,
+    )
+    mock_lookup = MagicMock(); mock_lookup.lookup = AsyncMock(return_value=None)
+    mock_lookup.locations = AsyncMock(return_value=MagicMock(count_nl=1, count_lb=1, bron="mock"))
+    mock_lookup.scrape_email = AsyncMock(return_value=None)
+    mock_website = MagicMock()
+    mock_website.run = AsyncMock(return_value=w_finding)
+    mock_website.extra_bronnen = AsyncMock(return_value=[])
+    mock_jaarverslag = MagicMock(); mock_jaarverslag.run = AsyncMock(return_value=None)
+    mock_classifier = MagicMock()
+    mock_classifier.classify = AsyncMock(side_effect=RuntimeError("LLM timeout"))
+
+    with patch(
+        "app.pipeline.runner.get_providers",
+        return_value=(mock_lookup, mock_website, mock_jaarverslag, mock_classifier),
+    ):
+        # Mag niet raisen — anders zou verwerk_company() de hele company-verwerking
+        # (reconciliatie/confidence/candidate) verliezen, precies wat Finding 1 verbiedt.
+        candidate = await verwerk_company(db, company, batch)
+
+    assert candidate is not None
+    website_ar = next(
+        call.args[0] for call in db.add.call_args_list
+        if isinstance(call.args[0], AgentResult) and call.args[0].agent_type == "website"
+    )
+    assert website_ar.identity_class == "unknown"
+    assert website_ar.scope_class == "unknown"
+
+    classificatie_runs = [
+        call.args[0] for call in db.add.call_args_list
+        if isinstance(call.args[0], PipelineRun)
+        and call.args[0].stap == "identity_scope_classificatie"
+    ]
+    assert len(classificatie_runs) == 1
+    assert classificatie_runs[0].status == "error"
