@@ -323,6 +323,7 @@ def company_detail(batch_id: str, company_id: str, db: Session = Depends(get_db)
             "man": ar.man, "vrouw": ar.vrouw,
             "voltijd": ar.voltijd, "deeltijd": ar.deeltijd,
             "pct_op_locatie": ar.pct_op_locatie, "bron_pagina": ar.bron_pagina,
+            "identity_class": ar.identity_class, "scope_class": ar.scope_class,
         } for ar in comp.agent_results],
         "pipeline_fouten": [{
             "stap": pr.stap, "error": pr.error,
