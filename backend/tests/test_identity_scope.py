@@ -141,3 +141,45 @@ def test_get_providers_retourneert_vier_providers(monkeypatch):
     result = get_providers()
     assert len(result) == 4
     get_settings.cache_clear()
+
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+@pytest.mark.asyncio
+async def test_live_classifier_slaat_llm_over_bij_domeinmatch():
+    from app.providers.live import LiveIdentityScopeClassifier
+
+    finding = AgentFinding(
+        wp_gevonden=3, context="3 medewerkers op onze vestiging.", zekerheid="hoog",
+        reden="live", bron_url="https://www.salonhandmade.nl/afspraak", bron_type="website",
+    )
+    with patch("app.providers.live._llm_classify_scope", new=AsyncMock(return_value="vestiging")) as scope_mock:
+        identity, scope = await LiveIdentityScopeClassifier().classify(
+            "Salon Handmade", "Langstraat 8", "Weert",
+            "https://www.salonhandmade.nl", finding,
+        )
+    assert identity == "exact_entity"
+    assert scope == "vestiging"
+    scope_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_live_classifier_roept_llm_aan_bij_onbekend_domein():
+    from app.providers.live import LiveIdentityScopeClassifier
+
+    finding = AgentFinding(
+        wp_gevonden=6158, context="Heijmans telt 6.158 medewerkers.", zekerheid="hoog",
+        reden="live", bron_url="https://www.heijmans.nl/jaarverslag.pdf", bron_type="jaarverslag",
+    )
+    with patch(
+        "app.providers.live._llm_classify_identity_and_scope",
+        new=AsyncMock(return_value=("mismatch", "unknown")),
+    ) as combined_mock:
+        identity, scope = await LiveIdentityScopeClassifier().classify(
+            "Salon Handmade", "Langstraat 8", "Weert",
+            "https://www.salonhandmade.nl", finding,
+        )
+    assert identity == "mismatch"
+    assert scope == "unknown"
+    combined_mock.assert_awaited_once()
