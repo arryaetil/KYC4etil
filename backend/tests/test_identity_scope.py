@@ -32,3 +32,74 @@ def test_agent_finding_classificatie_velden_zijn_optioneel():
     )
     assert finding.identity_class is None
     assert finding.scope_class is None
+
+
+from app.pipeline.identity_scope import (
+    domain_matches_company,
+    heuristic_identity_class,
+    heuristic_scope_class,
+)
+
+
+def test_domain_matches_company_zelfde_domein():
+    assert domain_matches_company(
+        "https://www.salonhandmade.nl/jaarverslag.pdf", "https://salonhandmade.nl"
+    ) is True
+
+
+def test_domain_matches_company_ander_domein():
+    assert domain_matches_company(
+        "https://www.heijmans.nl/jaarverslag-2025.pdf", "https://www.salonhandmade.nl"
+    ) is False
+
+
+def test_domain_matches_company_onbekend_zonder_website_url():
+    assert domain_matches_company("https://www.heijmans.nl/x.pdf", None) is None
+
+
+def test_heuristic_identity_exact_entity_bij_domeinmatch():
+    result = heuristic_identity_class(
+        "Salon Handmade", "Boek bij een van onze 3 medewerkers.",
+        "https://www.salonhandmade.nl/afspraak", "https://www.salonhandmade.nl",
+    )
+    assert result == "exact_entity"
+
+
+def test_heuristic_identity_mismatch_bij_cross_company_context():
+    # Regressie: Salon Handmade (Weert) kreeg ooit een Heijmans-jaarverslag
+    # met 6.158 medewerkers als bron — pure cross-company mismatch.
+    result = heuristic_identity_class(
+        "Salon Handmade",
+        "Heijmans is een beursgenoteerd bouwbedrijf met 6.158 medewerkers in Nederland.",
+        "https://www.heijmans.nl/jaarverslag-2025.pdf",
+        "https://www.salonhandmade.nl",
+    )
+    assert result == "mismatch"
+
+
+def test_heuristic_identity_same_brand_or_group_bij_gedeeltelijke_naammatch():
+    # Jumbo Supermarkten filiaal: bron noemt "Jumbo" wel, maar is een landelijk/
+    # concernbreed jaarverslag, geen exacte 1-op-1 vestigingsbron.
+    result = heuristic_identity_class(
+        "Jumbo Supermarkten B.V. - Filiaal",
+        "Jumbo behaalde in 2025 een omzet van 11 miljard euro.",
+        "https://www.jumbo.com/over-jumbo/jaarverslag-2025.pdf",
+        None,
+    )
+    assert result == "same_brand_or_group"
+
+
+def test_heuristic_scope_vestiging_voor_limburg_specifieke_website():
+    assert heuristic_scope_class(True, "website") == "vestiging"
+
+
+def test_heuristic_scope_limburg_voor_limburg_specifiek_jaarverslag():
+    assert heuristic_scope_class(True, "jaarverslag") == "limburg"
+
+
+def test_heuristic_scope_nederland_bij_niet_limburg_specifiek():
+    assert heuristic_scope_class(False, "jaarverslag") == "nederland"
+
+
+def test_heuristic_scope_unknown_zonder_signaal():
+    assert heuristic_scope_class(None, "jaarverslag") == "unknown"
