@@ -3,6 +3,8 @@ Onbekende bedrijven leveren een mislukte lookup op (-> chat/bellijst-strategie).
 import json
 from pathlib import Path
 
+from ..pipeline.evidence import IdentityClass, ScopeClass
+from ..pipeline.identity_scope import heuristic_identity_class, heuristic_scope_class
 from .base import AgentFinding, LocationInfo, PlacesResult
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "mock_data.json"
@@ -88,3 +90,18 @@ class MockJaarverslagAgent:
             deeltijd=finding.get("deeltijd"),
             pct_op_locatie=finding.get("pct_op_locatie"),
         )
+
+
+class MockIdentityScopeClassifier:
+    """Volledig heuristisch en deterministisch — geen API-calls, zodat
+    python -m scripts.validate reproduceerbaar blijft."""
+
+    async def classify(
+        self, naam: str, adres: str | None, gemeente: str | None,
+        website_url: str | None, finding,
+    ) -> tuple[str, str]:
+        if finding is None:
+            return IdentityClass.UNKNOWN.value, ScopeClass.UNKNOWN.value
+        identity = heuristic_identity_class(naam, finding.context, finding.bron_url, website_url)
+        scope = heuristic_scope_class(finding.is_limburg_specifiek, finding.bron_type)
+        return identity, scope

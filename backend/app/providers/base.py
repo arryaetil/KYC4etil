@@ -61,3 +61,13 @@ class WebsiteAgent(Protocol):
 
 class JaarverslagAgent(Protocol):
     async def run(self, naam: str, jaar: int, website_url: str | None = None) -> AgentFinding | None: ...
+
+
+class IdentityScopeClassifier(Protocol):
+    async def classify(
+        self, naam: str, adres: str | None, gemeente: str | None,
+        website_url: str | None, finding: AgentFinding | None,
+    ) -> tuple[str, str]:
+        """Retourneert (identity_class, scope_class) als string-waarden
+        (zie pipeline/evidence.py voor de toegestane enum-waarden)."""
+        ...

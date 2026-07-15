@@ -103,3 +103,41 @@ def test_heuristic_scope_nederland_bij_niet_limburg_specifiek():
 
 def test_heuristic_scope_unknown_zonder_signaal():
     assert heuristic_scope_class(None, "jaarverslag") == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_mock_classifier_geeft_heuristiek_door():
+    from app.providers.mock import MockIdentityScopeClassifier
+
+    finding = AgentFinding(
+        wp_gevonden=3, context="Boek bij een van onze 3 medewerkers.",
+        zekerheid="hoog", reden="mock", bron_url="https://www.salonhandmade.nl/afspraak",
+        bron_type="website", is_limburg_specifiek=True,
+    )
+    identity, scope = await MockIdentityScopeClassifier().classify(
+        "Salon Handmade", "Langstraat 8", "Weert", "https://www.salonhandmade.nl", finding,
+    )
+    assert identity == "exact_entity"
+    assert scope == "vestiging"
+
+
+@pytest.mark.asyncio
+async def test_mock_classifier_geeft_unknown_zonder_finding():
+    from app.providers.mock import MockIdentityScopeClassifier
+
+    identity, scope = await MockIdentityScopeClassifier().classify(
+        "Salon Handmade", None, "Weert", None, None,
+    )
+    assert identity == "unknown"
+    assert scope == "unknown"
+
+
+def test_get_providers_retourneert_vier_providers(monkeypatch):
+    from app.config import get_settings
+    from app.providers import get_providers
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("PROVIDER_MODE", "mock")
+    result = get_providers()
+    assert len(result) == 4
+    get_settings.cache_clear()

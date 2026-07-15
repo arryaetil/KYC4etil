@@ -1,12 +1,24 @@
 """Provider-factory: kiest mock of live o.b.v. PROVIDER_MODE."""
 from ..config import get_settings
-from .base import JaarverslagAgent, LookupProvider, WebsiteAgent
+from .base import IdentityScopeClassifier, JaarverslagAgent, LookupProvider, WebsiteAgent
 
 
-def get_providers() -> tuple[LookupProvider, WebsiteAgent, JaarverslagAgent]:
+def get_providers() -> tuple[LookupProvider, WebsiteAgent, JaarverslagAgent, IdentityScopeClassifier]:
     settings = get_settings()
     if settings.provider_mode == "live":
-        from .live import LiveJaarverslagAgent, LivePlacesProvider, LiveWebsiteAgent
-        return LivePlacesProvider(), LiveWebsiteAgent(), LiveJaarverslagAgent()
-    from .mock import MockJaarverslagAgent, MockLookupProvider, MockWebsiteAgent
-    return MockLookupProvider(), MockWebsiteAgent(), MockJaarverslagAgent()
+        from .live import (
+            LiveIdentityScopeClassifier, LiveJaarverslagAgent, LivePlacesProvider,
+            LiveWebsiteAgent,
+        )
+        return (
+            LivePlacesProvider(), LiveWebsiteAgent(), LiveJaarverslagAgent(),
+            LiveIdentityScopeClassifier(),
+        )
+    from .mock import (
+        MockIdentityScopeClassifier, MockJaarverslagAgent, MockLookupProvider,
+        MockWebsiteAgent,
+    )
+    return (
+        MockLookupProvider(), MockWebsiteAgent(), MockJaarverslagAgent(),
+        MockIdentityScopeClassifier(),
+    )
