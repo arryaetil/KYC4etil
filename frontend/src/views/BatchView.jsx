@@ -201,10 +201,12 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <LabelBadge label={company.confidence_label} />
-                    <span className="text-xs text-slate-500">{pct(company.confidence_score)}%</span>
-                  </div>
+                  {company.confidence_label ? (
+                    <div className="flex items-center gap-3">
+                      <LabelBadge label={company.confidence_label} />
+                      <span className="text-xs text-slate-500">{pct(company.confidence_score)}%</span>
+                    </div>
+                  ) : "-"}
                 </td>
                 <td className="px-4 py-3"><StatusPill status={company.status} /></td>
               </tr>
