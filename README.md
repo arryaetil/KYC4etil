@@ -2,7 +2,8 @@
 
 AI-pipeline voor het verzamelen van Werkzame Personen-data (WP) voor het Vestigingsregister van Provincie Limburg.
 
-- Documentatie: [docs/PLATFORM_DOCUMENTATIE_v2.md](docs/PLATFORM_DOCUMENTATIE_v2.md)
+- Documentatie: [docs/PLATFORM_DOCUMENTATIE_v2.md](docs/PLATFORM_DOCUMENTATIE_v2.md) (bron van waarheid voor requirements/bouwredenen)
+- Volledige applicatie-spec (huidige werking): [docs/applicatie-spec/](docs/applicatie-spec/00-overzicht.md) — architectuur, pipeline + LangGraph-agents, externe diensten & kosten, datamodel, confidence-/reconciliatieregels, bronnen-first review-UI, authenticatie & deployment.
 - Status: backend pipeline + auth + React review-interface, werkend in mock-modus.
 
 ## Snel Starten
