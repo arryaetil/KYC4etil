@@ -17,6 +17,7 @@ USER_CONFIG = [
     ("Armina", "armina@etil.nl", "reviewer", "demo_armina_password"),
     ("Anita", "anita@etil.nl", "reviewer", "demo_anita_password"),
     ("Admin", "admin@etil.nl", "admin", "demo_admin_password"),
+    ("R. van Zandvoort", "r.vanzandvoort@etil.nl", "reviewer", "demo_vanzandvoort_password"),
 ]
 
 
