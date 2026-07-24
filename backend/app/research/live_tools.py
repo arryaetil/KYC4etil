@@ -67,6 +67,58 @@ class LiveResearchTools:
                     or [result.get("bron", "web_search")],
                     queries=[query_text],
                 )
+                if ".pdf" not in urlsplit(url).path.lower():
+                    try:
+                        pagina = await live._haal_pagina_op(url)
+                    except Exception:
+                        pagina = None
+                    if pagina:
+                        for link in pagina.get("links", []):
+                            link_url = link.get("url", "")
+                            link_tekst = link.get("tekst", "")
+                            zoektekst = unquote(
+                                f"{link_tekst} {link_url}"
+                            ).lower()
+                            if (
+                                str(context.gevraagd_jaar) not in zoektekst
+                                or not any(
+                                    token in zoektekst
+                                    for token in (
+                                        "jaarrekening",
+                                        "jaarverslag",
+                                        "jaarverantwoording",
+                                        "annual report",
+                                    )
+                                )
+                            ):
+                                continue
+                            link_domein = urlsplit(
+                                link_url,
+                            ).netloc.lower().removeprefix("www.")
+                            if link_domein != domein:
+                                continue
+                            linked_document = await self.inspect(
+                                context,
+                                query,
+                                CombinedSearchResult(
+                                    title=link_tekst or unquote(
+                                        urlsplit(link_url).path.rsplit(
+                                            "/", 1,
+                                        )[-1]
+                                    ),
+                                    url=link_url,
+                                    canonical_url=canonicaliseer_url(link_url),
+                                    snippets=[],
+                                    providers=["official_site_link"],
+                                    queries=[query_text],
+                                ),
+                            )
+                            if (
+                                linked_document is not None
+                                and linked_document.verslagjaar
+                                == context.gevraagd_jaar
+                            ):
+                                return linked_document
                 document = await self.inspect(context, query, combined)
                 if (
                     document is not None
@@ -98,6 +150,53 @@ class LiveResearchTools:
                 query_text,
                 "nieuwste versie vanaf het bevestigde officiële domein",
             )
+            # Een overzichtspagina is vooral een routekaart: volg eerst de
+            # expliciete link naar de gevraagde jaargang. Zo krijgt de reviewer
+            # de echte PDF en kan de bestaande PDF-extractor ook WP-bewijs
+            # ophalen.
+            try:
+                pagina = await live._haal_pagina_op(url)
+            except Exception:
+                pagina = None
+            if pagina:
+                for link in pagina.get("links", []):
+                    link_url = link.get("url", "")
+                    link_tekst = link.get("tekst", "")
+                    zoektekst = unquote(f"{link_tekst} {link_url}").lower()
+                    if (
+                        str(context.gevraagd_jaar) not in zoektekst
+                        or not any(token in zoektekst for token in (
+                            "jaarrekening",
+                            "jaarverslag",
+                            "jaarverantwoording",
+                            "annual report",
+                        ))
+                    ):
+                        continue
+                    link_domein = urlsplit(
+                        link_url,
+                    ).netloc.lower().removeprefix("www.")
+                    if link_domein != domein:
+                        continue
+                    document = await self.inspect(
+                        context,
+                        query,
+                        CombinedSearchResult(
+                            title=link_tekst or unquote(
+                                urlsplit(link_url).path.rsplit("/", 1)[-1]
+                            ),
+                            url=link_url,
+                            canonical_url=canonicaliseer_url(link_url),
+                            snippets=[],
+                            providers=["official_site_link"],
+                            queries=[query_text],
+                        ),
+                    )
+                    if (
+                        document is not None
+                        and document.verslagjaar == context.gevraagd_jaar
+                    ):
+                        return document
             try:
                 document = await self.inspect(
                     context,

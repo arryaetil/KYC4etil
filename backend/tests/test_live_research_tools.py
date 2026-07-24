@@ -112,3 +112,55 @@ async def test_nieuwste_officiele_document_probeert_stabiele_publicatiepagina(
         document.url
         == "https://www.mondriaan.eu/jaarrekening-en-maatschappelijk-verslag"
     )
+
+
+@pytest.mark.asyncio
+async def test_publicatiepagina_leidt_naar_pdf_van_gevraagde_jaargang(
+    monkeypatch,
+):
+    async def fake_web_search(query, max_results=8):
+        return []
+
+    async def fake_page(url):
+        if url.endswith("/jaarrekening-en-maatschappelijk-verslag"):
+            return {
+                "tekst": "Terugblik 2025",
+                "links": [{
+                    "tekst": "Mondriaan Jaarrekening 2025",
+                    "url": (
+                        "https://www.mondriaan.eu/sites/mondriaan/files/"
+                        "2026-05/Mondriaan-Jaarverantwoording-2025.pdf"
+                    ),
+                }],
+            }
+        raise RuntimeError("geen publicatiepagina")
+
+    async def fake_inspect(context, query, result):
+        return SourceDocument(
+            naam=context.naam,
+            company_website_url=context.website_url,
+            url=result.url,
+            titel=result.title,
+            brontype="jaarverslag",
+            documenttype="jaarverslag",
+            gevraagd_jaar=2025,
+            verslagjaar=2025,
+            wp_gevonden=2200,
+        )
+
+    tools = LiveResearchTools()
+    tools.inspect = AsyncMock(side_effect=fake_inspect)
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(live, "_haal_pagina_op", fake_page)
+
+    document = await tools.find_nieuwste_officiele_document(QueryContext(
+        naam="Mondriaan",
+        website_url="https://www.mondriaan.eu",
+        gevraagd_jaar=2025,
+    ))
+
+    assert document is not None
+    assert document.url.endswith(
+        "/2026-05/Mondriaan-Jaarverantwoording-2025.pdf"
+    )
+    assert document.wp_gevonden == 2200
