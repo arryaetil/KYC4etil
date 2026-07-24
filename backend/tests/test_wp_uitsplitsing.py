@@ -423,6 +423,27 @@ def test_companies_lijst_toont_geen_ruwe_wp_als_kandidaat_al_bekend(client, db_s
     assert item["wp_gevonden_ruw"] is None
 
 
+def test_companies_lijst_toont_vestigingsnummer_cber_kvk_en_sector(client, db_session):
+    batch = Batch(naam="zoekvelden-test", jaar=2026, totaal=1)
+    db_session.add(batch)
+    db_session.flush()
+    company = Company(
+        batch_id=batch.id, naam="Testbedrijf", vestigingsnummer="V099",
+        cb_er="CB099", kvk_nummer="99887766", sbi_omschrijving="Detailhandel",
+    )
+    db_session.add(company)
+    db_session.commit()
+
+    response = client.get(f"/batches/{batch.id}/companies")
+
+    assert response.status_code == 200
+    item = response.json()[0]
+    assert item["vestigingsnummer"] == "V099"
+    assert item["cb_er"] == "CB099"
+    assert item["kvk_nummer"] == "99887766"
+    assert item["sbi_omschrijving"] == "Detailhandel"
+
+
 def test_company_update_route_is_niet_dubbel_geregistreerd():
     from app.main import app
 

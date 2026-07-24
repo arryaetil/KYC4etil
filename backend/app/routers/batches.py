@@ -262,6 +262,8 @@ def list_companies(batch_id: str, label: str | None = None, db: Session = Depend
         heeft_kandidaat = cand is not None and cand.wp_kandidaat is not None
         out.append({
             "company_id": comp.id, "naam": comp.naam, "gemeente": comp.gemeente,
+            "vestigingsnummer": comp.vestigingsnummer, "cb_er": comp.cb_er,
+            "kvk_nummer": comp.kvk_nummer, "sbi_omschrijving": comp.sbi_omschrijving,
             "wp_kandidaat": cand.wp_kandidaat if cand else None,
             "wp_gevonden_ruw": None if heeft_kandidaat else ruwe_wp_map.get(comp.id),
             "is_schatting": cand.is_schatting if cand else None,
