@@ -22,6 +22,15 @@ def test_queryplanner_dekt_website_documenten_en_recente_media():
     assert any(q.pad == "document" and "jaarverslag 2025" in q.query for q in queries)
     assert any(q.pad == "document" and "2026" in q.query for q in queries)
     assert any(q.pad == "media" and "nieuws" in q.query for q in queries)
+    site_document_index = next(
+        index for index, query in enumerate(queries)
+        if query.pad == "document" and "site:voorbeeldzorg.nl" in query.query
+    )
+    open_document_index = next(
+        index for index, query in enumerate(queries)
+        if query.pad == "document" and "site:" not in query.query
+    )
+    assert site_document_index < open_document_index
     assert len({q.query for q in queries}) == len(queries)
 
 

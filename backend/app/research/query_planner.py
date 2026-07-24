@@ -51,6 +51,19 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
     if context.gevraagd_jaar:
         jaar = context.gevraagd_jaar
         publicatiejaar = jaar + 1
+        if domein:
+            # Zodra het officiële domein bekend is, moet de exacte nieuwste
+            # jaargang vóór brede zoekresultaten worden onderzocht. Anders
+            # verbruiken algemene website- en documenthits het paginabudget
+            # voordat deze betrouwbare query aan bod komt.
+            queries.append(PlannedQuery(
+                "document",
+                (
+                    f"site:{domein} jaarverslag {jaar} jaarrekening {jaar} "
+                    f"jaarverantwoording {jaar}"
+                ),
+                "nieuwste formele document op het officiële domein",
+            ))
         queries.extend([
             PlannedQuery(
                 "document",
@@ -68,13 +81,6 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
                 "document gepubliceerd in jaar N+1 over verslagjaar N",
             ),
         ])
-        if domein:
-            queries.append(PlannedQuery(
-                "document",
-                f"site:{domein} jaarverslag {jaar} jaarrekening jaarverantwoording",
-                "formeel document op het officiële domein",
-            ))
-
     queries.extend([
         PlannedQuery(
             "media",
