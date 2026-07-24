@@ -1,7 +1,8 @@
 """Adapter van bestaande live providers naar het researchcontract."""
 import re
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
+from ..pipeline.identity_scope import heuristic_scope_class
 from .query_planner import QueryContext
 from .types import CombinedSearchResult, PlannedQuery
 from .urls import canonicaliseer_url
@@ -9,6 +10,55 @@ from .validation import SourceDocument
 
 
 class LiveResearchTools:
+    async def find_jaarverslag(
+        self,
+        context: QueryContext,
+    ) -> SourceDocument | None:
+        """Hergebruik het bewezen gespecialiseerde legacy-zoekpad als seed.
+
+        Het publicatiejaar is één hoger dan het gevraagde verslagjaar. De
+        legacy-agent probeert zelf dit jaar en het jaar ervoor, valideert de
+        PDF-identiteit en retryt met een andere URL bij een mismatch.
+        """
+        if context.gevraagd_jaar is None:
+            return None
+        from ..providers import live
+
+        finding = await live.LiveJaarverslagAgent().run(
+            context.naam,
+            context.gevraagd_jaar + 1,
+            website_url=context.website_url,
+        )
+        if not finding or not finding.bron_url:
+            return None
+        titel = unquote(urlsplit(finding.bron_url).path.rsplit("/", 1)[-1])
+        return SourceDocument(
+            naam=context.naam,
+            company_website_url=context.website_url,
+            url=finding.bron_url,
+            titel=titel or "Gevonden jaarverslag",
+            tekst="",
+            brontype="jaarverslag",
+            documenttype=_documenttype(
+                titel, finding.bron_url, is_pdf=True,
+            ),
+            gevraagd_jaar=context.gevraagd_jaar,
+            verslagjaar=_vind_jaar(titel, context.gevraagd_jaar),
+            informatie_peilmoment=finding.peilmoment,
+            wp_gevonden=finding.wp_gevonden,
+            eenheid=(
+                "fte" if finding.is_fte
+                else "werkzame_personen"
+                if finding.wp_gevonden is not None
+                else None
+            ),
+            bewijsfragment=finding.context,
+            bron_pagina=finding.bron_pagina,
+            scope_class=heuristic_scope_class(
+                finding.is_limburg_specifiek, "jaarverslag",
+            ),
+        )
+
     async def search(
         self, query: PlannedQuery, max_results: int,
     ) -> list[CombinedSearchResult]:

@@ -130,3 +130,34 @@ async def test_supervisor_registreert_explicitiet_niet_gevonden():
     assert outcome.kandidaten == []
     assert outcome.onderzochte_queries == 3
     assert outcome.diagnostiek["zoekresultaten"] == 0
+
+
+@pytest.mark.asyncio
+async def test_supervisor_neemt_gespecialiseerd_jaarverslag_als_seed_mee():
+    seed = SourceDocument(
+        naam="Voorbeeld Zorg",
+        company_website_url="https://voorbeeldzorg.nl",
+        url="https://voorbeeldzorg.nl/jaarverslag-2025.pdf",
+        titel="Jaarverslag 2025",
+        brontype="jaarverslag",
+        documenttype="jaarverslag",
+        gevraagd_jaar=2025,
+        verslagjaar=2025,
+        wp_gevonden=47,
+        eenheid="werkzame_personen",
+        bewijsfragment="Voorbeeld Zorg had 47 medewerkers.",
+    )
+    outcome = await ResearchSupervisor(
+        EmptyResearchTools(), max_queries=3, max_pages=5,
+    ).run(
+        QueryContext(
+            naam="Voorbeeld Zorg",
+            gevraagd_jaar=2025,
+            website_url="https://voorbeeldzorg.nl",
+        ),
+        seed_documents=[seed],
+    )
+
+    assert outcome.status == "review_nodig"
+    assert [item.document.url for item in outcome.kandidaten] == [seed.url]
+    assert outcome.diagnostiek["gelezen_documenten"] == 1

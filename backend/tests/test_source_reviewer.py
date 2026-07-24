@@ -191,3 +191,37 @@ async def test_kleine_organisatiepagina_zonder_wp_mag_semantisch_beoordeeld():
         == "context_only"
     )
     reviewer._llm_review.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_correcte_bron_vorig_jaar_blijft_als_context_beschikbaar():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock(return_value={
+        "beslissing": "tonen_aan_reviewer",
+        "identity_class": "exact_entity",
+        "scope_class": "limburg",
+        "gevonden_organisatie": "Mondriaan",
+        "reden": "Juiste organisatie, maar het verslag gaat over 2024.",
+    })
+    document = SourceDocument(
+        naam="Mondriaan",
+        company_website_url=None,
+        url="https://mondriaan.eu/jaarverslag-2024.pdf",
+        titel="Jaarverslag Mondriaan 2024",
+        brontype="jaarverslag",
+        documenttype="jaarverslag",
+        gevraagd_jaar=2025,
+        verslagjaar=2024,
+        wp_gevonden=2500,
+        eenheid="werkzame_personen",
+        bewijsfragment="In 2024 werkten gemiddeld 2.500 medewerkers bij Mondriaan.",
+    )
+
+    reviewed = await reviewer.review(_context("Mondriaan"), document)
+
+    assert reviewed.is_afgewezen is False
+    assert "afwijkend_verslagjaar" in reviewed.waarschuwingen
+    assert (
+        reviewed.validaties["intelligente_review"]["beslissing"]
+        == "context_only"
+    )

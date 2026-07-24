@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..database import SessionLocal
-from ..models import Batch, BronKandidaat, Company, ResearchRun
+from ..models import Batch, BronKandidaat, Company, Enrichment, ResearchRun
 from .live_tools import LiveResearchTools
 from .mock_tools import MockResearchTools
 from .query_planner import QueryContext
@@ -66,21 +66,65 @@ async def run_research_run(run_id: str) -> None:
                 company.enrichment.website_url if company.enrichment else None
             )
             company_id = company.id
-            context = QueryContext(
-                naam=company.naam,
-                gevraagd_jaar=run.gevraagd_jaar,
-                website_url=company.website_url or enrichment_website,
-                gemeente=company.gemeente,
-            )
+            company_naam = company.naam
+            company_gemeente = company.gemeente
+            gevraagd_jaar = run.gevraagd_jaar
+            website_url = company.website_url or enrichment_website
             run.status = "running"
             run.started_at = _now()
             db.commit()
 
+        if settings.provider_mode == "live" and not website_url:
+            try:
+                from ..providers.live import LivePlacesProvider
+
+                place = await LivePlacesProvider().lookup(
+                    company_naam, company_gemeente,
+                )
+                website_url = place.website if place else None
+                if website_url:
+                    with SessionLocal() as db:
+                        enrichment = (
+                            db.query(Enrichment)
+                            .filter_by(company_id=company_id)
+                            .one_or_none()
+                        )
+                        if enrichment is None:
+                            enrichment = Enrichment(
+                                company_id=company_id,
+                                website_url=website_url,
+                                lookup_failed=False,
+                            )
+                            db.add(enrichment)
+                        else:
+                            enrichment.website_url = website_url
+                            enrichment.lookup_failed = False
+                        db.commit()
+            except Exception:
+                # Places is een versterking, geen single point of failure.
+                website_url = None
+
+        context = QueryContext(
+            naam=company_naam,
+            gevraagd_jaar=gevraagd_jaar,
+            website_url=website_url,
+            gemeente=company_gemeente,
+        )
         tools = (
             LiveResearchTools()
             if settings.provider_mode == "live"
             else MockResearchTools()
         )
+        seed_documents = []
+        if settings.provider_mode == "live":
+            try:
+                jaarverslag = await tools.find_jaarverslag(context)
+                if jaarverslag is not None:
+                    seed_documents.append(jaarverslag)
+            except Exception:
+                # De brede autonome zoekpaden blijven beschikbaar als het
+                # gespecialiseerde documentpad niets oplevert.
+                pass
         outcome = await ResearchSupervisor(
             tools,
             max_queries=settings.research_max_queries,
@@ -90,7 +134,7 @@ async def run_research_run(run_id: str) -> None:
                 if settings.provider_mode == "live"
                 else None
             ),
-        ).run(context)
+        ).run(context, seed_documents=seed_documents)
 
         with SessionLocal() as db:
             run = db.get(ResearchRun, run_id)

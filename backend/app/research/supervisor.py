@@ -54,7 +54,11 @@ class ResearchSupervisor:
         self.max_results_per_query = max_results_per_query
         self.reviewer = reviewer
 
-    async def run(self, context: QueryContext) -> ResearchOutcome:
+    async def run(
+        self,
+        context: QueryContext,
+        seed_documents: list[SourceDocument] | None = None,
+    ) -> ResearchOutcome:
         queries = plan_queries(context)[:self.max_queries]
         search_results = await asyncio.gather(*[
             self.tools.search(query, self.max_results_per_query)
@@ -63,7 +67,10 @@ class ResearchSupervisor:
 
         fouten: list[str] = []
         te_inspecteren: list[tuple[PlannedQuery, CombinedSearchResult]] = []
-        geziene_urls: set[str] = set()
+        seed_documents = seed_documents or []
+        geziene_urls: set[str] = {
+            document.url for document in seed_documents
+        }
         for query, results in zip(queries, search_results):
             if isinstance(results, BaseException):
                 fouten.append(f"{query.pad}: {results}")
@@ -85,7 +92,7 @@ class ResearchSupervisor:
         validaties = []
         afwijzingen = []
         documenten = 0
-        for item in inspected:
+        for item in [*seed_documents, *inspected]:
             if isinstance(item, BaseException):
                 fouten.append(f"inspectie: {item}")
                 continue

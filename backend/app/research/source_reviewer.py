@@ -94,14 +94,25 @@ class IntelligentSourceReviewer:
         # degelijk bij de gezochte organisatie horen. Laat zulke bronnen door
         # de semantische reviewer beoordelen. Structurele fouten (ongeldige URL
         # en een aantoonbaar verkeerd verslagjaar) blijven wel hard fail-closed.
+        zachte_afwijsredenen = {
+            "verkeerde organisatie",
+            "verkeerd verslagjaar",
+        }
         harde_afwijsredenen = [
             reden for reden in validatie.afwijsredenen
-            if reden != "verkeerde organisatie"
+            if reden not in zachte_afwijsredenen
         ]
         if harde_afwijsredenen:
             return validatie
         validatie.is_afgewezen = False
         validatie.afwijsredenen = []
+        verslagjaar_wijkt_af = (
+            document.gevraagd_jaar is not None
+            and document.verslagjaar is not None
+            and document.gevraagd_jaar != document.verslagjaar
+        )
+        if verslagjaar_wijkt_af:
+            validatie.waarschuwingen.append("afwijkend_verslagjaar")
 
         if (
             document.wp_gevonden is None
@@ -154,6 +165,8 @@ class IntelligentSourceReviewer:
         }:
             beslissing = "afwijzen"
         if scope in {"nederland", "concern"} and beslissing != "afwijzen":
+            beslissing = "context_only"
+        if verslagjaar_wijkt_af and beslissing != "afwijzen":
             beslissing = "context_only"
 
         reviewed_document = replace(document, scope_class=scope)
