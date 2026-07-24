@@ -10,6 +10,36 @@ from .validation import SourceDocument
 
 
 class LiveResearchTools:
+    async def find_officiele_website(
+        self,
+        context: QueryContext,
+    ) -> SourceDocument | None:
+        """Neem een opgelost officieel domein altijd mee als reviewercontext.
+
+        Kleine organisaties hebben vaak geen jaarverslag en zoekmachines tonen
+        niet altijd de homepage. De officiële site mag dan niet verdwijnen
+        alleen omdat er geen expliciet WP-getal op de eerste pagina staat.
+        """
+        if not context.website_url:
+            return None
+        query = PlannedQuery(
+            "website",
+            f"officiële website van {context.naam}",
+            "door Places of websearch opgelost officieel domein",
+        )
+        return await self.inspect(
+            context,
+            query,
+            CombinedSearchResult(
+                title=f"{context.naam} — officiële website",
+                url=context.website_url,
+                canonical_url=canonicaliseer_url(context.website_url),
+                snippets=[f"Officiële website van {context.naam}"],
+                providers=["official_site_resolution"],
+                queries=[query.query],
+            ),
+        )
+
     async def find_nieuwste_officiele_document(
         self,
         context: QueryContext,

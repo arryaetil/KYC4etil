@@ -10,6 +10,26 @@ from app.research.validation import SourceDocument
 
 
 @pytest.mark.asyncio
+async def test_opgeloste_officiele_website_wordt_altijd_seed(monkeypatch):
+    async def fake_fetch_text(url):
+        return "OKECHAMP B.V. verwerkt champignons in Velden."
+
+    monkeypatch.setattr(live.settings, "openai_api_key", "")
+    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+
+    document = await LiveResearchTools().find_officiele_website(QueryContext(
+        naam="Okechamp B.V.",
+        gemeente="Horst aan de Maas",
+        website_url="https://www.okechamp.eu/",
+        gevraagd_jaar=2025,
+    ))
+
+    assert document is not None
+    assert document.url == "https://www.okechamp.eu/"
+    assert document.brontype == "officiele_website"
+
+
+@pytest.mark.asyncio
 async def test_nieuwste_officiele_document_krijgt_eigen_site_search(
     monkeypatch,
 ):

@@ -133,6 +133,12 @@ async def run_research_run(run_id: str) -> None:
         seed_documents = []
         if settings.provider_mode == "live":
             try:
+                officiele_website = await tools.find_officiele_website(context)
+                if officiele_website is not None:
+                    seed_documents.append(officiele_website)
+            except Exception:
+                pass
+            try:
                 nieuwste_document = (
                     await tools.find_nieuwste_officiele_document(context)
                 )
