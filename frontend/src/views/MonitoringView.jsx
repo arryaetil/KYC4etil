@@ -1,5 +1,5 @@
-import {useEffect, useState} from "react";
-import {AlertTriangle, FileSearch, ListChecks, RefreshCw, Sparkles} from "lucide-react";
+import {useEffect, useMemo, useState} from "react";
+import {AlertTriangle, FileSearch, ListChecks, RefreshCw, Search, Sparkles} from "lucide-react";
 import {classNames} from "../lib/format.js";
 import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
@@ -19,6 +19,7 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [gestartOm, setGestartOm] = useState(null);
+  const [zoek, setZoek] = useState("");
 
   async function load() {
     const data = await api.monitoringStatus();
@@ -47,6 +48,10 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
 
   const batch = status?.batch;
   const companies = status?.companies || [];
+  const gefilterd = useMemo(() => companies.filter((company) => {
+    const text = `${company.naam || ""} ${company.gemeente || ""}`.toLowerCase();
+    return text.includes(zoek.toLowerCase());
+  }), [companies, zoek]);
 
   return (
     <Shell
@@ -76,6 +81,10 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
               Controle gestart om {formatDatumTijd(gestartOm.toISOString())}. Het overzicht ververst vanzelf.
             </p>
           ) : null}
+          <div className="relative mb-4">
+            <Search className="pointer-events-none absolute left-3 top-3 text-slate-500" size={17} />
+            <input className="focus-ring h-11 w-full max-w-sm rounded-md border border-line bg-white pl-9 pr-3" value={zoek} onChange={(event) => setZoek(event.target.value)} placeholder="Zoeken" aria-label="Zoeken op naam of gemeente" />
+          </div>
           <div className="mb-4 grid gap-3 md:grid-cols-5">
             <Metric title="Totaal" value={status.totaal} />
             <Metric title="Gecontroleerd" value={`${status.gecontroleerd}/${status.totaal}`} />
@@ -100,7 +109,7 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
                 </tr>
               </thead>
               <tbody>
-                {companies.map((company) => (
+                {gefilterd.map((company) => (
                     <tr
                       key={company.company_id}
                       className="cursor-pointer border-t border-line hover:bg-panel"
@@ -151,10 +160,10 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
                       </td>
                     </tr>
                 ))}
-                {!companies.length ? (
+                {!gefilterd.length ? (
                   <tr>
                     <td className="px-4 py-8 text-center text-slate-500" colSpan="4">
-                      Geen organisaties in de watchlist
+                      {companies.length ? "Geen resultaten voor deze zoekopdracht" : "Geen organisaties in de watchlist"}
                     </td>
                   </tr>
                 ) : null}
