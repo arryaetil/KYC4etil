@@ -1,8 +1,11 @@
 """Discoverytests: queryplanning, URL-normalisatie en providerfusie."""
+from types import SimpleNamespace
+
 import pytest
 
 from app.research.query_planner import QueryContext, plan_queries
 from app.research.search import combineer_zoekresultaten
+from app.research.service import _dedupliceer_kandidaten
 from app.research.types import SearchResult
 from app.research.urls import canonicaliseer_url
 
@@ -26,6 +29,21 @@ def test_canonicaliseer_url_verwijdert_tracking_fragment_en_www():
     assert canonicaliseer_url(
         "HTTPS://WWW.Example.nl/team/?utm_source=test&id=12#medewerkers"
     ) == "https://example.nl/team?id=12"
+
+
+def test_parallelle_paden_worden_voor_opslag_canoniek_gededupliceerd():
+    specialist = SimpleNamespace(document=SimpleNamespace(
+        url="https://www.mondriaan.eu/jaarverslag-2024.pdf",
+    ))
+    breed_zoekpad = SimpleNamespace(document=SimpleNamespace(
+        url="https://mondriaan.eu/jaarverslag-2024.pdf?utm_source=search",
+    ))
+
+    uniek = _dedupliceer_kandidaten([specialist, breed_zoekpad])
+
+    assert uniek == [
+        (specialist, "https://mondriaan.eu/jaarverslag-2024.pdf"),
+    ]
 
 
 @pytest.mark.asyncio

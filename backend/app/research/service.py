@@ -18,6 +18,19 @@ def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _dedupliceer_kandidaten(kandidaten):
+    """Verwijder dezelfde bron uit parallelle onderzoekspaden vóór DB-opslag."""
+    uniek = []
+    geziene_canonical_urls: set[str] = set()
+    for ranked in kandidaten:
+        canonical_url = canonicaliseer_url(ranked.document.url)
+        if canonical_url in geziene_canonical_urls:
+            continue
+        geziene_canonical_urls.add(canonical_url)
+        uniek.append((ranked, canonical_url))
+    return uniek
+
+
 def maak_research_run(
     db: Session,
     company: Company,
@@ -140,13 +153,16 @@ async def run_research_run(run_id: str) -> None:
             run = db.get(ResearchRun, run_id)
             if run is None:
                 return
-            for rang, ranked in enumerate(outcome.kandidaten, start=1):
+            for rang, (ranked, canonical_url) in enumerate(
+                _dedupliceer_kandidaten(outcome.kandidaten),
+                start=1,
+            ):
                 document = ranked.document
                 db.add(BronKandidaat(
                     research_run_id=run.id,
                     company_id=company_id,
                     url=document.url,
-                    canonical_url=canonicaliseer_url(document.url),
+                    canonical_url=canonical_url,
                     titel=document.titel,
                     brontype=document.brontype,
                     documenttype=document.documenttype,
