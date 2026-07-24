@@ -326,6 +326,32 @@ export function ResearchPanel({api, company, batchJaar}) {
                           .join(", ")}
                       </p>
                     ) : null}
+                    {diagnostiek.afwijzingen?.length ? (
+                      <details className="mt-3 rounded-md border border-line bg-panel p-3">
+                        <summary className="cursor-pointer text-xs font-semibold text-ink">
+                          Bekijk afgewezen bronnen
+                        </summary>
+                        <ul className="mt-2 space-y-2">
+                          {diagnostiek.afwijzingen.slice(0, 8).map((item) => (
+                            <li key={item.url} className="text-xs">
+                              <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-medium text-etil underline"
+                              >
+                                {item.titel || item.url}
+                              </a>
+                              <span className="ml-1 text-slate-500">
+                                — {item.review_reden
+                                  || item.redenen?.join(", ").replaceAll("_", " ")
+                                  || "afgewezen"}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
                   </div>
                 )
                 : "Nog geen bronkandidaten. Start een onderzoek of voeg een bekende bron toe."}
