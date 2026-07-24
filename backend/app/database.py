@@ -45,7 +45,10 @@ def ensure_lightweight_migrations() -> None:
 
     existing_companies = {col["name"] for col in inspector.get_columns("companies")}
     with engine.begin() as conn:
-        for name, ddl_type in [("website_url", "TEXT"), ("telefoonnummer", "VARCHAR(50)")]:
+        for name, ddl_type in [
+            ("website_url", "TEXT"), ("telefoonnummer", "VARCHAR(50)"),
+            ("afgewerkt", "BOOLEAN"),
+        ]:
             _add_column_if_missing(conn, "companies", existing_companies, name, ddl_type)
 
     if "enrichments" in tables:

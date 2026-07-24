@@ -454,3 +454,43 @@ def test_company_update_route_is_niet_dubbel_geregistreerd():
     ]
 
     assert len(matches) == 1
+
+
+def test_company_afgewerkt_toggle_via_patch(client, db_session):
+    batch = Batch(naam="afgewerkt-test", jaar=2026, totaal=1)
+    db_session.add(batch)
+    db_session.flush()
+    company = Company(batch_id=batch.id, naam="Testbedrijf")
+    db_session.add(company)
+    db_session.commit()
+
+    response = client.get(f"/batches/{batch.id}/companies")
+    assert response.json()[0]["afgewerkt"] is False
+
+    patch_response = client.patch(
+        f"/batches/{batch.id}/companies/{company.id}",
+        json={"afgewerkt": True},
+    )
+    assert patch_response.status_code == 200
+
+    response = client.get(f"/batches/{batch.id}/companies")
+    assert response.json()[0]["afgewerkt"] is True
+
+
+def test_company_afgewerkt_blijft_ongewijzigd_zonder_dat_veld(client, db_session):
+    batch = Batch(naam="afgewerkt-test-2", jaar=2026, totaal=1)
+    db_session.add(batch)
+    db_session.flush()
+    company = Company(batch_id=batch.id, naam="Testbedrijf", afgewerkt=True)
+    db_session.add(company)
+    db_session.commit()
+
+    patch_response = client.patch(
+        f"/batches/{batch.id}/companies/{company.id}",
+        json={"naam": "Testbedrijf BV"},
+    )
+    assert patch_response.status_code == 200
+
+    response = client.get(f"/batches/{batch.id}/companies")
+    assert response.json()[0]["afgewerkt"] is True
+    assert response.json()[0]["naam"] == "Testbedrijf BV"

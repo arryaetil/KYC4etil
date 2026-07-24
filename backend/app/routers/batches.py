@@ -264,6 +264,7 @@ def list_companies(batch_id: str, label: str | None = None, db: Session = Depend
             "company_id": comp.id, "naam": comp.naam, "gemeente": comp.gemeente,
             "vestigingsnummer": comp.vestigingsnummer, "cb_er": comp.cb_er,
             "kvk_nummer": comp.kvk_nummer, "sbi_omschrijving": comp.sbi_omschrijving,
+            "afgewerkt": comp.afgewerkt,
             "wp_kandidaat": cand.wp_kandidaat if cand else None,
             "wp_gevonden_ruw": None if heeft_kandidaat else ruwe_wp_map.get(comp.id),
             "is_schatting": cand.is_schatting if cand else None,
@@ -375,12 +376,13 @@ class CompanyUpdateBody(BaseModel):
     sbi_code: str | None = None
     cb_er: str | None = None
     kvk_nummer: str | None = None
+    afgewerkt: bool | None = None
     website_url: str | None = None
     telefoonnummer: str | None = None
     email: str | None = None
 
 
-_COMPANY_FIELDS = {"naam", "gemeente", "adres", "sbi_code", "cb_er", "kvk_nummer"}
+_COMPANY_FIELDS = {"naam", "gemeente", "adres", "sbi_code", "cb_er", "kvk_nummer", "afgewerkt"}
 _ENRICHMENT_FIELDS = {"website_url", "telefoonnummer", "email"}
 
 

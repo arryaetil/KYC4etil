@@ -56,6 +56,7 @@ class Company(Base):
     sbi_code: Mapped[str | None] = mapped_column(String(10))
     sbi_omschrijving: Mapped[str | None] = mapped_column(Text)
     kvk_nummer: Mapped[str | None] = mapped_column(String(20))
+    afgewerkt: Mapped[bool] = mapped_column(Boolean, default=False)
     website_url: Mapped[str | None] = mapped_column(Text)
     telefoonnummer: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
