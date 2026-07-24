@@ -44,11 +44,13 @@ class ResearchSupervisor:
         max_queries: int,
         max_pages: int,
         max_results_per_query: int = 8,
+        reviewer=None,
     ):
         self.tools = tools
         self.max_queries = max_queries
         self.max_pages = max_pages
         self.max_results_per_query = max_results_per_query
+        self.reviewer = reviewer
 
     async def run(self, context: QueryContext) -> ResearchOutcome:
         queries = plan_queries(context)[:self.max_queries]
@@ -84,7 +86,15 @@ class ResearchSupervisor:
                 fouten.append(f"inspectie: {item}")
                 continue
             if item is not None:
-                validaties.append(valideer_bron(item))
+                if self.reviewer is not None:
+                    try:
+                        validaties.append(
+                            await self.reviewer.review(context, item)
+                        )
+                    except Exception as exc:
+                        fouten.append(f"bronreview: {exc}")
+                else:
+                    validaties.append(valideer_bron(item))
 
         ranked = rank_bronnen(validaties)[:3]
         return ResearchOutcome(

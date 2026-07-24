@@ -9,6 +9,7 @@ from ..models import Batch, BronKandidaat, Company, ResearchRun
 from .live_tools import LiveResearchTools
 from .mock_tools import MockResearchTools
 from .query_planner import QueryContext
+from .source_reviewer import IntelligentSourceReviewer
 from .supervisor import ResearchSupervisor
 from .urls import canonicaliseer_url
 
@@ -84,6 +85,11 @@ async def run_research_run(run_id: str) -> None:
             tools,
             max_queries=settings.research_max_queries,
             max_pages=settings.research_max_pages,
+            reviewer=(
+                IntelligentSourceReviewer()
+                if settings.provider_mode == "live"
+                else None
+            ),
         ).run(context)
 
         with SessionLocal() as db:

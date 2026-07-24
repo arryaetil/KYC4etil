@@ -21,13 +21,22 @@ onderzoekt hij drie bronfamilies:
 
 De agent maakt meerdere zoekqueries, combineert resultaten van beschikbare
 zoekproviders, verwijdert dubbele URL's en inspecteert de gevonden pagina's.
-Vervolgens valideert en rangschikt hij kandidaten op:
+Vóór ranking beoordeelt een fail-closed bronreviewer iedere kandidaat op basis
+van de daadwerkelijke pagina- of documentinhoud. Zoekresultaatsnippets tellen
+niet als identiteitsbewijs. Evidente mismatches en sociale profielen worden
+deterministisch verwijderd; plausibele niet-officiële bronnen krijgen een
+gestructureerde LLM-review. Vervolgens rangschikt de agent alleen goedgekeurde
+of expliciet als context gemarkeerde kandidaten op:
 
 - juiste organisatie-identiteit;
 - autoriteit van de bron;
 - relevantie voor WP;
 - actualiteit en gevraagd verslagjaar;
 - aanwezigheid van controleerbaar bewijs.
+
+De review legt beslissing, gevonden organisatie, identity class, scope en reden
+vast in de auditdata. `possible_match`, `unknown` en `mismatch` gaan nooit naar
+de menselijke top-3.
 
 De hoogst gerangschikte drie kandidaten gaan naar een reviewer. De reviewer
 accepteert één primaire bron, wijst kandidaten af of voegt handmatig een bron

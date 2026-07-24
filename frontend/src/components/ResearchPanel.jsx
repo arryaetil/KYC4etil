@@ -8,7 +8,7 @@ import {IconButton} from "./IconButton.jsx";
 
 function scoreLabel(score) {
   if (score == null) return "Niet gescoord";
-  return `${Math.round(score * 100)}% bronmatch`;
+  return `${Math.round(score * 100)}% rankingscore`;
 }
 
 function brontypeLabel(type) {
@@ -208,6 +208,9 @@ export function ResearchPanel({api, company, batchJaar}) {
           <ol className="divide-y divide-line">
             {visibleItems.map((candidate, index) => (
               <li key={candidate.id} className="p-4 lg:p-5">
+                {(() => {
+                  const bronreview = candidate.validaties?.intelligente_review;
+                  return (
                 <div className="flex flex-wrap items-start gap-4">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-ink text-sm font-semibold text-white">
                     {candidate.rang || index + 1}
@@ -220,6 +223,13 @@ export function ResearchPanel({api, company, batchJaar}) {
                       <span className="text-xs font-medium text-etil">
                         {scoreLabel(candidate.ranking_score)}
                       </span>
+                      {bronreview?.beslissing ? (
+                        <span className="rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-slate-700">
+                          {bronreview.beslissing === "context_only"
+                            ? "Alleen context"
+                            : "Identiteit bevestigd"}
+                        </span>
+                      ) : null}
                       {candidate.status === "geaccepteerd" ? (
                         <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">
                           <Check size={12} />Geaccepteerd
@@ -240,6 +250,7 @@ export function ResearchPanel({api, company, batchJaar}) {
                       <ExternalLink size={14} className="shrink-0" />
                     </a>
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                      {candidate.identity_class ? <span>Identiteit: {candidate.identity_class}</span> : null}
                       {candidate.verslagjaar ? <span>Verslagjaar: {candidate.verslagjaar}</span> : null}
                       {candidate.publicatiedatum ? <span>Gepubliceerd: {candidate.publicatiedatum}</span> : null}
                       {candidate.informatie_peilmoment ? <span>Peilmoment: {candidate.informatie_peilmoment}</span> : null}
@@ -255,6 +266,12 @@ export function ResearchPanel({api, company, batchJaar}) {
                         Geen expliciet WP-fragment geëxtraheerd; beoordeel de bron zelf.
                       </p>
                     )}
+                    {bronreview?.reden ? (
+                      <div className="mt-3 flex items-start gap-2 rounded-md border border-sky-100 bg-sky-50 p-3 text-sm text-sky-950">
+                        <ShieldCheck size={16} className="mt-0.5 shrink-0" />
+                        <span><strong>Bronreview:</strong> {bronreview.reden}</span>
+                      </div>
+                    ) : null}
                     {candidate.waarschuwingen?.length ? (
                       <div className="mt-3 flex items-start gap-2 rounded-md bg-amber-50 p-2 text-xs font-medium text-amber-900">
                         <AlertTriangle size={14} className="shrink-0" />
@@ -280,6 +297,8 @@ export function ResearchPanel({api, company, batchJaar}) {
                     </div>
                   ) : null}
                 </div>
+                  );
+                })()}
               </li>
             ))}
           </ol>

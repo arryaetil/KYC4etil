@@ -47,7 +47,7 @@ class LiveResearchTools:
             except Exception:
                 finding = None
             verslagjaar = _vind_jaar(
-                " ".join([result.title, result.url]),
+                result.title,
                 context.gevraagd_jaar,
             )
             return SourceDocument(
@@ -55,7 +55,9 @@ class LiveResearchTools:
                 company_website_url=context.website_url,
                 url=result.url,
                 titel=result.title,
-                tekst=" ".join(result.snippets),
+                # Zoekresultaatsnippets zijn geen documentinhoud en mogen de
+                # identiteitsreview daarom nooit positief beïnvloeden.
+                tekst="",
                 brontype="jaarverslag" if query.pad == "document" else query.pad,
                 documenttype=_documenttype(result.title, result.url, is_pdf=True),
                 gevraagd_jaar=context.gevraagd_jaar,
@@ -107,7 +109,7 @@ class LiveResearchTools:
             documenttype=_documenttype(result.title, result.url, is_pdf=False),
             gevraagd_jaar=context.gevraagd_jaar if query.pad == "document" else None,
             verslagjaar=(
-                _vind_jaar(" ".join([result.title, result.url, tekst[:1000]]),
+                _vind_jaar(" ".join([result.title, tekst[:1000]]),
                            context.gevraagd_jaar)
                 if query.pad == "document" else None
             ),
