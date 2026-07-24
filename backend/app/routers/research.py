@@ -111,10 +111,18 @@ def get_research_run(run_id: str, db: Session = Depends(get_db)):
 def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
     if db.get(Company, company_id) is None:
         raise HTTPException(404, "company niet gevonden")
+    laatste_run = (
+        db.query(ResearchRun)
+        .filter_by(company_id=company_id)
+        .order_by(ResearchRun.created_at.desc())
+        .first()
+    )
+    if laatste_run is None:
+        return {"items": []}
     kandidaten = (
         db.query(BronKandidaat)
-        .filter_by(company_id=company_id)
-        .order_by(BronKandidaat.created_at.desc(), BronKandidaat.rang)
+        .filter_by(research_run_id=laatste_run.id)
+        .order_by(BronKandidaat.rang)
         .all()
     )
     return {"items": [_candidate_dict(item) for item in kandidaten]}
