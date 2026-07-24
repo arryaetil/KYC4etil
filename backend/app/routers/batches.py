@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import SessionLocal, get_db
-from ..models import (AgentResult, Batch, CallListItem, Candidate, ChatSession,
-                      Company, Enrichment, JaarverslagMonitoring, PipelineRun,
-                      VastgoedRecord, WPRecord)
+from ..models import (AgentResult, Batch, BronKandidaat, CallListItem, Candidate,
+                      ChatSession, Company, Enrichment, JaarverslagMonitoring,
+                      PipelineRun, ResearchRun, VastgoedRecord, WPRecord)
 from ..pipeline.runner import run_batch, verwerk_company
 
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
@@ -150,6 +150,8 @@ def delete_batch(batch_id: str, db: Session = Depends(get_db)):
         db.query(AgentResult).filter(AgentResult.batch_id == batch_id).delete(synchronize_session=False)
         db.query(Enrichment).filter(Enrichment.company_id.in_(company_ids)).delete(synchronize_session=False)
         db.query(JaarverslagMonitoring).filter(JaarverslagMonitoring.company_id.in_(company_ids)).delete(synchronize_session=False)
+        db.query(BronKandidaat).filter(BronKandidaat.company_id.in_(company_ids)).delete(synchronize_session=False)
+        db.query(ResearchRun).filter(ResearchRun.company_id.in_(company_ids)).delete(synchronize_session=False)
 
     db.query(PipelineRun).filter_by(batch_id=batch_id).delete(synchronize_session=False)
     db.query(Company).filter_by(batch_id=batch_id).delete(synchronize_session=False)
@@ -478,4 +480,3 @@ def upsert_vastgoed(batch_id: str, company_id: str, body: VastgoedBody,
     db.commit()
     return {"company_id": company_id, "bron": vg.bron,
             "updated_at": vg.updated_at.isoformat() + "Z"}
-

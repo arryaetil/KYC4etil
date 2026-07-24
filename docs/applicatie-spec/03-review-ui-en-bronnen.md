@@ -15,7 +15,24 @@ React 19 + Vite + Tailwind CSS (puur utility-classes, `classNames()`-helper uit
 | **ChatSessiesView** / **ChatTemplatesView** | Beheer van chat-sessies en herbruikbare vraagsets (admin). |
 | **ChatForm** | De publieke, token-based chatpagina die een extern bedrijf te zien krijgt (niet ingelogd). |
 | **JaarverslagenView** / **JaarverslagChatView** | Los subsysteem voor ad-hoc jaarverslaganalyse, buiten de hoofdbatchpipeline. |
-| **MonitoringView** | Doorlopende jaarverslag-monitoring (los van de hoofdbatch-run). |
+| **MonitoringView** | Bronnenmonitoring met filters voor actiegevallen, doorlopende controle en autonoom brononderzoek per organisatie. |
+
+## Human-in-the-loop brononderzoek
+
+Vanuit `MonitoringView` opent **Brononderzoek** een inline reviewwerkplek. De
+reviewer ziet:
+
+- welke drie bronfamilies worden onderzocht: website, documenten en media;
+- de top-3 in rangorde, inclusief brontype, bronmatch, verslagjaar,
+  peilmoment, scope, bewijsfragment en waarschuwingen;
+- één expliciet geaccepteerde primaire bron;
+- acties om een kandidaat te accepteren of af te wijzen;
+- een handmatige broninvoer als de agent geen geschikte bron vindt.
+
+De interface is bewust beslissinggericht. De organisatiepopulatie kan worden
+gefilterd op **Actie nodig** of **Bron gevonden**; de reviewer hoeft daardoor
+niet eerst alle zoekresultaten door te lopen. Een researchrun stelt alleen
+kandidaten voor en wijzigt nooit zelfstandig het definitieve register.
 
 ## De bronnen-first detailpagina (`DetailView.jsx`)
 
@@ -96,4 +113,5 @@ handmatig doorbladeren van vaak tientallen pagina's tellende jaarverslagen.
 | `chat.py` | De publieke, token-based chatflow voor het benaderde bedrijf zelf (niet ingelogd). |
 | `jaarverslagen.py` | Los jaarverslag uploaden/chatten/WP opslaan, buiten de batchpipeline om. |
 | `monitoring.py` | Doorlopende jaarverslag-monitoring ophalen/draaien. |
+| `research.py` | Autonome researchrun starten/pollen, top-3 ophalen en reviewerbeslissingen of handmatige bronnen vastleggen. |
 | `review.py` | Candidate goedkeuren/corrigeren/naar bellijst zetten, bulk-goedkeuren van alle 🟢-candidates, bellijst-CRUD en doorvoeren, Excel-exports. |

@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     jaarverslag_max_pogingen: int = 3          # retries met een ANDER zoekresultaat bij afgewezen/lege bron
     max_website_pages: int = 3                 # max pagina's per bedrijf voor website-agent (kostenbeheersing)
     extra_bronnen_aantal: int = 2               # extra publieke media-bronnen naast website/jaarverslag (human-in-the-loop; 0 = uit)
+    research_media_venster_maanden: int = 18
+    research_max_queries: int = 12
+    research_max_pages: int = 30
+    research_max_rounds: int = 3
     playwright_enabled: bool = False  # zet op true in Railway nadat Chromium getest is
     frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174"
     frontend_url: str = "http://localhost:5173"  # publieke URL voor chat-links in emails
@@ -52,6 +56,13 @@ class Settings(BaseSettings):
     penalty_places_fuzzy: float = 0.05
     penalty_fte_only: float = 0.10
     cap_llm_laag: float = 0.49
+
+    # Bronranking staat los van WP-confidence (som = 1.0)
+    rank_w_identiteit: float = 0.30
+    rank_w_autoriteit: float = 0.25
+    rank_w_relevantie: float = 0.20
+    rank_w_actualiteit: float = 0.15
+    rank_w_bewijs: float = 0.10
 
     @property
     def effective_database_url(self) -> str:

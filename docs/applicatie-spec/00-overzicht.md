@@ -10,7 +10,8 @@
 ## Inhoud van deze map
 
 1. [Pipeline en agents](01-pipeline-en-agents.md) — de volledige verwerkingsketen per bedrijf,
-   de twee LangGraph-onderzoeksagents (website + jaarverslag), en welke externe diensten
+   de LangGraph-onderzoeksagents (website + jaarverslag), de autonome
+   bronnenresearch-supervisor, en welke externe diensten
    (OpenAI, Serper, Google Places, crawl4ai) waar en waarom worden ingezet.
 2. [Datamodel en scoring](02-datamodel-en-scoring.md) — alle databasetabellen, de
    reconciliatieregels en de confidence-scoreformule.
@@ -49,10 +50,11 @@ CSV-upload (20 testbedrijven, of een echte batch)
 │    1. Verrijking       (locatie/contactdata: KvK/Places)      │
 │    2. Website-agent     (LangGraph state-graph)                │
 │    3. Jaarverslag-agent (LangGraph state-graph, met retries)   │
-│    4. Extra bronnen     (aanvullende, niet-reconciliërende)     │
-│    5. Identity/scope-classificatie (per gevonden bron)          │
-│    6. Reconciliatie    (welke bron wint bij verschil)          │
-│    7. Confidence scoring (§9 — gewogen som + caps)              │
+│    4. Bronnenresearch   (website/document/media → top-3)       │
+│    5. Extra bronnen     (aanvullende, niet-reconciliërende)     │
+│    6. Identity/scope-classificatie (per gevonden bron)         │
+│    7. Reconciliatie    (welke bron wint bij verschil)          │
+│    8. Confidence scoring (§9 — gewogen som + caps)             │
 │                                                               │
 │  Resultaat: Candidate met wp_kandidaat, confidence_label       │
 │  (🟢/🟡/🔴), score_breakdown, en alle onderliggende            │

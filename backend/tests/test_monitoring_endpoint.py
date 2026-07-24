@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from io import BytesIO
 
-from app.models import Company, JaarverslagMonitoring
+from app.models import BronKandidaat, Company, JaarverslagMonitoring, ResearchRun
 
 
 def test_batch_met_monitoring_status_kan_verwijderd_worden(client, db_session):
@@ -27,3 +27,34 @@ def test_batch_met_monitoring_status_kan_verwijderd_worden(client, db_session):
     assert response.status_code == 200
     assert response.json() == {"deleted": batch_id}
     assert db_session.query(JaarverslagMonitoring).filter_by(company_id=company.id).count() == 0
+
+
+def test_batch_met_researchresultaten_kan_verwijderd_worden(client, db_session):
+    upload = client.post(
+        "/batches/upload?naam=delete-research-test&jaar=2026",
+        files={"file": ("bedrijven.csv", BytesIO(b"naam\nOnderzocht B.V.\n"), "text/csv")},
+    )
+    batch_id = upload.json()["batch_id"]
+    company = db_session.query(Company).filter_by(batch_id=batch_id).one()
+    run = ResearchRun(
+        company_id=company.id,
+        batch_id=batch_id,
+        doel="bronreview",
+        status="completed",
+    )
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(BronKandidaat(
+        research_run_id=run.id,
+        company_id=company.id,
+        url="https://onderzocht.example/over-ons",
+        canonical_url="https://onderzocht.example/over-ons",
+        brontype="officiele_website",
+    ))
+    db_session.commit()
+
+    response = client.delete(f"/batches/{batch_id}")
+
+    assert response.status_code == 200
+    assert db_session.query(BronKandidaat).filter_by(company_id=company.id).count() == 0
+    assert db_session.query(ResearchRun).filter_by(company_id=company.id).count() == 0

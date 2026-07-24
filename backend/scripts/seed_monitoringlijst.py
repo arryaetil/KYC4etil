@@ -17,9 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import get_settings  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
-from app.models import (AgentResult, Batch, CallListItem, Candidate, ChatSession,
-                        Company, Enrichment, JaarverslagMonitoring, JaarverslagUpload,
-                        PipelineRun, VastgoedRecord, WPRecord)  # noqa: E402
+from app.models import (AgentResult, Batch, BronKandidaat, CallListItem, Candidate,
+                        ChatSession, Company, Enrichment, JaarverslagMonitoring,
+                        JaarverslagUpload, PipelineRun, ResearchRun,
+                        VastgoedRecord, WPRecord)  # noqa: E402
 
 URL_KOLOMMEN = ("jaarverslag_url", "laatste_bron_url", "bron_url", "url")
 DEFAULT_NAAM = "Jaarverslag-monitoringlijst"
@@ -72,6 +73,8 @@ def _verwijder_batch_data(db, batch: Batch) -> None:
         db.query(AgentResult).filter(AgentResult.batch_id == batch.id).delete(synchronize_session=False)
         db.query(Enrichment).filter(Enrichment.company_id.in_(company_ids)).delete(synchronize_session=False)
         db.query(JaarverslagMonitoring).filter(JaarverslagMonitoring.company_id.in_(company_ids)).delete(synchronize_session=False)
+        db.query(BronKandidaat).filter(BronKandidaat.company_id.in_(company_ids)).delete(synchronize_session=False)
+        db.query(ResearchRun).filter(ResearchRun.company_id.in_(company_ids)).delete(synchronize_session=False)
     db.query(PipelineRun).filter_by(batch_id=batch.id).delete(synchronize_session=False)
     db.query(Company).filter_by(batch_id=batch.id).delete(synchronize_session=False)
     db.delete(batch)

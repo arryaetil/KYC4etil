@@ -1,0 +1,9 @@
+case_id,naam,gevraagd_jaar,organisatieprofiel,accepted_urls,verwachte_brontypen,verwachte_scope,status,toelichting
+ou-2024,Open Universiteit,2024,groot,https://www.ou.nl/documents/40554/55499/20250604_U2025_02964_OU_Jaarverslag_en_jaarrekening_2024.pdf,jaarverslag,concern,pending_review,Seed uit monitoringlijst; domeinexpert moet bron en scope bevestigen
+servatius-2025,Woningstichting Servatius,2025,middelgroot,https://www.servatius.nl/media/02B82AD6-38A7-47B6-B6F2-651469EADB8F/Jaarverslag%202025.pdf,jaarverslag,concern,pending_review,Seed uit monitoringlijst
+um-2024,Maastricht University,2024,groot,https://www.maastrichtuniversity.nl/sites/default/files/2025-06/UM%20Jaarverslag%202024.pdf,jaarverslag,concern,pending_review,Publicatiejaar 2025 en verslagjaar 2024 expliciet testen
+zuyd-2024,Zuyd Hogeschool,2024,groot,https://www.zuyd.nl/binaries/content/assets/zuyd/over-zuyd/jaarverslagen/zuyd-jaarverslag-2024.pdf,jaarverslag,concern,pending_review,Seed uit monitoringlijst
+puntwelzijn-2024,Stichting Punt Welzijn,2024,klein,https://www.puntwelzijn.nl/wp-content/uploads/2025/06/punt-welzijn-2024-jaarverslag-inclusief-controle-verklaring-was-getekend-gewaarmerkt.pdf,jaarverslag,concern,pending_review,Kleine organisatie met document als contrastcase
+dynagroup-2023,DynaGroup B.V.,2023,middelgroot,https://www.dynagroup.nl/csr-jaarverslag-dynagroup-2023/,jaarverslag_html,concern,pending_review,HTML-documentcase
+aviko-2025,Aviko Lomm,2025,groot,https://www.cosun.nl/nieuws/cosun-publiceert-jaarverslag-2025/,officiele_publicatiepagina,concern,pending_review,Groepsscope en publicatiepagina testen
+philadelphia-2025,Stichting Philadelphia,2025,groot,https://www.philadelphia.nl/assets/uploads/Philadelphia.nl/4-Over-ons/1-Over-Philadelphia/Onze-jaarplannen-en-jaarverslagen/Jaarverslag-2025.pdf,jaarverslag,concern,pending_review,Seed uit monitoringlijst

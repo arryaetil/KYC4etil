@@ -1,0 +1,76 @@
+"""Discoverytests: queryplanning, URL-normalisatie en providerfusie."""
+import pytest
+
+from app.research.query_planner import QueryContext, plan_queries
+from app.research.search import combineer_zoekresultaten
+from app.research.types import SearchResult
+from app.research.urls import canonicaliseer_url
+
+
+def test_queryplanner_dekt_website_documenten_en_recente_media():
+    queries = plan_queries(QueryContext(
+        naam="Voorbeeld Zorg",
+        gevraagd_jaar=2025,
+        website_url="https://www.voorbeeldzorg.nl",
+        gemeente="Heerlen",
+    ))
+
+    assert any(q.pad == "website" and "site:voorbeeldzorg.nl" in q.query for q in queries)
+    assert any(q.pad == "document" and "jaarverslag 2025" in q.query for q in queries)
+    assert any(q.pad == "document" and "2026" in q.query for q in queries)
+    assert any(q.pad == "media" and "nieuws" in q.query for q in queries)
+    assert len({q.query for q in queries}) == len(queries)
+
+
+def test_canonicaliseer_url_verwijdert_tracking_fragment_en_www():
+    assert canonicaliseer_url(
+        "HTTPS://WWW.Example.nl/team/?utm_source=test&id=12#medewerkers"
+    ) == "https://example.nl/team?id=12"
+
+
+@pytest.mark.asyncio
+async def test_combineer_zoekresultaten_voert_alle_providers_uit_en_dedupliceert():
+    calls: list[str] = []
+
+    async def duckduckgo(query: str, max_results: int):
+        calls.append("duckduckgo")
+        return [
+            SearchResult(
+                title="Team",
+                url="https://www.example.nl/team?utm_source=ddg",
+                snippet="47 medewerkers",
+                provider="duckduckgo",
+                query=query,
+            ),
+        ]
+
+    async def serper(query: str, max_results: int):
+        calls.append("serper")
+        return [
+            SearchResult(
+                title="Team van Example",
+                url="https://example.nl/team",
+                snippet="Ons team telt 47 medewerkers",
+                provider="serper",
+                query=query,
+            ),
+            SearchResult(
+                title="Nieuws",
+                url="https://nieuws.example/example-groeit",
+                snippet="recente groei",
+                provider="serper",
+                query=query,
+            ),
+        ]
+
+    results = await combineer_zoekresultaten(
+        "Example medewerkers",
+        providers=[duckduckgo, serper],
+        max_results_per_provider=5,
+    )
+
+    assert calls == ["duckduckgo", "serper"]
+    assert len(results) == 2
+    team = next(result for result in results if "example.nl/team" in result.url)
+    assert team.providers == ["duckduckgo", "serper"]
+    assert "47 medewerkers" in team.snippets

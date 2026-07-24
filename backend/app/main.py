@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .database import Base, SessionLocal, engine, ensure_lightweight_migrations
 from .models import Batch, ChatTemplate, PipelineRun
-from .routers import auth, batches, chat, chat_admin, review, jaarverslagen, monitoring
+from .routers import auth, batches, chat, chat_admin, review, jaarverslagen, monitoring, research
 from .scheduler import start_scheduler
 
 settings = get_settings()
@@ -25,6 +25,7 @@ app.include_router(chat.router)
 app.include_router(chat_admin.router)
 app.include_router(jaarverslagen.router)
 app.include_router(monitoring.router)
+app.include_router(research.router)
 
 
 DEFAULT_TEMPLATE_CONFIG = {

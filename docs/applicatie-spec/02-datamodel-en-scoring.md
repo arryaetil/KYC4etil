@@ -22,6 +22,8 @@ lokaal en PostgreSQL op Railway.
 | **CallListItem** | Eén bellijst-item — een bedrijf dat telefonisch benaderd moet worden. |
 | **VastgoedRecord** | Vastgoedgegevens per company (aanvullend, niet-WP-gerelateerd). |
 | **JaarverslagUpload / JaarverslagChatMessage / JaarverslagMonitoring** | Los subsysteem voor ad-hoc jaarverslaganalyse en doorlopende jaarverslag-monitoring, buiten de hoofdbatchpipeline om. |
+| **ResearchRun** | Eén autonome bronnenresearch-opdracht voor een organisatie, met gevraagd jaar, status, zoekbudget, resultaatstatus en foutregistratie. |
+| **BronKandidaat** | Gevalideerde en gerangschikte bron voor human review. Bevat identiteit/scope, bewijsfragment, score-uitleg, waarschuwingen en reviewaudit. Per researchrun kan maximaal één kandidaat primair geaccepteerd zijn. |
 
 ## Reconciliatie (welke bron wint bij verschil)
 

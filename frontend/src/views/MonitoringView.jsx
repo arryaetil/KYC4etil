@@ -1,11 +1,15 @@
-import {useEffect, useMemo, useState} from "react";
-import {AlertTriangle, FileSearch, ListChecks, RefreshCw, Search, Sparkles} from "lucide-react";
+import {Fragment, useEffect, useMemo, useState} from "react";
+import {
+  AlertTriangle, Building2, ChevronUp, FileSearch, ListChecks, RefreshCw,
+  Search, SearchCheck, Sparkles,
+} from "lucide-react";
 import {classNames} from "../lib/format.js";
 import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
 import {Alert} from "../components/Alert.jsx";
 import {Metric} from "../components/Metric.jsx";
 import {LabelBadge} from "../components/LabelBadge.jsx";
+import {ResearchPanel} from "../components/ResearchPanel.jsx";
 
 function formatDatumTijd(iso) {
   if (!iso) return null;
@@ -20,6 +24,8 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
   const [busy, setBusy] = useState(false);
   const [gestartOm, setGestartOm] = useState(null);
   const [zoek, setZoek] = useState("");
+  const [filter, setFilter] = useState("alles");
+  const [researchCompanyId, setResearchCompanyId] = useState(null);
 
   async function load() {
     const data = await api.monitoringStatus();
@@ -50,14 +56,18 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
   const companies = status?.companies || [];
   const gefilterd = useMemo(() => companies.filter((company) => {
     const text = `${company.naam || ""} ${company.gemeente || ""}`.toLowerCase();
-    return text.includes(zoek.toLowerCase());
-  }), [companies, zoek]);
+    const matchZoek = text.includes(zoek.toLowerCase());
+    const matchFilter = filter === "alles"
+      || (filter === "actie" && (company.fout || company.nieuwe_bevinding || !company.laatste_bron_url))
+      || (filter === "gevonden" && company.laatste_bron_url);
+    return matchZoek && matchFilter;
+  }), [companies, filter, zoek]);
 
   return (
     <Shell
       user={user}
       onLogout={onLogout}
-      title="Jaarverslag-monitoring"
+      title="Bronnenmonitoring"
       actions={
         <>
           <IconButton icon={ListChecks} onClick={openDashboard}>Dashboard</IconButton>
@@ -76,29 +86,75 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
         </div>
       ) : (
         <>
+          <section className="mb-5 overflow-hidden rounded-lg border border-line bg-white">
+            <div className="flex flex-col gap-4 border-b border-line px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-etil text-white">
+                  <Building2 size={20} />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Actieve onderzoekspopulatie
+                  </p>
+                  <h2 className="mt-1 text-lg font-semibold text-ink">{batch.naam}</h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Jaar {batch.jaar} · bronnen vinden, vergelijken en door een reviewer laten goedkeuren.
+                  </p>
+                </div>
+              </div>
+              <div className="text-sm text-slate-600">
+                <span className="font-semibold text-ink">{status.gecontroleerd}</span> van {status.totaal} gecontroleerd
+              </div>
+            </div>
+            <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-5">
+              <Metric title="Organisaties" value={status.totaal} />
+              <Metric title="Gecontroleerd" value={`${status.gecontroleerd}/${status.totaal}`} />
+              <Metric title="Bron gevonden" value={`${status.bronnen_gevonden || 0}/${status.totaal}`} />
+              <Metric title="Review nodig" value={
+                <span className={classNames(status.nieuwe_bevindingen > 0 && "text-emerald-700")}>
+                  {status.nieuwe_bevindingen}
+                </span>
+              } />
+              <Metric title="Fouten" value={
+                <span className={classNames(status.fouten > 0 && "text-red-600")}>{status.fouten}</span>
+              } />
+            </div>
+          </section>
           {gestartOm ? (
-            <p className="mb-4 text-sm text-slate-600">
+            <p className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
               Controle gestart om {formatDatumTijd(gestartOm.toISOString())}. Het overzicht ververst vanzelf.
             </p>
           ) : null}
-          <div className="relative mb-4">
-            <Search className="pointer-events-none absolute left-3 top-3 text-slate-500" size={17} />
-            <input className="focus-ring h-11 w-full max-w-sm rounded-md border border-line bg-white pl-9 pr-3" value={zoek} onChange={(event) => setZoek(event.target.value)} placeholder="Zoeken" aria-label="Zoeken op naam of gemeente" />
+          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-3 text-slate-500" size={17} />
+              <input className="focus-ring h-11 w-full rounded-md border border-line bg-white pl-9 pr-3" value={zoek} onChange={(event) => setZoek(event.target.value)} placeholder="Zoek organisatie of gemeente" aria-label="Zoeken op naam of gemeente" />
+            </div>
+            <div className="inline-flex w-fit rounded-md border border-line bg-white p-1" aria-label="Filter organisaties">
+              {[
+                ["alles", "Alles"],
+                ["actie", "Actie nodig"],
+                ["gevonden", "Bron gevonden"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={filter === value}
+                  onClick={() => setFilter(value)}
+                  className={classNames(
+                    "focus-ring rounded px-3 py-2 text-sm font-medium",
+                    filter === value ? "bg-ink text-white" : "text-slate-600 hover:bg-panel",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="mb-4 grid gap-3 md:grid-cols-5">
-            <Metric title="Totaal" value={status.totaal} />
-            <Metric title="Gecontroleerd" value={`${status.gecontroleerd}/${status.totaal}`} />
-            <Metric title="Bronnen" value={`${status.bronnen_gevonden || 0}/${status.totaal}`} />
-            <Metric title="Nieuwe bevindingen" value={
-              <span className={classNames(status.nieuwe_bevindingen > 0 && "text-emerald-700")}>
-                {status.nieuwe_bevindingen}
-              </span>
-            } />
-            <Metric title="Fouten" value={
-              <span className={classNames(status.fouten > 0 && "text-red-600")}>{status.fouten}</span>
-            } />
-          </div>
-          <div className="overflow-hidden rounded-lg border border-line bg-white">
+          <p className="mb-3 text-xs text-slate-500">
+            {gefilterd.length} van {companies.length} organisaties zichtbaar
+          </p>
+          <div className="overflow-x-auto rounded-lg border border-line bg-white">
             <table className="w-full border-collapse text-left text-sm">
               <thead className="bg-panel text-xs uppercase text-slate-500">
                 <tr>
@@ -106,12 +162,13 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
                   <th className="px-4 py-3">Laatst gecontroleerd</th>
                   <th className="px-4 py-3">Laatste bron</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Onderzoek</th>
                 </tr>
               </thead>
               <tbody>
                 {gefilterd.map((company) => (
+                  <Fragment key={company.company_id}>
                     <tr
-                      key={company.company_id}
                       className="cursor-pointer border-t border-line hover:bg-panel"
                       onClick={() => openCompany(batch.id, company.company_id)}
                     >
@@ -158,11 +215,34 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
                           <span className="text-slate-500">Geen wijziging</span>
                         )}
                       </td>
+                      <td className="px-4 py-3 text-right">
+                        <IconButton
+                          icon={researchCompanyId === company.company_id ? ChevronUp : SearchCheck}
+                          variant="quiet"
+                          aria-expanded={researchCompanyId === company.company_id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setResearchCompanyId((current) => (
+                              current === company.company_id ? null : company.company_id
+                            ));
+                          }}
+                        >
+                          {researchCompanyId === company.company_id ? "Sluiten" : "Brononderzoek"}
+                        </IconButton>
+                      </td>
                     </tr>
+                    {researchCompanyId === company.company_id ? (
+                      <tr className="border-t border-line">
+                        <td colSpan="5" className="p-0">
+                          <ResearchPanel api={api} company={company} batchJaar={batch.jaar} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 ))}
                 {!gefilterd.length ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-slate-500" colSpan="4">
+                    <td className="px-4 py-8 text-center text-slate-500" colSpan="5">
                       {companies.length ? "Geen resultaten voor deze zoekopdracht" : "Geen organisaties in de watchlist"}
                     </td>
                   </tr>

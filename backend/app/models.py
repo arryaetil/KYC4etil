@@ -1,13 +1,13 @@
 """SQLAlchemy-modellen — gecorrigeerd schema uit documentatie §6.
 UUID's als String(36) zodat SQLite (lokaal) en PostgreSQL (Railway) beide werken."""
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
-from sqlalchemy import (JSON, Boolean, DateTime, Float, ForeignKey, Integer,
+from sqlalchemy import (JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer,
                         String, Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -64,6 +64,12 @@ class Company(Base):
     batch: Mapped[Batch] = relationship(back_populates="companies")
     enrichment: Mapped["Enrichment | None"] = relationship(back_populates="company", uselist=False)
     agent_results: Mapped[list["AgentResult"]] = relationship(back_populates="company")
+    research_runs: Mapped[list["ResearchRun"]] = relationship(
+        back_populates="company", cascade="all, delete-orphan"
+    )
+    bronkandidaten: Mapped[list["BronKandidaat"]] = relationship(
+        back_populates="company", cascade="all, delete-orphan"
+    )
     candidate: Mapped["Candidate | None"] = relationship(back_populates="company", uselist=False)
     vastgoed: Mapped["VastgoedRecord | None"] = relationship(back_populates="company", uselist=False)
 
@@ -117,6 +123,89 @@ class AgentResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     company: Mapped[Company] = relationship(back_populates="agent_results")
+
+
+class ResearchRun(Base):
+    """Een begrensde bronnenresearch-opdracht voor één organisatie."""
+
+    __tablename__ = "research_runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    company_id: Mapped[str] = mapped_column(
+        ForeignKey("companies.id", ondelete="CASCADE"), index=True
+    )
+    batch_id: Mapped[str] = mapped_column(
+        ForeignKey("batches.id", ondelete="CASCADE"), index=True
+    )
+    doel: Mapped[str] = mapped_column(Text)
+    gevraagd_jaar: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    resultaat_status: Mapped[str | None] = mapped_column(String(30))
+    onderzoekspaden: Mapped[list | None] = mapped_column(JSON)
+    configuratie: Mapped[dict | None] = mapped_column(JSON)
+    fout: Mapped[str | None] = mapped_column(Text)
+    tokens_in: Mapped[int | None] = mapped_column(Integer)
+    tokens_out: Mapped[int | None] = mapped_column(Integer)
+    kosten_cents: Mapped[int | None] = mapped_column(Integer)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    company: Mapped[Company] = relationship(back_populates="research_runs")
+    bronkandidaten: Mapped[list["BronKandidaat"]] = relationship(
+        back_populates="research_run", cascade="all, delete-orphan"
+    )
+
+
+class BronKandidaat(Base):
+    """Uniform bewijsobject uit website-, document- of mediaonderzoek."""
+
+    __tablename__ = "bron_kandidaten"
+    __table_args__ = (
+        UniqueConstraint(
+            "research_run_id", "canonical_url",
+            name="uq_bron_kandidaat_run_canonical_url",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    research_run_id: Mapped[str] = mapped_column(
+        ForeignKey("research_runs.id", ondelete="CASCADE"), index=True
+    )
+    company_id: Mapped[str] = mapped_column(
+        ForeignKey("companies.id", ondelete="CASCADE"), index=True
+    )
+    url: Mapped[str] = mapped_column(Text)
+    canonical_url: Mapped[str] = mapped_column(Text)
+    titel: Mapped[str | None] = mapped_column(Text)
+    brontype: Mapped[str] = mapped_column(String(50))
+    documenttype: Mapped[str | None] = mapped_column(String(50))
+    verslagjaar: Mapped[int | None] = mapped_column(Integer)
+    publicatiedatum: Mapped[date | None] = mapped_column(Date)
+    informatie_peilmoment: Mapped[str | None] = mapped_column(String(20))
+    wp_gevonden: Mapped[int | None] = mapped_column(Integer)
+    eenheid: Mapped[str | None] = mapped_column(String(30))
+    bewijsfragment: Mapped[str | None] = mapped_column(Text)
+    bron_pagina: Mapped[int | None] = mapped_column(Integer)
+    identity_class: Mapped[str | None] = mapped_column(String(30))
+    scope_class: Mapped[str | None] = mapped_column(String(30))
+    autoriteit_score: Mapped[float | None] = mapped_column(Float)
+    actualiteit_score: Mapped[float | None] = mapped_column(Float)
+    identiteit_score: Mapped[float | None] = mapped_column(Float)
+    relevantie_score: Mapped[float | None] = mapped_column(Float)
+    ranking_score: Mapped[float | None] = mapped_column(Float)
+    score_breakdown: Mapped[dict | None] = mapped_column(JSON)
+    validaties: Mapped[dict | None] = mapped_column(JSON)
+    waarschuwingen: Mapped[list | None] = mapped_column(JSON)
+    raw_data: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(30), default="voorgesteld")
+    rang: Mapped[int | None] = mapped_column(Integer)
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    review_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    research_run: Mapped[ResearchRun] = relationship(back_populates="bronkandidaten")
+    company: Mapped[Company] = relationship(back_populates="bronkandidaten")
 
 
 class Candidate(Base):

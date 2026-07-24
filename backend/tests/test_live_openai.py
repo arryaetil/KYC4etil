@@ -81,6 +81,32 @@ async def test_web_search_contact_geeft_none_als_geen_zoekresultaten(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_web_search_combineert_duckduckgo_en_serper(monkeypatch):
+    async def fake_duckduckgo(query, max_results=5):
+        return [
+            {"title": "Team", "url": "https://example.test/team?utm_source=ddg",
+             "snippet": "47 medewerkers", "bron": "duckduckgo"},
+        ]
+
+    async def fake_serper(query, max_results=5):
+        return [
+            {"title": "Team", "url": "https://example.test/team",
+             "snippet": "Team van Example", "bron": "serper"},
+            {"title": "Nieuws", "url": "https://nieuws.test/example",
+             "snippet": "Example groeit", "bron": "serper"},
+        ]
+
+    monkeypatch.setattr(live, "_duckduckgo_search", fake_duckduckgo)
+    monkeypatch.setattr(live, "_serper_search", fake_serper)
+
+    results = await live._web_search("Example medewerkers", max_results=5)
+
+    assert len(results) == 2
+    assert results[0]["bronnen"] == ["duckduckgo", "serper"]
+    assert results[0]["bron"] == "duckduckgo+serper"
+
+
+@pytest.mark.asyncio
 async def test_places_lookup_valt_terug_op_web_search_bij_google_http_fout(monkeypatch):
     class FailingGoogleClient:
         def __init__(self, *args, **kwargs):

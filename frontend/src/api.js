@@ -55,6 +55,20 @@ export function createApi(token, onUnauthorized) {
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
     monitoringStatus: () => request("/monitoring"),
     monitorRun: () => request("/monitoring/run", {method: "POST"}),
+    startResearch: (companyId, gevraagdJaar) => request(`/research/companies/${companyId}/run`, {
+      method: "POST",
+      json: {gevraagd_jaar: gevraagdJaar},
+    }),
+    researchRun: (runId) => request(`/research/runs/${runId}`),
+    researchCandidates: (companyId) => request(`/research/companies/${companyId}/candidates`),
+    reviewResearchCandidate: (candidateId, beslissing, reden = null) => request(`/research/candidates/${candidateId}/review`, {
+      method: "POST",
+      json: {beslissing, reden},
+    }),
+    addManualResearchSource: (companyId, body) => request(`/research/companies/${companyId}/manual-source`, {
+      method: "POST",
+      json: body,
+    }),
     uploadMonitoringlijst: (file) => {
       const body = new FormData();
       body.append("file", file);

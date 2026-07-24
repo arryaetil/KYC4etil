@@ -348,9 +348,42 @@ async def _serper_search(query: str, max_results: int = 5) -> list[dict[str, str
 
 
 async def _web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
-    """DuckDuckGo eerst (gratis), Serper als betrouwbare fallback (doc §7)."""
-    results = await _duckduckgo_search(query, max_results=max_results)
-    return results or await _serper_search(query, max_results=max_results)
+    """Combineer beschikbare zoekindexen en dedupliceer per canonieke URL.
+
+    DuckDuckGo en Serper vullen elkaar aan: een matig DuckDuckGo-resultaat mag
+    niet langer verhinderen dat sterkere Google/Serper-resultaten worden gezien.
+    Eén falende provider blokkeert de andere niet.
+    """
+    from ..research.urls import canonicaliseer_url
+
+    provider_results = await asyncio.gather(
+        _duckduckgo_search(query, max_results=max_results),
+        _serper_search(query, max_results=max_results),
+        return_exceptions=True,
+    )
+    combined: dict[str, dict] = {}
+    for results in provider_results:
+        if isinstance(results, BaseException):
+            continue
+        for result in results:
+            canonical = canonicaliseer_url(result["url"])
+            bestaand = combined.get(canonical)
+            bron = result.get("bron", "web_search")
+            if bestaand is None:
+                combined[canonical] = {
+                    **result,
+                    "bronnen": [bron],
+                    "snippets": [result.get("snippet", "")] if result.get("snippet") else [],
+                }
+                continue
+            if bron not in bestaand["bronnen"]:
+                bestaand["bronnen"].append(bron)
+            snippet = result.get("snippet", "")
+            if snippet and snippet not in bestaand["snippets"]:
+                bestaand["snippets"].append(snippet)
+            bestaand["bron"] = "+".join(bestaand["bronnen"])
+            bestaand["snippet"] = " ".join(bestaand["snippets"])
+    return list(combined.values())[:max_results]
 
 
 def _is_directory_result(url: str) -> bool:
