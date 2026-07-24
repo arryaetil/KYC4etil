@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -236,8 +237,27 @@ def zoek_companies(q: str = "", db: Session = Depends(get_db)):
 
 @router.get("")
 def list_batches(db: Session = Depends(get_db)):
+    labels_by_batch: dict[str, dict[str, int]] = {}
+    for batch_id, label, aantal in (
+        db.query(Candidate.batch_id, Candidate.confidence_label, func.count())
+        .group_by(Candidate.batch_id, Candidate.confidence_label)
+        .all()
+    ):
+        labels_by_batch.setdefault(
+            batch_id, {"hoog": 0, "middel": 0, "laag": 0},
+        )[label] = aantal
+    fouten_by_batch = dict(
+        db.query(PipelineRun.batch_id, func.count())
+        .filter(PipelineRun.status == "error")
+        .group_by(PipelineRun.batch_id)
+        .all()
+    )
     return [{"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
              "totaal": b.totaal, "verwerkt": b.verwerkt,
+             "labels": labels_by_batch.get(
+                 b.id, {"hoog": 0, "middel": 0, "laag": 0},
+             ),
+             "fouten": fouten_by_batch.get(b.id, 0),
              "created_at": b.created_at.isoformat() + "Z" if b.created_at else None,
              "completed_at": b.completed_at.isoformat() + "Z" if b.completed_at else None}
             for b in db.query(Batch).filter(Batch.is_monitoringlijst.isnot(True))

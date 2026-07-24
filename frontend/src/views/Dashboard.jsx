@@ -18,6 +18,7 @@ function isoWeekGrenzen(weekOffset) {
 
 export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, openJaarverslagen, openMonitoring}) {
   const fileRef = useRef(null);
+  const loadPromiseRef = useRef(null);
   const [batches, setBatches] = useState([]);
   const [periode, setPeriode] = useState("alle");
   const [vanaf, setVanaf] = useState("");
@@ -26,22 +27,44 @@ export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, op
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const list = await api.batches();
-    const withLabels = await Promise.all(list.map(async (batch) => {
-      try {
-        return {...batch, ...(await api.batch(batch.id))};
-      } catch {
-        return batch;
-      }
-    }));
-    setBatches(withLabels.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")));
+    if (loadPromiseRef.current) return loadPromiseRef.current;
+    const request = api.batches().then((list) => {
+      setBatches(list.sort(
+        (a, b) => (b.created_at || "").localeCompare(a.created_at || ""),
+      ));
+      return list;
+    }).finally(() => {
+      if (loadPromiseRef.current === request) loadPromiseRef.current = null;
+    });
+    loadPromiseRef.current = request;
+    return request;
   }
 
   useEffect(() => {
     load().catch((err) => setError(err.message));
-    const timer = window.setInterval(() => load().catch(() => {}), 3000);
-    return () => window.clearInterval(timer);
   }, []);
+
+  const heeftLopendeBatch = batches.some((batch) => batch.status === "running");
+
+  useEffect(() => {
+    if (!heeftLopendeBatch) return undefined;
+    let stopped = false;
+    let timer;
+    const poll = async () => {
+      try {
+        await load();
+      } catch {
+        // Tijdelijke fout; probeer pas na de wachttijd opnieuw.
+      } finally {
+        if (!stopped) timer = window.setTimeout(poll, 10000);
+      }
+    };
+    timer = window.setTimeout(poll, 10000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [heeftLopendeBatch]);
 
   const gefilterd = useMemo(() => {
     if (periode === "alle") return batches;
