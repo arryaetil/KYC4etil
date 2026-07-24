@@ -130,6 +130,10 @@ async def run_research_run(run_id: str) -> None:
             run.status = "completed"
             run.resultaat_status = outcome.status
             run.completed_at = _now()
+            run.configuratie = {
+                **(run.configuratie or {}),
+                "diagnostiek": outcome.diagnostiek,
+            }
             if outcome.fouten:
                 run.fout = " | ".join(outcome.fouten)[:4000]
             db.commit()

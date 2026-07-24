@@ -122,3 +122,27 @@ def test_handmatige_bron_wordt_als_reviewerinput_bewaard(client, db_session):
     assert kandidaat.brontype == "handmatig"
     assert kandidaat.status == "geaccepteerd"
     assert kandidaat.reviewed_by == "test-user-id"
+
+
+def test_run_api_toont_onderzoeksdiagnostiek(client, db_session):
+    company = _maak_company(db_session)
+    run = ResearchRun(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        doel="diagnostiek",
+        status="completed",
+        resultaat_status="niet_gevonden",
+        configuratie={
+            "diagnostiek": {
+                "onderzochte_paginas": 12,
+                "afgewezen_documenten": 8,
+            },
+        },
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    response = client.get(f"/research/runs/{run.id}")
+
+    assert response.status_code == 200
+    assert response.json()["diagnostiek"]["onderzochte_paginas"] == 12

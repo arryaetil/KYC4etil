@@ -6,7 +6,8 @@ volgende iteratie voegt de reflectie/follow-up-rondes toe zonder het
 kandidaatcontract te veranderen.
 """
 import asyncio
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from .query_planner import QueryContext, plan_queries
@@ -35,6 +36,7 @@ class ResearchOutcome:
     onderzochte_queries: int
     onderzochte_paginas: int
     fouten: list[str]
+    diagnostiek: dict = field(default_factory=dict)
 
 
 class ResearchSupervisor:
@@ -81,26 +83,60 @@ class ResearchSupervisor:
             for query, result in te_inspecteren
         ], return_exceptions=True)
         validaties = []
+        afwijzingen = []
+        documenten = 0
         for item in inspected:
             if isinstance(item, BaseException):
                 fouten.append(f"inspectie: {item}")
                 continue
             if item is not None:
+                documenten += 1
                 if self.reviewer is not None:
                     try:
-                        validaties.append(
-                            await self.reviewer.review(context, item)
-                        )
+                        validatie = await self.reviewer.review(context, item)
+                        validaties.append(validatie)
                     except Exception as exc:
                         fouten.append(f"bronreview: {exc}")
+                        continue
                 else:
-                    validaties.append(valideer_bron(item))
+                    validatie = valideer_bron(item)
+                    validaties.append(validatie)
+                if validatie.is_afgewezen and len(afwijzingen) < 12:
+                    intelligente_review = validatie.validaties.get(
+                        "intelligente_review", {}
+                    )
+                    afwijzingen.append({
+                        "titel": item.titel,
+                        "url": item.url,
+                        "identity_class": validatie.identity_class,
+                        "redenen": list(validatie.afwijsredenen),
+                        "review_reden": intelligente_review.get("reden"),
+                    })
 
         ranked = rank_bronnen(validaties)[:3]
+        reden_teller = Counter(
+            reden
+            for validatie in validaties
+            if validatie.is_afgewezen
+            for reden in validatie.afwijsredenen
+        )
         return ResearchOutcome(
             status="review_nodig" if ranked else "niet_gevonden",
             kandidaten=ranked,
             onderzochte_queries=len(queries),
             onderzochte_paginas=len(te_inspecteren),
             fouten=fouten,
+            diagnostiek={
+                "zoekresultaten": len(geziene_urls),
+                "onderzochte_paginas": len(te_inspecteren),
+                "gelezen_documenten": documenten,
+                "afgewezen_documenten": sum(
+                    1 for item in validaties if item.is_afgewezen
+                ),
+                "bruikbare_documenten": sum(
+                    1 for item in validaties if not item.is_afgewezen
+                ),
+                "afwijsredenen": dict(reden_teller),
+                "afwijzingen": afwijzingen,
+            },
         )

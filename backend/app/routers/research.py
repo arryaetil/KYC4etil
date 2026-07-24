@@ -67,6 +67,10 @@ def _candidate_dict(candidate: BronKandidaat) -> dict:
     }
 
 
+def _run_diagnostiek(run: ResearchRun) -> dict:
+    return (run.configuratie or {}).get("diagnostiek") or {}
+
+
 @router.post(
     "/companies/{company_id}/run",
     status_code=status.HTTP_202_ACCEPTED,
@@ -103,6 +107,7 @@ def get_research_run(run_id: str, db: Session = Depends(get_db)):
         "resultaat_status": run.resultaat_status,
         "gevraagd_jaar": run.gevraagd_jaar,
         "fout": run.fout,
+        "diagnostiek": _run_diagnostiek(run),
         "kandidaten": [_candidate_dict(item) for item in kandidaten],
     }
 
@@ -118,14 +123,17 @@ def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
         .first()
     )
     if laatste_run is None:
-        return {"items": []}
+        return {"items": [], "diagnostiek": {}}
     kandidaten = (
         db.query(BronKandidaat)
         .filter_by(research_run_id=laatste_run.id)
         .order_by(BronKandidaat.rang)
         .all()
     )
-    return {"items": [_candidate_dict(item) for item in kandidaten]}
+    return {
+        "items": [_candidate_dict(item) for item in kandidaten],
+        "diagnostiek": _run_diagnostiek(laatste_run),
+    }
 
 
 @router.post("/candidates/{candidate_id}/review")

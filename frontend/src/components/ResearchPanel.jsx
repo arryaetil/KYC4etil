@@ -25,6 +25,7 @@ function brontypeLabel(type) {
 export function ResearchPanel({api, company, batchJaar}) {
   const [items, setItems] = useState([]);
   const [run, setRun] = useState(null);
+  const [diagnostiek, setDiagnostiek] = useState({});
   const [jaar, setJaar] = useState(batchJaar ? batchJaar - 1 : "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,6 +36,7 @@ export function ResearchPanel({api, company, batchJaar}) {
   async function loadCandidates() {
     const data = await api.researchCandidates(company.company_id);
     setItems(data.items || []);
+    setDiagnostiek(data.diagnostiek || {});
   }
 
   useEffect(() => {
@@ -49,6 +51,7 @@ export function ResearchPanel({api, company, batchJaar}) {
         setRun(next);
         if (next.status === "completed" || next.status === "error") {
           setItems(next.kandidaten || []);
+          setDiagnostiek(next.diagnostiek || {});
         }
       } catch (err) {
         setError(err.message);
@@ -66,6 +69,7 @@ export function ResearchPanel({api, company, batchJaar}) {
         jaar === "" ? null : Number(jaar),
       );
       setRun({id: started.run_id, status: started.status, kandidaten: []});
+      setDiagnostiek({});
     } catch (err) {
       setError(err.message);
     } finally {
@@ -306,7 +310,25 @@ export function ResearchPanel({api, company, batchJaar}) {
           <div className="p-6 text-sm text-slate-600">
             {running
               ? "De agent onderzoekt officiële websites, documenten en recente media."
-              : "Nog geen bronkandidaten. Start een onderzoek of voeg een bekende bron toe."}
+              : diagnostiek.onderzochte_paginas
+                ? (
+                  <div>
+                    <p className="font-semibold text-ink">Geen kandidaat door de kwaliteitscontrole gekomen</p>
+                    <p className="mt-1">
+                      {diagnostiek.onderzochte_paginas} pagina’s onderzocht,{" "}
+                      {diagnostiek.gelezen_documenten || 0} gelezen en{" "}
+                      {diagnostiek.afgewezen_documenten || 0} afgewezen.
+                    </p>
+                    {Object.keys(diagnostiek.afwijsredenen || {}).length ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Redenen: {Object.entries(diagnostiek.afwijsredenen)
+                          .map(([reden, aantal]) => `${reden.replaceAll("_", " ")} (${aantal})`)
+                          .join(", ")}
+                      </p>
+                    ) : null}
+                  </div>
+                )
+                : "Nog geen bronkandidaten. Start een onderzoek of voeg een bekende bron toe."}
           </div>
         )}
       </div>

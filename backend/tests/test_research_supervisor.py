@@ -111,6 +111,8 @@ async def test_supervisor_levert_top3_uit_alle_onderzoekspaden():
     assert any(k.document.brontype == "media" for k in outcome.kandidaten)
     assert outcome.onderzochte_queries <= 12
     assert outcome.onderzochte_paginas == 3
+    assert outcome.diagnostiek["gelezen_documenten"] == 3
+    assert outcome.diagnostiek["bruikbare_documenten"] == 3
 
 
 class EmptyResearchTools(FakeResearchTools):
@@ -127,3 +129,4 @@ async def test_supervisor_registreert_explicitiet_niet_gevonden():
     assert outcome.status == "niet_gevonden"
     assert outcome.kandidaten == []
     assert outcome.onderzochte_queries == 3
+    assert outcome.diagnostiek["zoekresultaten"] == 0
