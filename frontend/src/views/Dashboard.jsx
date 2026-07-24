@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import {AlertTriangle, BookOpen, FileUp, Play, RefreshCw, SearchCheck, Settings, Square, Trash2} from "lucide-react";
 import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
@@ -8,9 +8,20 @@ import {Progress} from "../components/Progress.jsx";
 import {LabelCounts} from "../components/LabelCounts.jsx";
 import {StatusPill} from "../components/StatusPill.jsx";
 
+function isoWeekGrenzen(weekOffset) {
+  const nu = new Date();
+  const dagIndex = (nu.getDay() + 6) % 7; // maandag = 0
+  const maandag = new Date(nu.getFullYear(), nu.getMonth(), nu.getDate() - dagIndex + weekOffset * 7);
+  const volgendeMaandag = new Date(maandag.getFullYear(), maandag.getMonth(), maandag.getDate() + 7);
+  return [maandag, volgendeMaandag];
+}
+
 export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, openJaarverslagen, openMonitoring}) {
   const fileRef = useRef(null);
   const [batches, setBatches] = useState([]);
+  const [periode, setPeriode] = useState("alle");
+  const [vanaf, setVanaf] = useState("");
+  const [tot, setTot] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -31,6 +42,25 @@ export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, op
     const timer = window.setInterval(() => load().catch(() => {}), 3000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const gefilterd = useMemo(() => {
+    if (periode === "alle") return batches;
+    if (periode === "aangepast") {
+      return batches.filter((batch) => {
+        if (!batch.created_at) return false;
+        const datum = batch.created_at.slice(0, 10);
+        if (vanaf && datum < vanaf) return false;
+        if (tot && datum > tot) return false;
+        return true;
+      });
+    }
+    const [van, totGrens] = isoWeekGrenzen(periode === "deze_week" ? 0 : -1);
+    return batches.filter((batch) => {
+      if (!batch.created_at) return false;
+      const datum = new Date(batch.created_at);
+      return datum >= van && datum < totGrens;
+    });
+  }, [batches, periode, vanaf, tot]);
 
   async function upload(event) {
     const file = event.target.files?.[0];
@@ -104,6 +134,20 @@ export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, op
       }
     >
       {error ? <Alert message={error} /> : null}
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+        <select className="focus-ring h-11 rounded-md border border-line bg-white px-3" value={periode} onChange={(event) => setPeriode(event.target.value)} aria-label="Filter op periode">
+          <option value="alle">Alle periodes</option>
+          <option value="deze_week">Deze week</option>
+          <option value="vorige_week">Vorige week</option>
+          <option value="aangepast">Aangepaste range</option>
+        </select>
+        {periode === "aangepast" ? (
+          <>
+            <input type="date" className="focus-ring h-11 rounded-md border border-line bg-white px-3" value={vanaf} onChange={(event) => setVanaf(event.target.value)} aria-label="Vanaf datum" />
+            <input type="date" className="focus-ring h-11 rounded-md border border-line bg-white px-3" value={tot} onChange={(event) => setTot(event.target.value)} aria-label="Tot datum" />
+          </>
+        ) : null}
+      </div>
       <div className="overflow-hidden rounded-lg border border-line bg-white">
         <table className="w-full border-collapse text-left text-sm">
           <thead className="bg-panel text-xs uppercase text-slate-500">
@@ -117,7 +161,7 @@ export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, op
             </tr>
           </thead>
           <tbody>
-            {batches.map((batch) => (
+            {gefilterd.map((batch) => (
               <tr key={batch.id} className="border-t border-line hover:bg-panel">
                 <td className="px-4 py-3">
                   <button className="focus-ring rounded text-left font-semibold text-etil" onClick={() => openBatch(batch.id)}>
@@ -155,9 +199,11 @@ export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, op
                 </td>
               </tr>
             ))}
-            {!batches.length ? (
+            {!gefilterd.length ? (
               <tr>
-                <td className="px-4 py-8 text-center text-slate-500" colSpan="5">Geen batches</td>
+                <td className="px-4 py-8 text-center text-slate-500" colSpan="5">
+                  {batches.length ? "Geen batches in deze periode" : "Geen batches"}
+                </td>
               </tr>
             ) : null}
           </tbody>
