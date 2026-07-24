@@ -10,6 +10,59 @@ from .validation import SourceDocument
 
 
 class LiveResearchTools:
+    async def find_nieuwste_officiele_document(
+        self,
+        context: QueryContext,
+    ) -> SourceDocument | None:
+        """Zoek de gevraagde jaargang expliciet op het bevestigde domein.
+
+        Dit pad valt buiten het brede paginabudget, zodat een actuele
+        jaarrekening/overzichtspagina niet wordt verdrongen door algemene hits.
+        Een officiële bron zonder WP-getal blijft reviewercontext.
+        """
+        if not context.website_url or context.gevraagd_jaar is None:
+            return None
+        from ..providers import live
+
+        domein = urlsplit(context.website_url).netloc.lower().removeprefix(
+            "www."
+        )
+        query_text = (
+            f"site:{domein} {context.gevraagd_jaar} "
+            "(jaarrekening OR jaarverslag OR jaarverantwoording)"
+        )
+        results = await live._web_search(query_text, max_results=8)
+        query = PlannedQuery(
+            "document",
+            query_text,
+            "nieuwste document op het bevestigde officiële domein",
+        )
+        for result in results:
+            url = result.get("url")
+            if not url:
+                continue
+            result_domein = urlsplit(url).netloc.lower().removeprefix("www.")
+            if result_domein != domein:
+                continue
+            combined = CombinedSearchResult(
+                title=result.get("title", ""),
+                url=url,
+                canonical_url=canonicaliseer_url(url),
+                snippets=result.get("snippets") or (
+                    [result["snippet"]] if result.get("snippet") else []
+                ),
+                providers=result.get("bronnen")
+                or [result.get("bron", "web_search")],
+                queries=[query_text],
+            )
+            document = await self.inspect(context, query, combined)
+            if (
+                document is not None
+                and document.verslagjaar == context.gevraagd_jaar
+            ):
+                return document
+        return None
+
     async def find_jaarverslag(
         self,
         context: QueryContext,

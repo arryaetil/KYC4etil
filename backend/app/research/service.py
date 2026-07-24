@@ -131,6 +131,14 @@ async def run_research_run(run_id: str) -> None:
         seed_documents = []
         if settings.provider_mode == "live":
             try:
+                nieuwste_document = (
+                    await tools.find_nieuwste_officiele_document(context)
+                )
+                if nieuwste_document is not None:
+                    seed_documents.append(nieuwste_document)
+            except Exception:
+                pass
+            try:
                 jaarverslag = await tools.find_jaarverslag(context)
                 if jaarverslag is not None:
                     seed_documents.append(jaarverslag)
