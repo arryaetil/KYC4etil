@@ -17,6 +17,7 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
   const [sector, setSector] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [afgewerktBezig, setAfgewerktBezig] = useState(new Set());
 
   async function load() {
     const labelParam = label === "fouten" ? "" : label;
@@ -107,6 +108,8 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
   }
 
   async function toggleAfgewerkt(company) {
+    if (afgewerktBezig.has(company.company_id)) return;
+    setAfgewerktBezig((huidige) => new Set(huidige).add(company.company_id));
     const nieuweWaarde = !company.afgewerkt;
     setCompanies((huidige) => huidige.map((c) =>
       c.company_id === company.company_id ? {...c, afgewerkt: nieuweWaarde} : c
@@ -118,6 +121,12 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
         c.company_id === company.company_id ? {...c, afgewerkt: company.afgewerkt} : c
       ));
       setError(err.message);
+    } finally {
+      setAfgewerktBezig((huidige) => {
+        const volgende = new Set(huidige);
+        volgende.delete(company.company_id);
+        return volgende;
+      });
     }
   }
 
@@ -241,6 +250,7 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
                     className="focus-ring h-4 w-4 rounded border-line"
                     checked={!!company.afgewerkt}
                     onChange={() => toggleAfgewerkt(company)}
+                    disabled={afgewerktBezig.has(company.company_id)}
                     aria-label={`Markeer ${company.naam} als afgewerkt`}
                   />
                 </td>
