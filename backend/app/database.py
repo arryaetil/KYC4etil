@@ -47,7 +47,7 @@ def ensure_lightweight_migrations() -> None:
     with engine.begin() as conn:
         for name, ddl_type in [
             ("website_url", "TEXT"), ("telefoonnummer", "VARCHAR(50)"),
-            ("afgewerkt", "BOOLEAN"),
+            ("afgewerkt", "BOOLEAN DEFAULT FALSE"),
         ]:
             _add_column_if_missing(conn, "companies", existing_companies, name, ddl_type)
 
