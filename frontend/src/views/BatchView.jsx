@@ -14,6 +14,7 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
   const [companies, setCompanies] = useState([]);
   const [label, setLabel] = useState("");
   const [search, setSearch] = useState("");
+  const [sector, setSector] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -33,11 +34,16 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
     return () => window.clearInterval(timer);
   }, [batchId, label]);
 
+  const sectoren = useMemo(() => Array.from(new Set(
+    companies.map((company) => company.sbi_omschrijving).filter(Boolean),
+  )).sort(), [companies]);
+
   const filtered = useMemo(() => companies.filter((company) => {
     if (label === "fouten") return !!company.pipeline_error;
-    const text = `${company.naam || ""} ${company.gemeente || ""}`.toLowerCase();
+    if (sector && company.sbi_omschrijving !== sector) return false;
+    const text = `${company.naam || ""} ${company.gemeente || ""} ${company.vestigingsnummer || ""} ${company.cb_er || ""} ${company.kvk_nummer || ""}`.toLowerCase();
     return text.includes(search.toLowerCase());
-  }), [companies, label, search]);
+  }), [companies, label, search, sector]);
 
   async function approveAll() {
     try {
@@ -134,11 +140,15 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
       }
     >
       {error ? <Alert message={error} /> : null}
-      <div className="mb-4 grid gap-3 md:grid-cols-[1fr_200px]">
+      <div className="mb-4 grid gap-3 md:grid-cols-[1fr_200px_200px]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-3 text-slate-500" size={17} />
-          <input className="focus-ring h-11 w-full rounded-md border border-line bg-white pl-9 pr-3" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Zoeken" aria-label="Zoeken op vestiging of gemeente" />
+          <input className="focus-ring h-11 w-full rounded-md border border-line bg-white pl-9 pr-3" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Zoeken op naam, gemeente, vestigingsnummer, CBR of KvK" aria-label="Zoeken op naam, gemeente, vestigingsnummer, CBR of KvK-nummer" />
         </div>
+        <select className="focus-ring h-11 rounded-md border border-line bg-white px-3" value={sector} onChange={(event) => setSector(event.target.value)} aria-label="Filter op sector">
+          <option value="">Alle sectoren</option>
+          {sectoren.map((naam) => <option key={naam} value={naam}>{naam}</option>)}
+        </select>
         <select className={classNames(
           "focus-ring h-11 rounded-md border bg-white px-3",
           label === "fouten" ? "border-red-400 text-red-700 font-medium" : "border-line",
