@@ -61,6 +61,11 @@ def maak_research_run(
 
 async def run_research_run(run_id: str) -> None:
     context = None
+    website_resolution = {
+        "status": "niet_gevonden",
+        "website_url": None,
+        "bron": None,
+    }
     try:
         settings = get_settings()
         with SessionLocal() as db:
@@ -85,6 +90,16 @@ async def run_research_run(run_id: str) -> None:
             company_gemeente = company.gemeente
             gevraagd_jaar = run.gevraagd_jaar
             website_url = company.website_url or enrichment_website
+            if website_url:
+                website_resolution = {
+                    "status": "gevonden",
+                    "website_url": website_url,
+                    "bron": (
+                        "company"
+                        if company.website_url
+                        else "enrichment"
+                    ),
+                }
             run.status = "running"
             run.started_at = _now()
             db.commit()
@@ -97,6 +112,14 @@ async def run_research_run(run_id: str) -> None:
                     company_naam, company_gemeente,
                 )
                 website_url = place.website if place else None
+                website_resolution = {
+                    "status": "gevonden" if website_url else "niet_gevonden",
+                    "website_url": website_url,
+                    "bron": (
+                        (place.raw or {}).get("bron", "google_places")
+                        if place else None
+                    ),
+                }
                 if website_url:
                     with SessionLocal() as db:
                         enrichment = (
@@ -115,9 +138,15 @@ async def run_research_run(run_id: str) -> None:
                             enrichment.website_url = website_url
                             enrichment.lookup_failed = False
                         db.commit()
-            except Exception:
+            except Exception as exc:
                 # Places is een versterking, geen single point of failure.
                 website_url = None
+                website_resolution = {
+                    "status": "fout",
+                    "website_url": None,
+                    "bron": None,
+                    "fout": type(exc).__name__,
+                }
 
         context = QueryContext(
             naam=company_naam,
@@ -229,6 +258,9 @@ async def run_research_run(run_id: str) -> None:
                 ),
                 "diagnostiek": outcome.diagnostiek,
             }
+            run.configuratie["diagnostiek"]["website_resolution"] = (
+                website_resolution
+            )
             if outcome.fouten:
                 run.fout = " | ".join(outcome.fouten)[:4000]
             db.commit()

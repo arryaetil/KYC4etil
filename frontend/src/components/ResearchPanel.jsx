@@ -310,15 +310,35 @@ export function ResearchPanel({api, company, batchJaar}) {
           <div className="p-6 text-sm text-slate-600">
             {running
               ? "De agent onderzoekt officiële websites, documenten en recente media."
-              : diagnostiek.onderzochte_paginas
+              : Object.keys(diagnostiek).length
                 ? (
                   <div>
                     <p className="font-semibold text-ink">Geen kandidaat door de kwaliteitscontrole gekomen</p>
                     <p className="mt-1">
-                      {diagnostiek.onderzochte_paginas} pagina’s onderzocht,{" "}
+                      {diagnostiek.zoekresultaten || 0} zoekresultaten gevonden,{" "}
+                      {diagnostiek.onderzochte_paginas || 0} pagina’s onderzocht,{" "}
                       {diagnostiek.gelezen_documenten || 0} gelezen en{" "}
                       {diagnostiek.afgewezen_documenten || 0} afgewezen.
                     </p>
+                    {diagnostiek.website_resolution ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Officiële website:{" "}
+                        {diagnostiek.website_resolution.website_url ? (
+                          <a
+                            href={diagnostiek.website_resolution.website_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium text-etil underline"
+                          >
+                            {diagnostiek.website_resolution.website_url}
+                          </a>
+                        ) : (
+                          "niet opgelost"
+                        )}
+                        {" "}({diagnostiek.website_resolution.bron
+                          || diagnostiek.website_resolution.status})
+                      </p>
+                    ) : null}
                     {Object.keys(diagnostiek.afwijsredenen || {}).length ? (
                       <p className="mt-2 text-xs text-slate-500">
                         Redenen: {Object.entries(diagnostiek.afwijsredenen)
