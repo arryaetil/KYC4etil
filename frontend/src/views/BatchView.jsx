@@ -106,6 +106,21 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
     }
   }
 
+  async function toggleAfgewerkt(company) {
+    const nieuweWaarde = !company.afgewerkt;
+    setCompanies((huidige) => huidige.map((c) =>
+      c.company_id === company.company_id ? {...c, afgewerkt: nieuweWaarde} : c
+    ));
+    try {
+      await api.updateCompany(batchId, company.company_id, {afgewerkt: nieuweWaarde});
+    } catch (err) {
+      setCompanies((huidige) => huidige.map((c) =>
+        c.company_id === company.company_id ? {...c, afgewerkt: company.afgewerkt} : c
+      ));
+      setError(err.message);
+    }
+  }
+
   const isRunning = batch?.status === "running";
 
   return (
@@ -184,6 +199,7 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
               <th className="px-4 py-3">WP</th>
               <th className="px-4 py-3">Confidence</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Afgewerkt</th>
             </tr>
           </thead>
           <tbody>
@@ -219,6 +235,15 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
                   ) : "-"}
                 </td>
                 <td className="px-4 py-3"><StatusPill status={company.status} /></td>
+                <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    className="focus-ring h-4 w-4 rounded border-line"
+                    checked={!!company.afgewerkt}
+                    onChange={() => toggleAfgewerkt(company)}
+                    aria-label={`Markeer ${company.naam} als afgewerkt`}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
