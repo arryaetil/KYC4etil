@@ -124,3 +124,65 @@ async def test_llm_goedgekeurde_onafhankelijke_media_mag_naar_ranking():
     assert reviewed.validaties["intelligente_review"]["beslissing"] == (
         "tonen_aan_reviewer"
     )
+
+
+@pytest.mark.asyncio
+async def test_correcte_externe_pdf_wordt_niet_door_woordmatch_geblokkeerd():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock(return_value={
+        "beslissing": "tonen_aan_reviewer",
+        "identity_class": "exact_entity",
+        "scope_class": "limburg",
+        "gevonden_organisatie": "Stichting Pergamijn",
+        "reden": "Titel en documentmetadata identificeren Stichting Pergamijn.",
+    })
+    document = SourceDocument(
+        naam="Stichting Pergamijn",
+        company_website_url=None,
+        url="https://publicaties.example/pergamijn-jaarverslag-2025.pdf",
+        titel="Jaarverslag 2025",
+        tekst="",
+        bewijsfragment="In totaal waren 1.250 medewerkers in dienst.",
+        brontype="jaarverslag",
+        documenttype="jaarverslag",
+        gevraagd_jaar=2025,
+        verslagjaar=2025,
+        wp_gevonden=1250,
+        eenheid="werkzame_personen",
+    )
+
+    reviewed = await reviewer.review(_context("Stichting Pergamijn"), document)
+
+    assert reviewed.is_afgewezen is False
+    assert reviewed.identity_class == "exact_entity"
+    reviewer._llm_review.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_kleine_organisatiepagina_zonder_wp_mag_semantisch_beoordeeld():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock(return_value={
+        "beslissing": "tonen_aan_reviewer",
+        "identity_class": "exact_entity",
+        "scope_class": "vestiging",
+        "gevonden_organisatie": "Hallux Podotherapie",
+        "reden": "De pagina noemt naam, plaats en het behandelteam.",
+    })
+    document = SourceDocument(
+        naam="Hallux Podotherapie",
+        company_website_url=None,
+        url="https://halluxpodotherapie.nl/ons-team",
+        titel="Ons team",
+        tekst="Hallux Podotherapie in Roermond stelt het behandelteam voor.",
+        brontype="website",
+        documenttype="teampagina",
+    )
+
+    reviewed = await reviewer.review(
+        _context("Hallux Podotherapie", "Roermond"),
+        document,
+    )
+
+    assert reviewed.is_afgewezen is False
+    assert "geen_concreet_wp_bewijs" in reviewed.waarschuwingen
+    reviewer._llm_review.assert_awaited_once()

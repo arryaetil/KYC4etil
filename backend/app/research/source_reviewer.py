@@ -81,8 +81,20 @@ class IntelligentSourceReviewer:
             )
             return validatie
 
-        if validatie.is_afgewezen:
+        # Een heuristische naam-mismatch is geen hard bewijs. Vooral bij
+        # jaarverslagen staat de organisatienaam vaak niet in het korte
+        # bewijsfragment, terwijl titel/URL en het volledige document wel
+        # degelijk bij de gezochte organisatie horen. Laat zulke bronnen door
+        # de semantische reviewer beoordelen. Structurele fouten (ongeldige URL
+        # en een aantoonbaar verkeerd verslagjaar) blijven wel hard fail-closed.
+        harde_afwijsredenen = [
+            reden for reden in validatie.afwijsredenen
+            if reden != "verkeerde organisatie"
+        ]
+        if harde_afwijsredenen:
             return validatie
+        validatie.is_afgewezen = False
+        validatie.afwijsredenen = []
 
         if (
             document.wp_gevonden is None
@@ -91,9 +103,12 @@ class IntelligentSourceReviewer:
                 document.url, document.company_website_url,
             ) is not True
         ):
-            validatie.is_afgewezen = True
-            validatie.afwijsredenen.append("geen_concreet_wp_bewijs")
-            return validatie
+            # Dit is bij kleine organisaties een normaal geval: de officiële
+            # team-/organisatiepagina kan relevant zijn zonder een letterlijk
+            # personeelsgetal. Zonder vooraf bekende website moet de LLM eerst
+            # de identiteit mogen vaststellen. De ontbrekende metriek blijft
+            # zichtbaar als waarschuwing voor de human reviewer.
+            validatie.waarschuwingen.append("geen_concreet_wp_bewijs")
 
         if domain_matches_company(
             document.url, document.company_website_url,
