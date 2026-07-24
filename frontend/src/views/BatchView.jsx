@@ -1,4 +1,4 @@
-import {Fragment, useEffect, useMemo, useState} from "react";
+import {Fragment, useEffect, useMemo, useRef, useState} from "react";
 import {
   AlertTriangle, Check, ChevronUp, ExternalLink, FileDown, FlaskConical,
   ListChecks, MessageSquare, Phone, Play, RefreshCw, Search, SearchCheck,
@@ -21,21 +21,47 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [researchCompanyId, setResearchCompanyId] = useState(null);
+  const loadPromiseRef = useRef(null);
 
   async function load() {
-    const [batchData, companyData] = await Promise.all([
+    if (loadPromiseRef.current) return loadPromiseRef.current;
+    const request = Promise.all([
       api.batch(batchId),
       api.companies(batchId, ""),
-    ]);
-    setBatch(batchData);
-    setCompanies(companyData);
+    ]).then(([batchData, companyData]) => {
+      setBatch(batchData);
+      setCompanies(companyData);
+      return batchData;
+    }).finally(() => {
+      if (loadPromiseRef.current === request) loadPromiseRef.current = null;
+    });
+    loadPromiseRef.current = request;
+    return request;
   }
 
   useEffect(() => {
     load().catch((err) => setError(err.message));
-    const timer = window.setInterval(() => load().catch(() => {}), 3000);
-    return () => window.clearInterval(timer);
-  }, [batchId, label]);
+  }, [batchId]);
+
+  useEffect(() => {
+    if (batch?.status !== "running") return undefined;
+    let stopped = false;
+    let timer;
+    const poll = async () => {
+      try {
+        await load();
+      } catch {
+        // Een tijdelijke netwerkfout wordt bij de volgende poll opnieuw geprobeerd.
+      } finally {
+        if (!stopped) timer = window.setTimeout(poll, 5000);
+      }
+    };
+    timer = window.setTimeout(poll, 5000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [batch?.status, batchId]);
 
   const sectoren = useMemo(() => Array.from(new Set(
     companies.map((company) => company.sbi_omschrijving).filter(Boolean),
