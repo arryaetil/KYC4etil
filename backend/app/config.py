@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     demo_anita_password: str = ""
     demo_admin_password: str = ""
     demo_vanzandvoort_password: str = ""
+    demo_vaessens_password: str = ""
+    demo_paffen_password: str = ""
     google_places_api_key: str = ""
     serper_api_key: str = ""     # betrouwbare zoek-fallback i.p.v. OpenAI web_search (kostenbeheersing)
     kvk_api_key: str = ""
