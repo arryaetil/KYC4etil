@@ -34,6 +34,12 @@ accepteert één primaire bron, wijst kandidaten af of voegt handmatig een bron
 toe. Een agentresultaat wordt dus nooit automatisch als definitieve registerbron
 gebruikt.
 
+Autonome bronnenresearch is ook de standaard batchworkflow. De batchpagina toont
+per organisatie de voorgestelde bron, het bruikbare research-WP, het oude
+pipeline-WP en de vergelijking. Een landelijk of concerncijfer blijft zichtbaar
+als broncontext, maar wordt niet als vestigings-WP aangeboden. De oude pipeline
+blijft apart beschikbaar voor gecontroleerde vergelijkingen.
+
 Belangrijke code:
 
 ```text
@@ -100,10 +106,13 @@ curl -X POST localhost:8000/auth/login \
 # Testset uploaden
 curl -F "file=@data/testset.csv" "localhost:8000/batches/upload?naam=demo&jaar=2026"
 
-# Pipeline starten als achtergrondtaak
+# Standaard: autonome bronnenresearch als achtergrondtaak
 curl -X POST localhost:8000/batches/{batch_id}/run
 
-# Voortgang pollen: verwerkt/totaal + labels
+# Alleen voor interne vergelijking: oude WP-pipeline
+curl -X POST localhost:8000/batches/{batch_id}/run-legacy
+
+# Voortgang pollen: verwerkt/totaal + research- en reviewstatussen
 curl localhost:8000/batches/{batch_id}
 
 # Bulk-goedkeuren en exports
@@ -136,6 +145,7 @@ cd backend
 python -m pytest tests/ -q
 python -m scripts.validate
 python -m scripts.evaluate_bronnenresearch --predictions data/research_predictions.json
+python -m scripts.compare_research_workflows
 ```
 
 De bronbenchmark telt alleen rijen met status `verified` mee. Nieuwe

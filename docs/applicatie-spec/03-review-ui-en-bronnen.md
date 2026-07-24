@@ -9,7 +9,7 @@ React 19 + Vite + Tailwind CSS (puur utility-classes, `classNames()`-helper uit
 |---|---|
 | **Login** | Inlogscherm. |
 | **Dashboard** | Startpunt na inloggen. |
-| **BatchView** | Overzicht van alle bedrijven in een batch: WP-kandidaat, confidence-badge, status, zoekfilter, labelfilter. |
+| **BatchView** | Primaire werkplek voor autonome batchresearch: voorgestelde bron, research-WP, legacy-WP, vergelijking, reviewstatus en inline beoordeling. |
 | **DetailView** | Het bedrijfsdetailscherm — bronnen-first (zie hieronder). |
 | **BellijstView** | Overzicht van bedrijven die telefonisch benaderd moeten worden. |
 | **ChatSessiesView** / **ChatTemplatesView** | Beheer van chat-sessies en herbruikbare vraagsets (admin). |
@@ -18,6 +18,19 @@ React 19 + Vite + Tailwind CSS (puur utility-classes, `classNames()`-helper uit
 | **MonitoringView** | Bronnenmonitoring met filters voor actiegevallen, doorlopende controle en autonoom brononderzoek per organisatie. |
 
 ## Human-in-the-loop brononderzoek
+
+In `BatchView` start **Bronnenonderzoek starten** standaard een autonome
+researchrun voor iedere organisatie. De uitvoering loopt sequentieel om
+zoek- en modelbudget beheersbaar te houden. De samenvatting toont afgeronde
+runs, reviewgevallen, geaccepteerde bronnen, niet-gevonden bronnen en fouten.
+**Legacy vergelijken** start de oude pipeline uitsluitend als expliciete
+vergelijkingsrun.
+
+Een gevonden WP-getal is alleen direct vergelijkbaar als de eenheid
+`werkzame_personen` is en de scope `vestiging` of `limburg`. Een landelijk of
+concerncijfer wordt met waarschuwing als context getoond, niet als bruikbaar
+vestigings-WP. Daardoor betekent “bron gevonden” niet automatisch “getal
+geschikt voor het register”.
 
 Vanuit `MonitoringView` opent **Brononderzoek** een inline reviewwerkplek. De
 reviewer ziet:
@@ -108,7 +121,7 @@ handmatig doorbladeren van vaak tientallen pagina's tellende jaarverslagen.
 | Bestand | Belangrijkste functionaliteit |
 |---|---|
 | `auth.py` | Login, huidige gebruiker ophalen. |
-| `batches.py` | CSV uploaden, batch draaien/annuleren/resetten, bedrijven zoeken/lijsten/detail, company herverwerken of patchen, WP-uitsplitsing en vastgoed bijwerken. |
+| `batches.py` | CSV uploaden, autonome batchresearch starten, legacy-vergelijking draaien, annuleren/resetten, researchsamenvatting en bedrijvenlijst met bron-/WP-vergelijking leveren. |
 | `chat_admin.py` | Chat-templates beheren, chat-sessies per batch, sessie-antwoorden doorvoeren naar het register. |
 | `chat.py` | De publieke, token-based chatflow voor het benaderde bedrijf zelf (niet ingelogd). |
 | `jaarverslagen.py` | Los jaarverslag uploaden/chatten/WP opslaan, buiten de batchpipeline om. |

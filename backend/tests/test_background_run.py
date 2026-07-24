@@ -28,7 +28,7 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
-def test_run_batch_start_achtergrondtaak(monkeypatch):
+def test_run_batch_start_standaard_autonome_research(monkeypatch):
     db = SessionLocal()
     try:
         batch = Batch(naam="background-test", jaar=2026, totaal=3, verwerkt=2)
@@ -40,10 +40,14 @@ def test_run_batch_start_achtergrondtaak(monkeypatch):
 
     scheduled = []
 
-    def fake_run_batch_background(batch_id_arg: str) -> None:
+    def fake_run_research_batch_background(batch_id_arg: str) -> None:
         scheduled.append(batch_id_arg)
 
-    monkeypatch.setattr(batches_router, "run_batch_background", fake_run_batch_background)
+    monkeypatch.setattr(
+        batches_router,
+        "run_research_batch_background",
+        fake_run_research_batch_background,
+    )
 
     response = client.post(f"/batches/{batch_id}/run", headers=_auth_headers())
 
@@ -53,9 +57,37 @@ def test_run_batch_start_achtergrondtaak(monkeypatch):
         "status": "running",
         "verwerkt": 0,
         "totaal": 3,
+        "workflow": "autonome_bronnenresearch",
     }
     assert scheduled == [batch_id]
 
     poll = client.get(f"/batches/{batch_id}", headers=_auth_headers())
     assert poll.status_code == 200
     assert poll.json()["status"] == "running"
+
+
+def test_legacy_pipeline_blijft_expiet_beschikbaar(monkeypatch):
+    db = SessionLocal()
+    try:
+        batch = Batch(naam="legacy-test", jaar=2026, totaal=1)
+        db.add(batch)
+        db.commit()
+        batch_id = batch.id
+    finally:
+        db.close()
+
+    scheduled = []
+    monkeypatch.setattr(
+        batches_router,
+        "run_batch_background",
+        lambda batch_id_arg: scheduled.append(batch_id_arg),
+    )
+
+    response = client.post(
+        f"/batches/{batch_id}/run-legacy",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["workflow"] == "legacy_pipeline"
+    assert scheduled == [batch_id]

@@ -1,13 +1,16 @@
-import {useEffect, useMemo, useState} from "react";
-import {AlertTriangle, Check, FileDown, ListChecks, MessageSquare, Phone, Play, RefreshCw, Search, Square, Trash2} from "lucide-react";
-import {classNames, pct} from "../lib/format.js";
+import {Fragment, useEffect, useMemo, useState} from "react";
+import {
+  AlertTriangle, Check, ChevronUp, ExternalLink, FileDown, FlaskConical,
+  ListChecks, MessageSquare, Phone, Play, RefreshCw, Search, SearchCheck,
+  Square, Trash2,
+} from "lucide-react";
+import {classNames} from "../lib/format.js";
 import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
 import {Alert} from "../components/Alert.jsx";
 import {Metric} from "../components/Metric.jsx";
-import {LabelCounts} from "../components/LabelCounts.jsx";
-import {LabelBadge} from "../components/LabelBadge.jsx";
 import {StatusPill} from "../components/StatusPill.jsx";
+import {ResearchPanel} from "../components/ResearchPanel.jsx";
 
 export function BatchView({api, user, onLogout, batchId, openDashboard, openCompany, openBellijst, openChatSessies}) {
   const [batch, setBatch] = useState(null);
@@ -17,13 +20,12 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
   const [sector, setSector] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [afgewerktBezig, setAfgewerktBezig] = useState(new Set());
+  const [researchCompanyId, setResearchCompanyId] = useState(null);
 
   async function load() {
-    const labelParam = label === "fouten" ? "" : label;
     const [batchData, companyData] = await Promise.all([
       api.batch(batchId),
-      api.companies(batchId, labelParam),
+      api.companies(batchId, ""),
     ]);
     setBatch(batchData);
     setCompanies(companyData);
@@ -40,7 +42,11 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
   )).sort(), [companies]);
 
   const filtered = useMemo(() => companies.filter((company) => {
-    if (label === "fouten") return !!company.pipeline_error;
+    if (label === "review" && company.research_review_status !== "voorgesteld") return false;
+    if (label === "accepted" && company.research_review_status !== "geaccepteerd") return false;
+    if (label === "difference" && company.vergelijking !== "afwijkend") return false;
+    if (label === "errors" && company.research_status !== "error") return false;
+    if (label === "missing" && company.research_resultaat_status !== "niet_gevonden") return false;
     if (sector && company.sbi_omschrijving !== sector) return false;
     const text = `${company.naam || ""} ${company.gemeente || ""} ${company.vestigingsnummer || ""} ${company.cb_er || ""} ${company.kvk_nummer || ""}`.toLowerCase();
     return text.includes(search.toLowerCase());
@@ -56,10 +62,32 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
   }
 
   async function runBatch() {
+    if (!window.confirm(
+      `Autonoom bronnenonderzoek starten voor ${batch?.totaal || 0} organisaties?\n\n` +
+      "Verwachte externe kosten voor 20 organisaties: circa $0,70–$1,50. " +
+      "De agent stelt bronnen voor; een reviewer blijft beslissen.",
+    )) return;
     setBusy(true);
     setError("");
     try {
       await api.runBatch(batchId);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runLegacyBatch() {
+    if (!window.confirm(
+      "Legacy WP-pipeline draaien voor interne vergelijking?\n\n" +
+      "Dit is niet langer de standaardworkflow.",
+    )) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.runLegacyBatch(batchId);
       await load();
     } catch (err) {
       setError(err.message);
@@ -107,29 +135,6 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
     }
   }
 
-  async function toggleAfgewerkt(company) {
-    if (afgewerktBezig.has(company.company_id)) return;
-    setAfgewerktBezig((huidige) => new Set(huidige).add(company.company_id));
-    const nieuweWaarde = !company.afgewerkt;
-    setCompanies((huidige) => huidige.map((c) =>
-      c.company_id === company.company_id ? {...c, afgewerkt: nieuweWaarde} : c
-    ));
-    try {
-      await api.updateCompany(batchId, company.company_id, {afgewerkt: nieuweWaarde});
-    } catch (err) {
-      setCompanies((huidige) => huidige.map((c) =>
-        c.company_id === company.company_id ? {...c, afgewerkt: company.afgewerkt} : c
-      ));
-      setError(err.message);
-    } finally {
-      setAfgewerktBezig((huidige) => {
-        const volgende = new Set(huidige);
-        volgende.delete(company.company_id);
-        return volgende;
-      });
-    }
-  }
-
   const isRunning = batch?.status === "running";
 
   return (
@@ -146,7 +151,14 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
               <IconButton icon={RefreshCw} variant="quiet" onClick={resetVastgelopen} disabled={busy} title="Gebruik alleen na server-herstart als de taak niet meer draait">Vastgelopen?</IconButton>
             </>
           ) : (
-            <IconButton icon={Play} variant="primary" onClick={runBatch} disabled={busy}>Run</IconButton>
+            <>
+              <IconButton icon={Play} variant="primary" onClick={runBatch} disabled={busy}>
+                Bronnenonderzoek starten
+              </IconButton>
+              <IconButton icon={FlaskConical} variant="quiet" onClick={runLegacyBatch} disabled={busy}>
+                Legacy vergelijken
+              </IconButton>
+            </>
           )}
           <IconButton icon={Check} onClick={approveAll} disabled={isRunning}>Eenduidige goedkeuren</IconButton>
           <IconButton icon={FileDown} onClick={() => api.download(`/batches/${batchId}/export.xlsx`, "export.xlsx")}>Export</IconButton>
@@ -164,7 +176,31 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
       }
     >
       {error ? <Alert message={error} /> : null}
-      <div className="mb-4 grid gap-3 md:grid-cols-[1fr_200px_200px]">
+      <section className="mb-5 border-y border-line bg-white">
+        <div className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-ink">Autonome bronnenresearch</h2>
+            <p className="mt-1 max-w-3xl text-sm text-slate-600">
+              De agent onderzoekt websites, openbare documenten en recente media.
+              Resultaten worden pas definitief nadat een reviewer een primaire bron kiest.
+            </p>
+          </div>
+          <div className="text-sm text-slate-600">
+            {batch?.research?.gestart || 0} van {batch?.totaal || 0} onderzoeken gestart
+          </div>
+        </div>
+        {batch ? (
+          <div className="grid border-t border-line sm:grid-cols-3 lg:grid-cols-6">
+            <Metric title="Voortgang" value={`${batch.verwerkt || 0}/${batch.totaal || 0}`} />
+            <Metric title="Review nodig" value={batch.research?.review_nodig || 0} />
+            <Metric title="Geaccepteerd" value={batch.research?.geaccepteerd || 0} />
+            <Metric title="Niet gevonden" value={batch.research?.niet_gevonden || 0} />
+            <Metric title="Fouten" value={batch.research?.fouten || 0} />
+            <Metric title="Batchstatus" value={<StatusPill status={batch.status} />} />
+          </div>
+        ) : null}
+      </section>
+      <div className="mb-4 grid gap-3 md:grid-cols-[1fr_200px_220px]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-3 text-slate-500" size={17} />
           <input className="focus-ring h-11 w-full rounded-md border border-line bg-white pl-9 pr-3" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Zoeken op naam, gemeente, vestigingsnummer, CBR of KvK" aria-label="Zoeken op naam, gemeente, vestigingsnummer, CBR of KvK-nummer" />
@@ -176,44 +212,32 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
         <select className={classNames(
           "focus-ring h-11 rounded-md border bg-white px-3",
           label === "fouten" ? "border-red-400 text-red-700 font-medium" : "border-line",
-        )} value={label} onChange={(event) => setLabel(event.target.value)} aria-label="Filter op confidence-label">
-          <option value="">Alle labels</option>
-          <option value="hoog">Eenduidig</option>
-          <option value="middel">Twijfelachtig</option>
-          <option value="laag">Onduidelijk</option>
-          <option value="fouten">{batch?.fouten > 0 ? `Fouten (${batch.fouten})` : "Fouten"}</option>
+        )} value={label} onChange={(event) => setLabel(event.target.value)} aria-label="Filter op researchstatus">
+          <option value="">Alle onderzoeksstatussen</option>
+          <option value="review">Review nodig</option>
+          <option value="accepted">Bron geaccepteerd</option>
+          <option value="difference">Afwijkend van legacy</option>
+          <option value="missing">Geen bron gevonden</option>
+          <option value="errors">Onderzoeksfouten</option>
         </select>
       </div>
-      {batch ? (
-        <div className="mb-4 grid gap-3 md:grid-cols-3">
-          <Metric title="Voortgang" value={`${batch.verwerkt || 0}/${batch.totaal || 0}`} />
-          <Metric title="Status" value={
-            <div className="flex items-center gap-2">
-              <StatusPill status={batch.status} />
-              {batch.fouten > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">
-                  <AlertTriangle size={12} />{batch.fouten} {batch.fouten === 1 ? "fout" : "fouten"}
-                </span>
-              )}
-            </div>
-          } />
-          <Metric title="Labels" value={<LabelCounts labels={batch.labels} />} />
-        </div>
-      ) : null}
-      <div className="overflow-hidden rounded-lg border border-line bg-white">
+      <div className="overflow-x-auto rounded-lg border border-line bg-white">
         <table className="w-full border-collapse text-left text-sm">
           <thead className="bg-panel text-xs uppercase text-slate-500">
             <tr>
               <th className="px-4 py-3">Vestiging</th>
-              <th className="px-4 py-3">WP</th>
-              <th className="px-4 py-3">Confidence</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Afgewerkt</th>
+              <th className="px-4 py-3">Voorgestelde bron</th>
+              <th className="px-4 py-3">Research-WP</th>
+              <th className="px-4 py-3">Legacy-WP</th>
+              <th className="px-4 py-3">Vergelijking</th>
+              <th className="px-4 py-3">Review</th>
+              <th className="px-4 py-3 text-right">Actie</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((company) => (
-              <tr key={company.company_id} className="cursor-pointer border-t border-line hover:bg-panel" onClick={() => openCompany(batchId, company.company_id)}>
+              <Fragment key={company.company_id}>
+              <tr className="border-t border-line hover:bg-panel">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="font-semibold">{company.naam}</div>
@@ -226,35 +250,69 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-3 font-medium">
-                  {company.wp_kandidaat ?? (
-                    company.wp_gevonden_ruw != null ? (
-                      <span className="text-slate-400" title="Gevonden, maar niet bevestigd als kandidaat — controleer de bron">
-                        {company.wp_gevonden_ruw}*
-                      </span>
-                    ) : "-"
+                <td className="max-w-xs px-4 py-3">
+                  {company.research_top_url ? (
+                    <a href={company.research_top_url} target="_blank" rel="noreferrer" className="focus-ring inline-flex max-w-full items-center gap-1 font-medium text-etil underline">
+                      <span className="truncate">{company.research_top_titel || "Bron openen"}</span>
+                      <ExternalLink size={13} className="shrink-0" />
+                    </a>
+                  ) : (
+                    <span className="text-slate-500">
+                      {company.research_status === "running" ? "Onderzoek loopt…" : "Nog geen bron"}
+                    </span>
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  {company.confidence_label ? (
-                    <div className="flex items-center gap-3">
-                      <LabelBadge label={company.confidence_label} />
-                      <span className="text-xs text-slate-500">{pct(company.confidence_score)}%</span>
-                    </div>
-                  ) : "-"}
+                  {company.research_top_wp_bruikbaar ? (
+                    <span className="font-semibold">{company.research_top_wp}</span>
+                  ) : company.research_top_wp_raw != null ? (
+                    <span
+                      className="text-amber-800"
+                      title={`Niet bruikbaar als vestigings-WP; scope: ${company.research_top_scope || "onbekend"}`}
+                    >
+                      {company.research_top_wp_raw}*
+                    </span>
+                  ) : "—"}
                 </td>
-                <td className="px-4 py-3"><StatusPill status={company.status} /></td>
-                <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    className="focus-ring h-4 w-4 rounded border-line"
-                    checked={!!company.afgewerkt}
-                    onChange={() => toggleAfgewerkt(company)}
-                    disabled={afgewerktBezig.has(company.company_id)}
-                    aria-label={`Markeer ${company.naam} als afgewerkt`}
-                  />
+                <td className="px-4 py-3 text-slate-600">{company.legacy_wp ?? "—"}</td>
+                <td className="px-4 py-3">
+                  {company.vergelijking === "gelijk" ? (
+                    <span className="text-emerald-700">Gelijk</span>
+                  ) : company.vergelijking === "afwijkend" ? (
+                    <span className="font-medium text-amber-800">
+                      {company.verschil_abs > 0 ? "+" : ""}{company.verschil_abs}
+                    </span>
+                  ) : (
+                    <span className="text-slate-500">Nog niet vergelijkbaar</span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <StatusPill status={
+                    company.research_review_status === "geaccepteerd"
+                      ? "approved"
+                      : company.research_status
+                  } />
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <IconButton
+                    icon={researchCompanyId === company.company_id ? ChevronUp : SearchCheck}
+                    variant="quiet"
+                    onClick={() => setResearchCompanyId((current) => (
+                      current === company.company_id ? null : company.company_id
+                    ))}
+                  >
+                    {researchCompanyId === company.company_id ? "Sluiten" : "Beoordelen"}
+                  </IconButton>
                 </td>
               </tr>
+              {researchCompanyId === company.company_id ? (
+                <tr className="border-t border-line">
+                  <td colSpan="7" className="p-0">
+                    <ResearchPanel api={api} company={company} batchJaar={batch?.jaar} />
+                  </td>
+                </tr>
+              ) : null}
+              </Fragment>
             ))}
           </tbody>
         </table>

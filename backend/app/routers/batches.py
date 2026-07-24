@@ -13,6 +13,7 @@ from ..models import (AgentResult, Batch, BronKandidaat, CallListItem, Candidate
                       ChatSession, Company, Enrichment, JaarverslagMonitoring,
                       PipelineRun, ResearchRun, VastgoedRecord, WPRecord)
 from ..pipeline.runner import run_batch, verwerk_company
+from ..research.service import run_research_batch
 
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
 
@@ -25,12 +26,46 @@ def _lijkt_monitoringlijst_batch(batch: Batch) -> bool:
     return any(marker in naam for marker in MONITORINGLIJST_NAAM_MARKERS)
 
 
+def _latest_research_maps(
+    db: Session,
+    batch_id: str,
+) -> tuple[dict[str, ResearchRun], dict[str, BronKandidaat], set[str]]:
+    latest_runs: dict[str, ResearchRun] = {}
+    for run in (
+        db.query(ResearchRun)
+        .filter_by(batch_id=batch_id)
+        .order_by(ResearchRun.created_at.desc())
+    ):
+        latest_runs.setdefault(run.company_id, run)
+
+    run_ids = [run.id for run in latest_runs.values()]
+    top_candidates: dict[str, BronKandidaat] = {}
+    accepted_run_ids: set[str] = set()
+    if run_ids:
+        candidates = (
+            db.query(BronKandidaat)
+            .filter(BronKandidaat.research_run_id.in_(run_ids))
+            .order_by(BronKandidaat.rang, BronKandidaat.created_at)
+            .all()
+        )
+        for candidate in candidates:
+            top_candidates.setdefault(candidate.research_run_id, candidate)
+            if candidate.status == "geaccepteerd":
+                accepted_run_ids.add(candidate.research_run_id)
+                top_candidates[candidate.research_run_id] = candidate
+    return latest_runs, top_candidates, accepted_run_ids
+
+
 def run_batch_background(batch_id: str) -> None:
     db = SessionLocal()
     try:
         asyncio.run(run_batch(db, batch_id))
     finally:
         db.close()
+
+
+def run_research_batch_background(batch_id: str) -> None:
+    asyncio.run(run_research_batch(batch_id))
 
 
 def run_single_background(company_id: str, batch_id: str) -> None:
@@ -86,7 +121,7 @@ async def upload_batch(file: UploadFile, naam: str | None = None,
 @router.post("/{batch_id}/run")
 async def start_batch(batch_id: str, background_tasks: BackgroundTasks,
                       db: Session = Depends(get_db)):
-    """Start de pipeline als achtergrondtaak; voortgang staat op GET /batches/{id}."""
+    """Start standaard de autonome bronnenresearch voor de volledige batch."""
     batch = db.get(Batch, batch_id)
     if batch is None:
         raise HTTPException(404, f"batch {batch_id} bestaat niet")
@@ -98,9 +133,35 @@ async def start_batch(batch_id: str, background_tasks: BackgroundTasks,
     batch.verwerkt = 0
     batch.completed_at = None
     db.commit()
-    background_tasks.add_task(run_batch_background, batch.id)
+    background_tasks.add_task(run_research_batch_background, batch.id)
     return {"batch_id": batch.id, "status": batch.status, "verwerkt": batch.verwerkt,
-            "totaal": batch.totaal}
+            "totaal": batch.totaal, "workflow": "autonome_bronnenresearch"}
+
+
+@router.post("/{batch_id}/run-legacy")
+async def start_legacy_batch(
+    batch_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Start de voormalige WP-pipeline uitsluitend voor interne vergelijking."""
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(404, f"batch {batch_id} bestaat niet")
+    if batch.status == "running":
+        raise HTTPException(409, "batch draait al")
+    batch.status = "running"
+    batch.verwerkt = 0
+    batch.completed_at = None
+    db.commit()
+    background_tasks.add_task(run_batch_background, batch.id)
+    return {
+        "batch_id": batch.id,
+        "status": batch.status,
+        "verwerkt": batch.verwerkt,
+        "totaal": batch.totaal,
+        "workflow": "legacy_pipeline",
+    }
 
 
 @router.post("/{batch_id}/cancel")
@@ -202,8 +263,29 @@ def get_batch(batch_id: str, db: Session = Depends(get_db)):
                 ChatSession.verwerkt == False)  # noqa: E712
         .count()
     ) if company_ids else 0
+    latest_runs, top_candidates, accepted_run_ids = _latest_research_maps(
+        db, batch_id,
+    )
+    research = {
+        "gestart": len(latest_runs),
+        "afgerond": sum(run.status == "completed" for run in latest_runs.values()),
+        "review_nodig": sum(
+            run.status == "completed"
+            and run.id not in accepted_run_ids
+            and run.id in top_candidates
+            for run in latest_runs.values()
+        ),
+        "geaccepteerd": len(accepted_run_ids),
+        "niet_gevonden": sum(
+            run.status == "completed"
+            and run.resultaat_status == "niet_gevonden"
+            for run in latest_runs.values()
+        ),
+        "fouten": sum(run.status == "error" for run in latest_runs.values()),
+    }
     return {"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
             "totaal": b.totaal, "verwerkt": b.verwerkt, "labels": labels, "fouten": fouten,
+            "workflow": "autonome_bronnenresearch", "research": research,
             "chat_sessies_open": chat_sessies_open,
             "created_at": b.created_at.isoformat() + "Z" if b.created_at else None,
             "completed_at": b.completed_at.isoformat() + "Z" if b.completed_at else None}
@@ -256,12 +338,43 @@ def list_companies(batch_id: str, label: str | None = None, db: Session = Depend
                .order_by(AgentResult.created_at)):
         ruwe_wp_map.setdefault(ar.company_id, ar.wp_gevonden)
 
+    latest_runs, top_candidates, accepted_run_ids = _latest_research_maps(
+        db, batch_id,
+    )
+
     out = []
     for comp in db.query(Company).filter_by(batch_id=batch_id):
         cand = comp.candidate
         if label and (not cand or cand.confidence_label != label):
             continue
         heeft_kandidaat = cand is not None and cand.wp_kandidaat is not None
+        research_run = latest_runs.get(comp.id)
+        research_top = (
+            top_candidates.get(research_run.id) if research_run else None
+        )
+        legacy_wp = cand.wp_kandidaat if cand else None
+        research_wp_raw = research_top.wp_gevonden if research_top else None
+        research_wp_bruikbaar = bool(
+            research_top
+            and research_top.eenheid == "werkzame_personen"
+            and research_top.scope_class in {"vestiging", "limburg"}
+        )
+        research_wp = research_wp_raw if research_wp_bruikbaar else None
+        verschil_abs = (
+            research_wp - legacy_wp
+            if research_wp is not None and legacy_wp is not None
+            else None
+        )
+        if verschil_abs == 0:
+            vergelijking = "gelijk"
+        elif verschil_abs is not None:
+            vergelijking = "afwijkend"
+        elif research_wp is not None:
+            vergelijking = "alleen_research"
+        elif legacy_wp is not None:
+            vergelijking = "alleen_legacy"
+        else:
+            vergelijking = "onvoldoende"
         out.append({
             "company_id": comp.id, "naam": comp.naam, "gemeente": comp.gemeente,
             "vestigingsnummer": comp.vestigingsnummer, "cb_er": comp.cb_er,
@@ -275,6 +388,30 @@ def list_companies(batch_id: str, label: str | None = None, db: Session = Depend
             "strategie": cand.strategie if cand else None,
             "status": cand.status if cand else None,
             "pipeline_error": fouten_map.get(comp.id),
+            "legacy_wp": legacy_wp,
+            "research_run_id": research_run.id if research_run else None,
+            "research_status": research_run.status if research_run else "niet_gestart",
+            "research_resultaat_status": (
+                research_run.resultaat_status if research_run else None
+            ),
+            "research_top_id": research_top.id if research_top else None,
+            "research_top_url": research_top.url if research_top else None,
+            "research_top_titel": research_top.titel if research_top else None,
+            "research_top_type": research_top.brontype if research_top else None,
+            "research_top_wp": research_wp,
+            "research_top_wp_raw": research_wp_raw,
+            "research_top_wp_bruikbaar": research_wp_bruikbaar,
+            "research_top_scope": research_top.scope_class if research_top else None,
+            "research_top_score": (
+                research_top.ranking_score if research_top else None
+            ),
+            "research_review_status": (
+                "geaccepteerd"
+                if research_run and research_run.id in accepted_run_ids
+                else research_top.status if research_top else None
+            ),
+            "verschil_abs": verschil_abs,
+            "vergelijking": vergelijking,
         })
     return out
 

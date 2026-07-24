@@ -74,6 +74,8 @@ def valideer_bron(document: SourceDocument) -> BronValidatie:
         waarschuwingen.append("fte_geen_wp")
     if document.brontype == "media" and document.publicatiedatum:
         waarschuwingen.append("recent_actualiteitssignaal")
+    if document.scope_class in {"nederland", "concern"}:
+        waarschuwingen.append("scope_breder_dan_vestiging")
     if not document.bewijsfragment and document.wp_gevonden is not None:
         waarschuwingen.append("getal_zonder_bewijsfragment")
 
@@ -92,6 +94,7 @@ def valideer_bron(document: SourceDocument) -> BronValidatie:
         "heeft_bewijsfragment": bool(document.bewijsfragment),
         "heeft_wp": document.wp_gevonden is not None,
         "eenheid_is_wp": document.eenheid == "werkzame_personen",
+        "scope_is_bruikbaar": document.scope_class in {"vestiging", "limburg"},
     }
     return BronValidatie(
         document=document,

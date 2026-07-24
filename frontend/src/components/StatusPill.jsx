@@ -6,6 +6,7 @@ export function StatusPill({status}) {
     to_chat: "Chat",
     to_call: "Bellijst",
     running: "Draait",
+    review: "Review nodig",
     done: "Klaar",
     error: "Fout",
   }[status] || status || "Onbekend";

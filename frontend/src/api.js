@@ -53,6 +53,7 @@ export function createApi(token, onUnauthorized) {
       return request(`/batches/upload?${params.toString()}`, {method: "POST", body});
     },
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
+    runLegacyBatch: (id) => request(`/batches/${id}/run-legacy`, {method: "POST"}),
     monitoringStatus: () => request("/monitoring"),
     monitorRun: () => request("/monitoring/run", {method: "POST"}),
     startResearch: (companyId, gevraagdJaar) => request(`/research/companies/${companyId}/run`, {

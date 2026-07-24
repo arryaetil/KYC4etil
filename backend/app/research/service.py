@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..database import SessionLocal
-from ..models import BronKandidaat, Company, ResearchRun
+from ..models import Batch, BronKandidaat, Company, ResearchRun
 from .live_tools import LiveResearchTools
+from .mock_tools import MockResearchTools
 from .query_planner import QueryContext
 from .supervisor import ResearchSupervisor
 from .urls import canonicaliseer_url
@@ -60,8 +61,13 @@ async def run_research_run(run_id: str) -> None:
         run.started_at = _now()
         db.commit()
 
+        tools = (
+            LiveResearchTools()
+            if settings.provider_mode == "live"
+            else MockResearchTools()
+        )
         outcome = await ResearchSupervisor(
-            LiveResearchTools(),
+            tools,
             max_queries=settings.research_max_queries,
             max_pages=settings.research_max_pages,
         ).run(QueryContext(
@@ -119,5 +125,51 @@ async def run_research_run(run_id: str) -> None:
             run.fout = str(exc)[:4000]
             run.completed_at = _now()
             db.commit()
+    finally:
+        db.close()
+
+
+async def run_research_batch(batch_id: str) -> None:
+    """Voert de primaire researchworkflow begrensd en sequentieel uit.
+
+    Sequentieel is bewust: het bewaakt API-budgetten en voorkomt dat een batch
+    van twintig organisaties honderden extractiecalls tegelijk start.
+    """
+    db = SessionLocal()
+    try:
+        batch = db.get(Batch, batch_id)
+        if batch is None:
+            return
+        company_ids = [
+            item.id
+            for item in db.query(Company).filter_by(batch_id=batch.id).all()
+        ]
+        batch.status = "running"
+        batch.verwerkt = 0
+        batch.completed_at = None
+        db.commit()
+
+        for company_id in company_ids:
+            db.refresh(batch)
+            if batch.status == "cancelled":
+                return
+            company = db.get(Company, company_id)
+            run = maak_research_run(db, company, batch.jaar - 1)
+            await run_research_run(run.id)
+            batch = db.get(Batch, batch_id)
+            batch.verwerkt += 1
+            db.commit()
+
+        batch.status = "review"
+        batch.completed_at = _now()
+        db.commit()
+    except Exception:
+        db.rollback()
+        batch = db.get(Batch, batch_id)
+        if batch is not None:
+            batch.status = "error"
+            batch.completed_at = _now()
+            db.commit()
+        raise
     finally:
         db.close()
