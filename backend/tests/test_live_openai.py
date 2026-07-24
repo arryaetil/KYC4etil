@@ -51,7 +51,7 @@ async def test_web_search_contact_valt_terug_op_serper_als_duckduckgo_niets_geef
                   "snippet": "", "bron": "serper"}]
 
     async def fake_fetch_text(url):
-        return "Bel ons op 043-1234567 voor meer info."
+        return "Testbedrijf Maastricht. Bel ons op 043-1234567 voor meer info."
 
     monkeypatch.setattr(live, "_duckduckgo_search", fake_ddg)
     monkeypatch.setattr(live, "_serper_search", fake_serper)
@@ -139,6 +139,64 @@ async def test_places_lookup_valt_terug_op_web_search_bij_google_http_fout(monke
 
     assert result.website == "https://fallback.test"
     assert result.phone == "043-7654321"
+
+
+@pytest.mark.asyncio
+async def test_places_zonder_website_is_geen_succesvolle_lookup(monkeypatch):
+    async def fake_serper_places(query):
+        return {
+            "title": "Mondriaan",
+            "address": "Heerlen",
+            "website": None,
+        }
+
+    async def fake_web_search_contact(naam, gemeente):
+        return live.PlacesResult(
+            website="https://www.mondriaan.eu",
+            phone="088-5066262",
+            adres="Heerlen",
+            raw={"bron": "web_search"},
+        )
+
+    monkeypatch.setattr(live.settings, "google_places_api_key", "")
+    monkeypatch.setattr(live, "_serper_places", fake_serper_places)
+    monkeypatch.setattr(live, "_web_search_contact", fake_web_search_contact)
+
+    result = await live.LivePlacesProvider().lookup("Mondriaan", "Heerlen")
+
+    assert result.website == "https://www.mondriaan.eu"
+
+
+@pytest.mark.asyncio
+async def test_web_search_contact_weigert_naamgenoot_buiten_gemeente(monkeypatch):
+    async def fake_web_search(query, max_results=6):
+        return [
+            {
+                "title": "ROC Mondriaan",
+                "url": "https://www.rocmondriaan.nl",
+                "snippet": "Onderwijs in Den Haag",
+                "bron": "serper",
+            },
+            {
+                "title": "Mondriaan",
+                "url": "https://www.mondriaan.eu",
+                "snippet": "Geestelijke gezondheidszorg in Heerlen",
+                "bron": "serper",
+            },
+        ]
+
+    async def fake_fetch_text(url):
+        return {
+            "https://www.rocmondriaan.nl": "ROC Mondriaan in Den Haag",
+            "https://www.mondriaan.eu": "Mondriaan, John F. Kennedylaan in Heerlen",
+        }[url]
+
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+
+    result = await live._web_search_contact("Mondriaan", "Heerlen")
+
+    assert result.website == "https://www.mondriaan.eu"
 
 
 @pytest.mark.asyncio

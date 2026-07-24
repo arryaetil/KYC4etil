@@ -179,7 +179,7 @@ async def _serper_places(query: str) -> dict | None:
 class LivePlacesProvider:
     async def lookup(self, naam: str, gemeente: str | None) -> PlacesResult | None:
         place = await _serper_places(f"{naam} {gemeente or ''}".strip())
-        if place:
+        if place and place.get("website"):
             return PlacesResult(
                 website=place.get("website"),
                 phone=place.get("phoneNumber"),
@@ -408,6 +408,7 @@ async def _web_search_contact(naam: str, gemeente: str | None) -> PlacesResult |
         if _is_directory_result(url):
             continue
         phone = None
+        tekst = ""
         try:
             tekst = await _fetch_text(url)
             phone_match = re.search(
@@ -417,6 +418,21 @@ async def _web_search_contact(naam: str, gemeente: str | None) -> PlacesResult |
             phone = phone_match.group(0).strip() if phone_match else None
         except Exception:
             pass
+        bron_context = " ".join(filter(None, [
+            result.get("title"),
+            result.get("snippet"),
+            tekst[:10000],
+        ]))
+        if not _tekst_lijkt_bij_bedrijf_te_horen(naam, bron_context):
+            continue
+        if (
+            gemeente
+            and gemeente.lower() not in bron_context.lower()
+        ):
+            # Vooral bij ambigue éénwoordnamen (Mondriaan, Jumbo, IKEA)
+            # voorkomt dit dat een naamgenoot uit een andere regio als
+            # officieel domein wordt opgeslagen.
+            continue
         return PlacesResult(
             website=url,
             phone=phone,
