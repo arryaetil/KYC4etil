@@ -1,6 +1,6 @@
 """Adapter van bestaande live providers naar het researchcontract."""
 import re
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
 
 from ..pipeline.identity_scope import heuristic_scope_class
 from .query_planner import QueryContext
@@ -27,35 +27,92 @@ class LiveResearchTools:
         domein = urlsplit(context.website_url).netloc.lower().removeprefix(
             "www."
         )
-        query_text = (
-            f"site:{domein} {context.gevraagd_jaar} "
-            "(jaarrekening OR jaarverslag OR jaarverantwoording)"
-        )
-        results = await live._web_search(query_text, max_results=8)
-        query = PlannedQuery(
-            "document",
-            query_text,
-            "nieuwste document op het bevestigde officiële domein",
-        )
-        for result in results:
-            url = result.get("url")
-            if not url:
-                continue
-            result_domein = urlsplit(url).netloc.lower().removeprefix("www.")
-            if result_domein != domein:
-                continue
-            combined = CombinedSearchResult(
-                title=result.get("title", ""),
-                url=url,
-                canonical_url=canonicaliseer_url(url),
-                snippets=result.get("snippets") or (
-                    [result["snippet"]] if result.get("snippet") else []
-                ),
-                providers=result.get("bronnen")
-                or [result.get("bron", "web_search")],
-                queries=[query_text],
+        query_texts = [
+            (
+                f"site:{domein} {context.gevraagd_jaar} "
+                "(jaarrekening OR jaarverslag OR jaarverantwoording)"
+            ),
+            (
+                f'site:{domein} "{context.naam}" '
+                f'"{context.gevraagd_jaar}" jaarrekening jaarverslag'
+            ),
+        ]
+        geziene_urls: set[str] = set()
+        for query_text in query_texts:
+            results = await live._web_search(query_text, max_results=8)
+            query = PlannedQuery(
+                "document",
+                query_text,
+                "nieuwste document op het bevestigde officiële domein",
             )
-            document = await self.inspect(context, query, combined)
+            for result in results:
+                url = result.get("url")
+                if not url:
+                    continue
+                result_domein = urlsplit(url).netloc.lower().removeprefix(
+                    "www."
+                )
+                canonical_url = canonicaliseer_url(url)
+                if result_domein != domein or canonical_url in geziene_urls:
+                    continue
+                geziene_urls.add(canonical_url)
+                combined = CombinedSearchResult(
+                    title=result.get("title", ""),
+                    url=url,
+                    canonical_url=canonical_url,
+                    snippets=result.get("snippets") or (
+                        [result["snippet"]] if result.get("snippet") else []
+                    ),
+                    providers=result.get("bronnen")
+                    or [result.get("bron", "web_search")],
+                    queries=[query_text],
+                )
+                document = await self.inspect(context, query, combined)
+                if (
+                    document is not None
+                    and document.verslagjaar == context.gevraagd_jaar
+                ):
+                    return document
+
+        # Een oudere officiële PDF bevestigt het domein, maar zoekmachines
+        # indexeren de nieuwste overzichtspagina soms pas laat. Probeer daarom
+        # ook de gangbare, stabiele publicatiepaden rechtstreeks. Dit is een
+        # goedkope HTTP-probe en valt buiten het brede zoek-/paginabudget.
+        origin = f"{urlsplit(context.website_url).scheme}://{urlsplit(context.website_url).netloc}/"
+        for path in (
+            "jaarrekening-en-maatschappelijk-verslag",
+            "jaarverslag",
+            "jaarverslagen",
+            "publicaties",
+        ):
+            url = urljoin(origin, path)
+            canonical_url = canonicaliseer_url(url)
+            if canonical_url in geziene_urls:
+                continue
+            query_text = (
+                f"directe officiële publicatiepagina voor "
+                f"{context.gevraagd_jaar}"
+            )
+            query = PlannedQuery(
+                "document",
+                query_text,
+                "nieuwste versie vanaf het bevestigde officiële domein",
+            )
+            try:
+                document = await self.inspect(
+                    context,
+                    query,
+                    CombinedSearchResult(
+                        title=path.replace("-", " ").title(),
+                        url=url,
+                        canonical_url=canonical_url,
+                        snippets=[],
+                        providers=["official_site_probe"],
+                        queries=[query_text],
+                    ),
+                )
+            except Exception:
+                continue
             if (
                 document is not None
                 and document.verslagjaar == context.gevraagd_jaar

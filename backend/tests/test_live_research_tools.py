@@ -73,3 +73,42 @@ async def test_documentjaar_mag_uit_zoeksnippet_komen(monkeypatch):
 
     assert document is not None
     assert document.verslagjaar == 2025
+
+
+@pytest.mark.asyncio
+async def test_nieuwste_officiele_document_probeert_stabiele_publicatiepagina(
+    monkeypatch,
+):
+    async def fake_web_search(query, max_results=8):
+        return []
+
+    tools = LiveResearchTools()
+
+    async def fake_inspect(context, query, result):
+        if result.url.endswith("/jaarrekening-en-maatschappelijk-verslag"):
+            return SourceDocument(
+                naam=context.naam,
+                company_website_url=context.website_url,
+                url=result.url,
+                titel="Jaarrekening en Maatschappelijk Verslag",
+                brontype="officiele_website",
+                documenttype="jaarrekening",
+                gevraagd_jaar=2025,
+                verslagjaar=2025,
+            )
+        return None
+
+    tools.inspect = AsyncMock(side_effect=fake_inspect)
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+
+    document = await tools.find_nieuwste_officiele_document(QueryContext(
+        naam="Mondriaan",
+        website_url="https://www.mondriaan.eu/over-ons",
+        gevraagd_jaar=2025,
+    ))
+
+    assert document is not None
+    assert (
+        document.url
+        == "https://www.mondriaan.eu/jaarrekening-en-maatschappelijk-verslag"
+    )
