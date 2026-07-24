@@ -212,8 +212,14 @@ class LiveResearchTools:
             documenttype=_documenttype(result.title, result.url, is_pdf=False),
             gevraagd_jaar=context.gevraagd_jaar if query.pad == "document" else None,
             verslagjaar=(
-                _vind_jaar(" ".join([result.title, tekst[:1000]]),
-                           context.gevraagd_jaar)
+                _vind_jaar(
+                    " ".join([
+                        result.title,
+                        *result.snippets,
+                        tekst[:4000],
+                    ]),
+                    context.gevraagd_jaar,
+                )
                 if query.pad == "document" else None
             ),
             informatie_peilmoment=data.get("peilmoment"),

@@ -5,6 +5,7 @@ import pytest
 from app.providers import live
 from app.research.live_tools import LiveResearchTools
 from app.research.query_planner import QueryContext
+from app.research.types import CombinedSearchResult, PlannedQuery
 from app.research.validation import SourceDocument
 
 
@@ -43,3 +44,32 @@ async def test_nieuwste_officiele_document_krijgt_eigen_site_search(
     assert document is not None
     assert document.verslagjaar == 2025
     assert "site:mondriaan.eu" in tools.inspect.await_args.args[1].query
+
+
+@pytest.mark.asyncio
+async def test_documentjaar_mag_uit_zoeksnippet_komen(monkeypatch):
+    async def fake_fetch_text(url):
+        return "Navigatie en algemene informatie zonder zichtbaar jaartal."
+
+    monkeypatch.setattr(live.settings, "openai_api_key", "")
+    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+
+    document = await LiveResearchTools().inspect(
+        QueryContext(
+            naam="Mondriaan",
+            website_url="https://www.mondriaan.eu",
+            gevraagd_jaar=2025,
+        ),
+        PlannedQuery("document", "site:mondriaan.eu 2025", "nieuwste"),
+        CombinedSearchResult(
+            title="Jaarrekening en Maatschappelijk Verslag",
+            url="https://www.mondriaan.eu/jaarrekening-en-maatschappelijk-verslag",
+            canonical_url="https://mondriaan.eu/jaarrekening-en-maatschappelijk-verslag",
+            snippets=["Mondriaan Jaarrekening 2025"],
+            providers=["serper"],
+            queries=["site:mondriaan.eu 2025"],
+        ),
+    )
+
+    assert document is not None
+    assert document.verslagjaar == 2025
