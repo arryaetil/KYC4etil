@@ -5,11 +5,27 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from .config import get_settings
 
 settings = get_settings()
+database_url = settings.effective_database_url
+engine_options = {
+    "connect_args": (
+        {"check_same_thread": False}
+        if database_url.startswith("sqlite")
+        else {}
+    ),
+}
+if not database_url.startswith("sqlite"):
+    # Houd de API responsief tijdens langlopende research. Een korte timeout
+    # voorkomt dat honderden webrequests elk 30 seconden op een volle pool
+    # blijven wachten; pre-ping ruimt verbroken Railway-connecties op.
+    engine_options.update({
+        "pool_size": 10,
+        "max_overflow": 20,
+        "pool_timeout": 5,
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+    })
 
-engine = create_engine(
-    settings.effective_database_url,
-    connect_args={"check_same_thread": False} if settings.effective_database_url.startswith("sqlite") else {},
-)
+engine = create_engine(database_url, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
