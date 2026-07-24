@@ -1,4 +1,5 @@
 """Persistente uitvoering van een begrensde bronnenresearchrun."""
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -223,6 +224,7 @@ async def run_research_batch(batch_id: str) -> None:
     van twintig organisaties honderden extractiecalls tegelijk start.
     """
     try:
+        settings = get_settings()
         with SessionLocal() as db:
             batch = db.get(Batch, batch_id)
             if batch is None:
@@ -244,7 +246,26 @@ async def run_research_batch(batch_id: str) -> None:
                     return
                 company = db.get(Company, company_id)
                 run = maak_research_run(db, company, gevraagd_jaar)
-            await run_research_run(run.id)
+            try:
+                await asyncio.wait_for(
+                    run_research_run(run.id),
+                    timeout=settings.research_company_timeout_seconds,
+                )
+            except TimeoutError:
+                # Eén trage of niet-reagerende externe bron mag de overige
+                # organisaties niet blokkeren. Bewaar de timeout als expliciet
+                # onderzoeksresultaat en ga gecontroleerd door.
+                with SessionLocal() as db:
+                    timed_out_run = db.get(ResearchRun, run.id)
+                    if timed_out_run is not None:
+                        timed_out_run.status = "error"
+                        timed_out_run.resultaat_status = "error"
+                        timed_out_run.fout = (
+                            "onderzoek afgebroken na "
+                            f"{settings.research_company_timeout_seconds} seconden"
+                        )
+                        timed_out_run.completed_at = _now()
+                        db.commit()
             with SessionLocal() as db:
                 batch = db.get(Batch, batch_id)
                 if batch is None:
