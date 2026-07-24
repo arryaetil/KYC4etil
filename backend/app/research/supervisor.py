@@ -71,11 +71,30 @@ class ResearchSupervisor:
         geziene_urls: set[str] = {
             document.url for document in seed_documents
         }
+        resultaten_per_pad: dict[
+            str, list[tuple[PlannedQuery, CombinedSearchResult]]
+        ] = {}
         for query, results in zip(queries, search_results):
             if isinstance(results, BaseException):
                 fouten.append(f"{query.pad}: {results}")
                 continue
-            for result in results:
+            resultaten_per_pad.setdefault(query.pad, []).extend(
+                (query, result) for result in results
+            )
+
+        # Verdeel het paginabudget over alle zoekpaden. De oude sequentiële
+        # selectie kon het hele budget vullen met de eerste websitequery,
+        # waardoor jaarstukken en media nooit werden gelezen zodra het budget
+        # lager werd. Round-robin bewaart diversiteit én de harde kostenlimiet.
+        grootste_resultaatset = max(
+            (len(results) for results in resultaten_per_pad.values()),
+            default=0,
+        )
+        for resultaat_index in range(grootste_resultaatset):
+            for results in resultaten_per_pad.values():
+                if resultaat_index >= len(results):
+                    continue
+                query, result = results[resultaat_index]
                 if result.canonical_url in geziene_urls:
                     continue
                 geziene_urls.add(result.canonical_url)

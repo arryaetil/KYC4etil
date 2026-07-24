@@ -120,6 +120,48 @@ class EmptyResearchTools(FakeResearchTools):
         return []
 
 
+class ManyResultsResearchTools(FakeResearchTools):
+    def __init__(self):
+        super().__init__()
+        self.geinspecteerde_paden: list[str] = []
+
+    async def search(self, query: PlannedQuery, max_results: int):
+        return [
+            CombinedSearchResult(
+                title=f"{query.pad} {index}",
+                url=f"https://{query.pad}.example/{query.query[:8]}/{index}",
+                canonical_url=(
+                    f"https://{query.pad}.example/{query.query[:8]}/{index}"
+                ),
+                snippets=[],
+                providers=["test"],
+                queries=[query.query],
+            )
+            for index in range(8)
+        ]
+
+    async def inspect(self, context, query, result):
+        self.geinspecteerde_paden.append(query.pad)
+        return await super().inspect(context, query, result)
+
+
+@pytest.mark.asyncio
+async def test_klein_paginabudget_wordt_over_onderzoekspaden_verdeeld():
+    tools = ManyResultsResearchTools()
+
+    outcome = await ResearchSupervisor(
+        tools, max_queries=12, max_pages=3,
+    ).run(QueryContext(
+        naam="Voorbeeld Zorg",
+        gevraagd_jaar=2025,
+        website_url="https://voorbeeldzorg.nl",
+        huidig_jaar=2026,
+    ))
+
+    assert outcome.onderzochte_paginas == 3
+    assert tools.geinspecteerde_paden == ["website", "document", "media"]
+
+
 @pytest.mark.asyncio
 async def test_supervisor_registreert_explicitiet_niet_gevonden():
     outcome = await ResearchSupervisor(
