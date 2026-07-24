@@ -168,6 +168,54 @@ async def test_places_zonder_website_is_geen_succesvolle_lookup(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_google_place_zonder_website_valt_terug_op_web_search(
+    monkeypatch,
+):
+    class GoogleWithoutWebsiteClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *args, **kwargs):
+            request = httpx.Request("POST", live.PLACES_SEARCH_URL)
+            return httpx.Response(
+                200,
+                request=request,
+                json={"places": [{
+                    "formattedAddress": "Oude Venloseweg 84, Velden",
+                }]},
+            )
+
+    async def fake_serper_places(query):
+        return None
+
+    async def fake_web_search_contact(naam, gemeente):
+        return live.PlacesResult(
+            website="https://www.okechamp.eu/",
+            adres="Oude Venloseweg 84, Velden",
+            raw={"bron": "web_search"},
+        )
+
+    monkeypatch.setattr(live.settings, "google_places_api_key", "test-key")
+    monkeypatch.setattr(live.httpx, "AsyncClient", GoogleWithoutWebsiteClient)
+    monkeypatch.setattr(live, "_serper_places", fake_serper_places)
+    monkeypatch.setattr(
+        live, "_web_search_contact", fake_web_search_contact,
+    )
+
+    result = await live.LivePlacesProvider().lookup(
+        "Okechamp B.V.", "Horst aan de Maas",
+    )
+
+    assert result.website == "https://www.okechamp.eu/"
+
+
+@pytest.mark.asyncio
 async def test_web_search_contact_weigert_naamgenoot_buiten_gemeente(monkeypatch):
     async def fake_web_search(query, max_results=6):
         return [

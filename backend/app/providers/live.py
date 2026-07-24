@@ -206,6 +206,8 @@ class LivePlacesProvider:
         if not places:
             return await _web_search_contact(naam, gemeente)
         p = places[0]
+        if not p.get("websiteUri"):
+            return await _web_search_contact(naam, gemeente)
         return PlacesResult(website=p.get("websiteUri"), phone=p.get("nationalPhoneNumber"),
                             adres=p.get("formattedAddress"), raw=p)
 
