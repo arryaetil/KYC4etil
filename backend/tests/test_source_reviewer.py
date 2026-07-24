@@ -162,11 +162,11 @@ async def test_correcte_externe_pdf_wordt_niet_door_woordmatch_geblokkeerd():
 async def test_kleine_organisatiepagina_zonder_wp_mag_semantisch_beoordeeld():
     reviewer = IntelligentSourceReviewer()
     reviewer._llm_review = AsyncMock(return_value={
-        "beslissing": "tonen_aan_reviewer",
+        "beslissing": "context_only",
         "identity_class": "exact_entity",
         "scope_class": "vestiging",
         "gevonden_organisatie": "Hallux Podotherapie",
-        "reden": "De pagina noemt naam, plaats en het behandelteam.",
+        "reden": "Juiste organisatiepagina, maar zonder expliciet WP-cijfer.",
     })
     document = SourceDocument(
         naam="Hallux Podotherapie",
@@ -185,4 +185,9 @@ async def test_kleine_organisatiepagina_zonder_wp_mag_semantisch_beoordeeld():
 
     assert reviewed.is_afgewezen is False
     assert "geen_concreet_wp_bewijs" in reviewed.waarschuwingen
+    assert "alleen_context_geen_wp_voorstel" in reviewed.waarschuwingen
+    assert (
+        reviewed.validaties["intelligente_review"]["beslissing"]
+        == "context_only"
+    )
     reviewer._llm_review.assert_awaited_once()

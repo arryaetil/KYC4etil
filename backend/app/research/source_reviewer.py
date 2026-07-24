@@ -11,10 +11,11 @@ from .validation import BronValidatie, SourceDocument, valideer_bron
 
 
 REVIEW_PROMPT = """Je bent een strenge bronreviewer voor een Nederlands
-vestigingsregister. Beoordeel uitsluitend of de bron over de gezochte
-organisatie gaat en of het bewijs bruikbaar is. Een gelijksoortige naam,
-zoekresultaatsnippet, medewerkerprofiel of jaarverslag van een andere
-organisatie is altijd een mismatch. Bij twijfel wijs je af.
+vestigingsregister. Beoordeel organisatie-identiteit en bruikbaarheid van een
+personeelsgetal als TWEE APARTE zaken. Een gelijksoortige naam,
+zoekresultaatsnippet, medewerkerprofiel, vacaturepagina of jaarverslag van een
+andere organisatie is altijd een mismatch. Bij twijfel over de identiteit wijs
+je af.
 
 GEZOCHTE ORGANISATIE
 Naam: {naam}
@@ -46,7 +47,13 @@ Antwoord uitsluitend met JSON:
 
 Alleen exact_entity of een aantoonbare same_brand_or_group-relatie mag worden
 getoond. possible_match en unknown moeten worden afgewezen. Concern- of
-landelijke cijfers zijn hoogstens context_only."""
+landelijke cijfers zijn hoogstens context_only.
+
+BELANGRIJK: wijs een bron die aantoonbaar over de juiste organisatie gaat niet
+af uitsluitend omdat een letterlijk personeelsgetal, verslagjaar of lokale
+scope ontbreekt. Een echte organisatie-, team-, nieuws- of mediapagina zonder
+bruikbaar WP-cijfer krijgt beslissing context_only. tonen_aan_reviewer is alleen
+voor een bron met concreet bruikbaar bewijs voor vestiging of Limburg."""
 
 _ALLOWED_IDENTITIES = {
     "exact_entity", "same_brand_or_group", "possible_match", "mismatch", "unknown",
