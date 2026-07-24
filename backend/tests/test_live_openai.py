@@ -225,6 +225,38 @@ async def test_web_search_contact_accepteert_exact_merkdomein_bij_oude_gemeente(
 
 
 @pytest.mark.asyncio
+async def test_web_search_contact_herprobeert_zonder_foutieve_gemeente(
+    monkeypatch,
+):
+    queries = []
+
+    async def fake_web_search(query, max_results=6):
+        queries.append(query)
+        if "Horst aan de Maas" in query:
+            return []
+        return [{
+            "title": "OKECHAMP B.V.",
+            "url": "https://www.okechamp.eu/",
+            "snippet": "Official OKECHAMP website",
+            "bron": "serper",
+        }]
+
+    async def fake_fetch_text(url):
+        return "OKECHAMP B.V., Oude Venloseweg 84, Velden"
+
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+
+    result = await live._web_search_contact(
+        "Okechamp B.V.", "Horst aan de Maas",
+    )
+
+    assert result.website == "https://www.okechamp.eu/"
+    assert len(queries) == 2
+    assert "Horst aan de Maas" not in queries[1]
+
+
+@pytest.mark.asyncio
 async def test_openai_extract_parseert_wp_uitsplitsing(monkeypatch):
     class _FakeUitsplitsingResponse:
         output_text = (

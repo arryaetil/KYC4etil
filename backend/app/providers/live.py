@@ -400,58 +400,68 @@ def _is_directory_result(url: str) -> bool:
 
 
 async def _web_search_contact(naam: str, gemeente: str | None) -> PlacesResult | None:
-    results = await _web_search(
+    query_texts = [
         f"{naam} {gemeente or ''} officiele website telefoon contact".strip(),
-        max_results=6,
-    )
-    for result in results:
-        url = result["url"]
-        if _is_directory_result(url):
-            continue
-        phone = None
-        tekst = ""
-        try:
-            tekst = await _fetch_text(url)
-            phone_match = re.search(
-                r"(?:\+31|0)\s?(?:\d[\s\-().]?){8,12}",
-                tekst,
+    ]
+    if gemeente:
+        query_texts.append(f'"{naam}" officiele website contact')
+
+    geziene_urls: set[str] = set()
+    for query_text in query_texts:
+        results = await _web_search(query_text, max_results=6)
+        for result in results:
+            url = result["url"]
+            if url in geziene_urls or _is_directory_result(url):
+                continue
+            geziene_urls.add(url)
+            phone = None
+            tekst = ""
+            try:
+                tekst = await _fetch_text(url)
+                phone_match = re.search(
+                    r"(?:\+31|0)\s?(?:\d[\s\-().]?){8,12}",
+                    tekst,
+                )
+                phone = phone_match.group(0).strip() if phone_match else None
+            except Exception:
+                pass
+            bron_context = " ".join(filter(None, [
+                result.get("title"),
+                result.get("snippet"),
+                tekst[:10000],
+            ]))
+            if not _tekst_lijkt_bij_bedrijf_te_horen(naam, bron_context):
+                continue
+            naam_tokens = _naam_tokens(naam)
+            host_labels = [
+                label for label in urlparse(url).netloc.lower().split(".")
+                if label not in {"www", "nl", "com", "eu", "org", "net"}
+            ]
+            exact_uniek_merkdomein = (
+                len(naam_tokens) == 1
+                and naam_tokens[0] in host_labels
             )
-            phone = phone_match.group(0).strip() if phone_match else None
-        except Exception:
-            pass
-        bron_context = " ".join(filter(None, [
-            result.get("title"),
-            result.get("snippet"),
-            tekst[:10000],
-        ]))
-        if not _tekst_lijkt_bij_bedrijf_te_horen(naam, bron_context):
-            continue
-        naam_tokens = _naam_tokens(naam)
-        host_labels = [
-            label for label in urlparse(url).netloc.lower().split(".")
-            if label not in {"www", "nl", "com", "eu", "org", "net"}
-        ]
-        exact_uniek_merkdomein = (
-            len(naam_tokens) == 1
-            and naam_tokens[0] in host_labels
-        )
-        if (
-            gemeente
-            and gemeente.lower() not in bron_context.lower()
-            and len(naam_tokens) <= 1
-            and not exact_uniek_merkdomein
-        ):
-            # Bij een ambigue éénwoordnaam zonder exact merkdomein voorkomt
-            # de gemeentecheck dat een naamgenoot als officiële site wordt
-            # opgeslagen. Een exact domein als okechamp.eu blijft bruikbaar
-            # als de brondata een verouderde of regionale gemeente bevat.
-            continue
-        return PlacesResult(
-            website=url,
-            phone=phone,
-            adres=None,
-            raw={"bron": result.get("bron", "web_search"), "query_result": result},
-        )
+            if (
+                gemeente
+                and gemeente.lower() not in bron_context.lower()
+                and len(naam_tokens) <= 1
+                and not exact_uniek_merkdomein
+            ):
+                # Bij een ambigue éénwoordnaam zonder exact merkdomein
+                # voorkomt de gemeentecheck dat een naamgenoot als officiële
+                # site wordt opgeslagen. Een exact domein als okechamp.eu
+                # blijft bruikbaar bij verouderde regiogegevens.
+                continue
+            return PlacesResult(
+                website=url,
+                phone=phone,
+                adres=None,
+                raw={
+                    "bron": result.get("bron", "web_search"),
+                    "query_result": result,
+                    "query": query_text,
+                },
+            )
     return None
 
 
