@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..database import SessionLocal
 from ..models import Batch, BronKandidaat, Company, Enrichment, ResearchRun
+from ..pipeline.identity_scope import domain_matches_company
 from .live_tools import LiveResearchTools
 from .mock_tools import MockResearchTools
 from .query_planner import QueryContext
@@ -147,10 +148,25 @@ async def run_research_run(run_id: str) -> None:
                 # De brede autonome zoekpaden blijven beschikbaar als het
                 # gespecialiseerde documentpad niets oplevert.
                 pass
+        heeft_exacte_officiele_primaire_bron = any(
+            document.verslagjaar == gevraagd_jaar
+            and domain_matches_company(
+                document.url, document.company_website_url,
+            ) is True
+            for document in seed_documents
+        )
+        effectief_max_paginas = (
+            min(
+                settings.research_max_pages,
+                settings.research_max_pages_after_primary,
+            )
+            if heeft_exacte_officiele_primaire_bron
+            else settings.research_max_pages
+        )
         outcome = await ResearchSupervisor(
             tools,
             max_queries=settings.research_max_queries,
-            max_pages=settings.research_max_pages,
+            max_pages=effectief_max_paginas,
             reviewer=(
                 IntelligentSourceReviewer()
                 if settings.provider_mode == "live"
@@ -201,6 +217,10 @@ async def run_research_run(run_id: str) -> None:
             run.completed_at = _now()
             run.configuratie = {
                 **(run.configuratie or {}),
+                "effectief_max_paginas": effectief_max_paginas,
+                "exacte_officiele_primaire_bron": (
+                    heeft_exacte_officiele_primaire_bron
+                ),
                 "diagnostiek": outcome.diagnostiek,
             }
             if outcome.fouten:

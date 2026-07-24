@@ -20,7 +20,8 @@ class Settings(BaseSettings):
     extra_bronnen_aantal: int = 2               # extra publieke media-bronnen naast website/jaarverslag (human-in-the-loop; 0 = uit)
     research_media_venster_maanden: int = 18
     research_max_queries: int = 12
-    research_max_pages: int = 30
+    research_max_pages: int = 15
+    research_max_pages_after_primary: int = 8
     research_max_rounds: int = 3
     research_company_timeout_seconds: int = 300
     playwright_enabled: bool = False  # zet op true in Railway nadat Chromium getest is
