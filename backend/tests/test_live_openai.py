@@ -200,6 +200,31 @@ async def test_web_search_contact_weigert_naamgenoot_buiten_gemeente(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_web_search_contact_accepteert_exact_merkdomein_bij_oude_gemeente(
+    monkeypatch,
+):
+    async def fake_web_search(query, max_results=6):
+        return [{
+            "title": "OKECHAMP B.V.",
+            "url": "https://www.okechamp.eu/",
+            "snippet": "Mushroom processing in Velden",
+            "bron": "serper",
+        }]
+
+    async def fake_fetch_text(url):
+        return "OKECHAMP B.V. Oude Venloseweg 84, Velden"
+
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+
+    result = await live._web_search_contact(
+        "Okechamp B.V.", "Horst aan de Maas",
+    )
+
+    assert result.website == "https://www.okechamp.eu/"
+
+
+@pytest.mark.asyncio
 async def test_openai_extract_parseert_wp_uitsplitsing(monkeypatch):
     class _FakeUitsplitsingResponse:
         output_text = (

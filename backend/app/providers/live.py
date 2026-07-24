@@ -8,6 +8,7 @@ import json
 import re
 import unicodedata
 from typing import Any, TypedDict
+from urllib.parse import urlparse
 
 import httpx
 from langchain_core.output_parsers import JsonOutputParser
@@ -425,13 +426,25 @@ async def _web_search_contact(naam: str, gemeente: str | None) -> PlacesResult |
         ]))
         if not _tekst_lijkt_bij_bedrijf_te_horen(naam, bron_context):
             continue
+        naam_tokens = _naam_tokens(naam)
+        host_labels = [
+            label for label in urlparse(url).netloc.lower().split(".")
+            if label not in {"www", "nl", "com", "eu", "org", "net"}
+        ]
+        exact_uniek_merkdomein = (
+            len(naam_tokens) == 1
+            and naam_tokens[0] in host_labels
+        )
         if (
             gemeente
             and gemeente.lower() not in bron_context.lower()
+            and len(naam_tokens) <= 1
+            and not exact_uniek_merkdomein
         ):
-            # Vooral bij ambigue éénwoordnamen (Mondriaan, Jumbo, IKEA)
-            # voorkomt dit dat een naamgenoot uit een andere regio als
-            # officieel domein wordt opgeslagen.
+            # Bij een ambigue éénwoordnaam zonder exact merkdomein voorkomt
+            # de gemeentecheck dat een naamgenoot als officiële site wordt
+            # opgeslagen. Een exact domein als okechamp.eu blijft bruikbaar
+            # als de brondata een verouderde of regionale gemeente bevat.
             continue
         return PlacesResult(
             website=url,
