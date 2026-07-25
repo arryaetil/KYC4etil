@@ -11,6 +11,7 @@ from ..pipeline.identity_scope import domain_matches_company
 from .live_tools import LiveResearchTools
 from .mock_tools import MockResearchTools
 from .query_planner import QueryContext
+from .seeds import verzamel_seed_documenten
 from .source_reviewer import IntelligentSourceReviewer
 from .supervisor import ResearchSupervisor
 from .urls import canonicaliseer_url
@@ -159,30 +160,11 @@ async def run_research_run(run_id: str) -> None:
             if settings.provider_mode == "live"
             else MockResearchTools()
         )
-        seed_documents = []
-        if settings.provider_mode == "live":
-            try:
-                officiele_website = await tools.find_officiele_website(context)
-                if officiele_website is not None:
-                    seed_documents.append(officiele_website)
-            except Exception:
-                pass
-            try:
-                nieuwste_document = (
-                    await tools.find_nieuwste_officiele_document(context)
-                )
-                if nieuwste_document is not None:
-                    seed_documents.append(nieuwste_document)
-            except Exception:
-                pass
-            try:
-                jaarverslag = await tools.find_jaarverslag(context)
-                if jaarverslag is not None:
-                    seed_documents.append(jaarverslag)
-            except Exception:
-                # De brede autonome zoekpaden blijven beschikbaar als het
-                # gespecialiseerde documentpad niets oplevert.
-                pass
+        seed_documents = (
+            await verzamel_seed_documenten(tools, context)
+            if settings.provider_mode == "live"
+            else []
+        )
         heeft_exacte_officiele_primaire_bron = any(
             document.verslagjaar == gevraagd_jaar
             and domain_matches_company(
