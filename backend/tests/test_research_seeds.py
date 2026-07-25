@@ -115,6 +115,27 @@ async def test_jaarverslag_agent_draait_alsnog_zonder_wp_gevonden():
 
 
 @pytest.mark.asyncio
+async def test_jaarverslag_agent_draait_alsnog_bij_fte_cijfer():
+    """FTE ≠ WP: een gevonden FTE-getal mag de jaarverslag-agent niet
+    onderdrukken, ook al kloppen verslagjaar en wp_gevonden verder."""
+    tools = TragereTraceerTools(
+        nieuwste_document=_document(
+            verslagjaar=2025, wp_gevonden=47, eenheid="fte",
+        ),
+        jaarverslag_document=_document(url="https://voorbeeldzorg.nl/anders.pdf"),
+    )
+    context = QueryContext(
+        naam="Voorbeeld Zorg", gevraagd_jaar=2025,
+        website_url="https://voorbeeldzorg.nl",
+    )
+
+    documenten = await verzamel_seed_documenten(tools, context)
+
+    assert tools.jaarverslag_aangeroepen is True
+    assert len(documenten) == 2
+
+
+@pytest.mark.asyncio
 async def test_jaarverslag_agent_draait_alsnog_bij_afwijkend_jaar():
     tools = TragereTraceerTools(
         nieuwste_document=_document(verslagjaar=2024, wp_gevonden=47),

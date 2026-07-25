@@ -7,6 +7,7 @@ import csv
 import json
 from pathlib import Path
 
+from app.config import get_settings
 from app.research.mock_tools import MockResearchTools
 from app.research.query_planner import QueryContext
 from app.research.supervisor import ResearchSupervisor
@@ -28,6 +29,9 @@ async def vergelijk() -> dict:
             MockResearchTools(),
             max_queries=12,
             max_pages=30,
+            # Expliciet uit settings: anders evalueert dit script stil op de
+            # constructor-default terwijl productie op een andere waarde draait.
+            max_kandidaten=get_settings().research_max_kandidaten,
         ).run(QueryContext(
             naam=row["naam"],
             gemeente=row["gemeente"],

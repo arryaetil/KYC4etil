@@ -80,7 +80,10 @@ async def test_gelijktijdige_taken_tellen_op_bij_de_ouder():
 
 
 def test_bereken_kosten_cents():
-    # 1000 input- + 1000 output-tokens tegen de standaardprijzen in config.py.
-    cents = bereken_kosten_cents(1000, 1000)
+    # 200.000 input- + 50.000 output-tokens tegen de standaardprijzen in
+    # config.py (gpt-4o-mini: 0,015 cent per 1k in, 0,06 cent per 1k uit).
+    # 200 * 0,015 = 3,0 cent + 50 * 0,06 = 3,0 cent = 6 cent.
+    cents = bereken_kosten_cents(200_000, 50_000)
     assert cents > 0
-    assert cents == round(1000 / 1000 * 1.5 + 1000 / 1000 * 6.0)
+    assert cents == round(200_000 / 1000 * 0.015 + 50_000 / 1000 * 0.06)
+    assert cents == 6

@@ -20,6 +20,9 @@ def _is_volledige_match(document: SourceDocument | None, gevraagd_jaar: int | No
         and gevraagd_jaar is not None
         and document.verslagjaar == gevraagd_jaar
         and document.wp_gevonden is not None
+        # FTE ≠ WP: een FTE-getal mag de jaarverslag-agent nooit stilzwijgend
+        # onderdrukken, want dan blijft het echte WP-getal onvindbaar.
+        and document.eenheid == "werkzame_personen"
     )
 
 

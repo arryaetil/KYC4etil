@@ -118,13 +118,18 @@ class ResearchSupervisor:
             if isinstance(item, BaseException):
                 fouten.append(f"inspectie: {item}")
 
+        # Lokaal (per run) zodat gelijktijdige runs elkaar niet blokkeren; cap
+        # voorkomt dat een rate-limit-fout een bron stil laat verdwijnen.
+        review_semaphore = asyncio.Semaphore(5)
+
         async def _beoordeel(document):
-            if self.reviewer is not None:
-                try:
-                    return await self.reviewer.review(context, document)
-                except Exception as exc:
-                    return exc
-            return valideer_bron(document)
+            async with review_semaphore:
+                if self.reviewer is not None:
+                    try:
+                        return await self.reviewer.review(context, document)
+                    except Exception as exc:
+                        return exc
+                return valideer_bron(document)
 
         beoordelingen = await asyncio.gather(*[
             _beoordeel(document) for document in documenten_om_te_beoordelen
