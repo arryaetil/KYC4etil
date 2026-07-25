@@ -15,6 +15,7 @@ from .seeds import verzamel_seed_documenten
 from .source_reviewer import IntelligentSourceReviewer
 from .supervisor import ResearchSupervisor
 from .urls import canonicaliseer_url
+from .usage import bereken_kosten_cents, get_usage_totals, start_usage_tracking
 
 
 def _now() -> datetime:
@@ -67,6 +68,7 @@ async def run_research_run(run_id: str) -> None:
         "website_url": None,
         "bron": None,
     }
+    start_usage_tracking()
     try:
         settings = get_settings()
         with SessionLocal() as db:
@@ -230,9 +232,13 @@ async def run_research_run(run_id: str) -> None:
                     rang=rang,
                 ))
 
+            tokens_in, tokens_out = get_usage_totals()
             run.status = "completed"
             run.resultaat_status = outcome.status
             run.completed_at = _now()
+            run.tokens_in = tokens_in
+            run.tokens_out = tokens_out
+            run.kosten_cents = bereken_kosten_cents(tokens_in, tokens_out)
             run.configuratie = {
                 **(run.configuratie or {}),
                 "effectief_max_paginas": effectief_max_paginas,
