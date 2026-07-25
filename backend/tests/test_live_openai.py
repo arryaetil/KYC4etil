@@ -42,6 +42,32 @@ async def test_openai_extract_parseert_json(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_llm_extract_registreert_tokenverbruik(monkeypatch):
+    from app.research import usage
+
+    class UsageResponse:
+        output_text = '{"wp_gevonden": 47}'
+        usage = type("Usage", (), {"input_tokens": 120, "output_tokens": 30})()
+
+    class UsageResponses:
+        async def create(self, **kwargs):
+            return UsageResponse()
+
+    class UsageOpenAI:
+        def __init__(self, api_key):
+            self.responses = UsageResponses()
+
+    import openai
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(openai, "AsyncOpenAI", UsageOpenAI)
+
+    usage.start_usage_tracking()
+    await live._llm_extract("Voorbeeld Zorg", "Adres 1", "47 medewerkers.")
+
+    assert usage.get_usage_totals() == (120, 30)
+
+
+@pytest.mark.asyncio
 async def test_web_search_contact_valt_terug_op_serper_als_duckduckgo_niets_geeft(monkeypatch):
     async def fake_ddg(query, max_results=6):
         return []

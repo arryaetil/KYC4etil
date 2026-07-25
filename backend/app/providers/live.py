@@ -16,6 +16,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from ..config import get_settings
 from ..pipeline.evidence import IdentityClass, ScopeClass
 from ..pipeline.identity_scope import domain_matches_company
+from ..research.usage import record_response_usage
 from .base import AgentFinding, LocationInfo, PlacesResult
 
 _JSON_PARSER = JsonOutputParser()
@@ -32,6 +33,15 @@ DUCKDUCKGO_USER_AGENT = (
 )
 
 PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
+
+
+async def _create_response(client, **kwargs):
+    """Wrapper om elke OpenAI Responses-call zodat tokenverbruik van élke
+    aanroep in dit bestand altijd wordt geteld, zonder elke call-site apart
+    te hoeven aanpassen als de trackinglogica zelf verandert."""
+    response = await client.responses.create(**kwargs)
+    record_response_usage(response)
+    return response
 
 EXTRACT_PROMPT = """Je bent een data-extractie agent voor het Vestigingsregister Limburg.
 Vind het aantal werkzame personen (medewerkers) bij {naam} ({adres}) in onderstaande tekst.
@@ -112,7 +122,7 @@ async def _llm_classify_scope(naam: str, adres: str | None, gemeente: str | None
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
-    response = await client.responses.create(
+    response = await _create_response(client,
         model=_extraction_model(),
         input=SCOPE_PROMPT.format(naam=naam, adres=adres or "onbekend", gemeente=gemeente or "onbekend",
                                   context=(context or "")[:2000]),
@@ -129,7 +139,7 @@ async def _llm_classify_identity_and_scope(
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
-    response = await client.responses.create(
+    response = await _create_response(client,
         model=_extraction_model(),
         input=IDENTITY_EN_SCOPE_PROMPT.format(
             naam=naam, adres=adres or "onbekend", gemeente=gemeente or "onbekend",
@@ -689,7 +699,7 @@ async def _parse_json_met_herstel(client, model: str, ruwe_tekst: str) -> dict |
             "zelf bevat. Herformatteer ALLEEN de bestaande inhoud naar exact geldige "
             "JSON, zonder uitleg, markdown-opmaak of extra tekst:\n\n" + ruwe_tekst[:4000]
         )
-        herstel_response = await client.responses.create(
+        herstel_response = await _create_response(client,
             model=model, input=herstel_prompt, max_output_tokens=800,
             text={"format": {"type": "json_object"}},
         )
@@ -702,7 +712,7 @@ async def _llm_extract(naam: str, adres: str | None, tekst: str) -> dict | None:
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
-    response = await client.responses.create(
+    response = await _create_response(client,
         model=_extraction_model(),
         input=EXTRACT_PROMPT.format(naam=naam, adres=adres or "onbekend", tekst=tekst[:60000]),
         max_output_tokens=1024,
@@ -1169,7 +1179,7 @@ async def _tool_use_loop(naam: str, adres: str | None, start_url: str) -> dict |
     prompt = AGENT_PROMPT.format(naam=naam, adres=adres or "onbekend", start_url=start_url)
     eigen_domein = urlparse(start_url).netloc
 
-    response = await client.responses.create(
+    response = await _create_response(client,
         model=_extraction_model(), input=prompt, tools=TOOLS, max_output_tokens=1024,
     )
 
@@ -1205,7 +1215,7 @@ async def _tool_use_loop(naam: str, adres: str | None, start_url: str) -> dict |
                 outputs.append({"type": "function_call_output", "call_id": call.call_id,
                                 "output": json.dumps(pagina)[:20000]})
 
-        response = await client.responses.create(
+        response = await _create_response(client,
             model=_extraction_model(), previous_response_id=response.id,
             input=outputs, tools=TOOLS, max_output_tokens=1024,
         )

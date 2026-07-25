@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from ..config import get_settings
 from ..pipeline.identity_scope import domain_matches_company
 from .query_planner import QueryContext
+from .usage import record_response_usage
 from .validation import BronValidatie, SourceDocument, valideer_bron
 
 
@@ -222,4 +223,5 @@ class IntelligentSourceReviewer:
             max_output_tokens=500,
             text={"format": {"type": "json_object"}},
         )
+        record_response_usage(response)
         return json.loads(response.output_text)

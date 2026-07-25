@@ -1,0 +1,60 @@
+"""Per-run tokenverbruik: contextvar-gebaseerde teller, ook over
+gelijktijdige asyncio-taken heen."""
+import asyncio
+from types import SimpleNamespace
+
+import pytest
+
+from app.research.usage import (
+    bereken_kosten_cents,
+    get_usage_totals,
+    record_response_usage,
+    start_usage_tracking,
+)
+
+
+def _response(input_tokens: int, output_tokens: int):
+    return SimpleNamespace(
+        usage=SimpleNamespace(
+            input_tokens=input_tokens, output_tokens=output_tokens,
+        ),
+    )
+
+
+def test_zonder_actieve_tracking_blijft_totaal_op_nul():
+    assert get_usage_totals() == (0, 0)
+    record_response_usage(_response(100, 20))
+    assert get_usage_totals() == (0, 0)
+
+
+def test_telt_meerdere_responses_op():
+    start_usage_tracking()
+    record_response_usage(_response(100, 20))
+    record_response_usage(_response(50, 10))
+    assert get_usage_totals() == (150, 30)
+
+
+def test_response_zonder_usage_veld_wordt_genegeerd():
+    start_usage_tracking()
+    record_response_usage(SimpleNamespace())
+    assert get_usage_totals() == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_contextvar_isoleert_gelijktijdige_taken():
+    async def taak(tokens_in: int) -> tuple[int, int]:
+        start_usage_tracking()
+        record_response_usage(_response(tokens_in, 5))
+        await asyncio.sleep(0.01)
+        return get_usage_totals()
+
+    resultaten = await asyncio.gather(taak(100), taak(200), taak(300))
+
+    assert resultaten == [(100, 5), (200, 5), (300, 5)]
+
+
+def test_bereken_kosten_cents():
+    # 1000 input- + 1000 output-tokens tegen de standaardprijzen in config.py.
+    cents = bereken_kosten_cents(1000, 1000)
+    assert cents > 0
+    assert cents == round(1000 / 1000 * 1.5 + 1000 / 1000 * 6.0)
