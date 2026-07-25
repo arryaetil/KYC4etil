@@ -22,6 +22,14 @@ _JSON_PARSER = JsonOutputParser()
 
 settings = get_settings()
 USER_AGENT = "EtilVestigingsregisterBot/1.0 (contact: info@etil.nl)"
+# DuckDuckGo's HTML-endpoint blokkeert onze eerlijke bot-UA sinds kort met een
+# 202-uitdagingspagina zonder resultaten. Alleen voor déze zoekaanvraag een
+# browser-achtige UA gebruiken; overal elders (website-scraping) blijft de
+# transparante bot-identiteit staan.
+DUCKDUCKGO_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
 
 PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 
@@ -287,7 +295,7 @@ async def _duckduckgo_search(query: str, max_results: int = 5) -> list[dict[str,
 
     try:
         async with httpx.AsyncClient(timeout=20, follow_redirects=True,
-                                     headers={"User-Agent": USER_AGENT}) as client:
+                                     headers={"User-Agent": DUCKDUCKGO_USER_AGENT}) as client:
             response = await client.post(
                 "https://html.duckduckgo.com/html/",
                 data={"q": query, "kl": "nl-nl"},
