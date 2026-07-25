@@ -637,3 +637,23 @@ def test_list_batches_toont_none_zonder_bekende_uploader(client, db_session):
     assert response.status_code == 200
     item = next(b for b in response.json() if b["naam"] == "batch-zonder-uploader")
     assert item["geupload_door_naam"] is None
+
+
+def test_backfill_geupload_door_kent_admin_toe_aan_oude_batches(db_session):
+    from scripts.backfill_geupload_door import backfill_geupload_door
+
+    db_session.add(User(id="admin-id", naam="Admin", email="admin@etil.nl",
+                        rol="admin", password_hash=""))
+    oude_batch = Batch(naam="oude-batch", jaar=2026, totaal=0)
+    db_session.add(oude_batch)
+    db_session.commit()
+
+    aantal = backfill_geupload_door(db_session, admin_email="admin@etil.nl")
+
+    db_session.refresh(oude_batch)
+    assert aantal == 1
+    assert oude_batch.geupload_door == "admin-id"
+
+    # Idempotent: een tweede aanroep vindt niets meer om bij te werken.
+    aantal_tweede_keer = backfill_geupload_door(db_session, admin_email="admin@etil.nl")
+    assert aantal_tweede_keer == 0
