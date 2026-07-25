@@ -218,7 +218,13 @@ def test_verwijder_upload_404(client):
     assert resp.status_code == 404
 
 
-def test_opslaan_wp_met_company(client, pdf_bytes):
+def test_opslaan_wp_met_company(client, db_session, pdf_bytes):
+    from app.models import User
+
+    db_session.add(User(id="test-user-id", naam="Test User", email="test@etil.nl",
+                        rol="admin", password_hash=""))
+    db_session.commit()
+
     # Maak een batch + company aan via de API
     csv_content = "naam,gemeente\nTestbedrijf BV,Maastricht\n"
     resp = client.post(

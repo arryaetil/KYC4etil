@@ -194,6 +194,9 @@ export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, op
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-600">
                   <BatchTimestamp created_at={batch.created_at} completed_at={batch.completed_at} />
+                  <div className="mt-1 text-xs text-slate-500">
+                    Geüpload door {batch.geupload_door_naam || "Onbekend"}
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <Progress value={batch.verwerkt || 0} total={batch.totaal || 0} />

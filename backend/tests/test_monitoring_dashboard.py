@@ -2,8 +2,17 @@
 from datetime import datetime, timezone
 from io import BytesIO
 
-from app.models import Candidate, Company, JaarverslagMonitoring, PipelineRun
+from app.models import Candidate, Company, JaarverslagMonitoring, PipelineRun, User
 from app.routers import monitoring as monitoring_router
+
+
+def _zorg_voor_test_user(db_session):
+    """Uploads koppelen geupload_door (FK naar users.id) aan de ingelogde
+    testgebruiker; die rij bestaat niet automatisch in de testdatabase."""
+    if db_session.get(User, "test-user-id") is None:
+        db_session.add(User(id="test-user-id", naam="Test User", email="test@etil.nl",
+                            rol="admin", password_hash=""))
+        db_session.commit()
 
 
 def test_monitoring_status_zonder_watchlist_geeft_lege_staat(client):
@@ -18,6 +27,7 @@ def test_monitoring_status_zonder_watchlist_geeft_lege_staat(client):
 
 
 def test_monitoring_status_met_actieve_watchlist(client, db_session):
+    _zorg_voor_test_user(db_session)
     upload = client.post(
         "/batches/upload?naam=watchlist&jaar=2026&monitoringlijst=true",
         files={"file": ("orgs.csv", BytesIO(
@@ -67,7 +77,8 @@ def test_monitoring_run_zonder_watchlist_geeft_404(client):
     assert response.status_code == 404
 
 
-def test_monitoring_run_start_achtergrondtaak(client, monkeypatch):
+def test_monitoring_run_start_achtergrondtaak(client, db_session, monkeypatch):
+    _zorg_voor_test_user(db_session)
     upload = client.post(
         "/batches/upload?naam=watchlist-run&jaar=2026&monitoringlijst=true",
         files={"file": ("orgs.csv", BytesIO(b"naam\nOrganisatie X\n"), "text/csv")},
@@ -90,10 +101,11 @@ def test_monitoring_run_start_achtergrondtaak(client, monkeypatch):
     assert gestart == [None]
 
 
-def test_monitoring_run_met_limit_beperkt_aantal_companies(client, monkeypatch):
+def test_monitoring_run_met_limit_beperkt_aantal_companies(client, db_session, monkeypatch):
     """Met ?limit=N wordt maar een deel van de watchlist gecontroleerd — bedoeld
     om tijdens ontwikkelen/testen niet steeds de volledige (kostbare) live-lijst
     te hoeven doorlopen."""
+    _zorg_voor_test_user(db_session)
     upload = client.post(
         "/batches/upload?naam=watchlist-run-groot&jaar=2026&monitoringlijst=true",
         files={"file": ("orgs.csv", BytesIO(
@@ -118,7 +130,8 @@ def test_monitoring_run_met_limit_beperkt_aantal_companies(client, monkeypatch):
     assert gestart == [2]
 
 
-def test_monitoring_run_met_limit_groter_dan_watchlist_gebruikt_totaal(client, monkeypatch):
+def test_monitoring_run_met_limit_groter_dan_watchlist_gebruikt_totaal(client, db_session, monkeypatch):
+    _zorg_voor_test_user(db_session)
     upload = client.post(
         "/batches/upload?naam=watchlist-run-klein&jaar=2026&monitoringlijst=true",
         files={"file": ("orgs.csv", BytesIO(b"naam\nOrganisatie X\n"), "text/csv")},

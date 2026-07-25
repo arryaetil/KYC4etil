@@ -591,3 +591,69 @@ def test_afgewerkt_migratie_geeft_bestaande_rijen_false_default():
             f"Bestaande rij {row_id} moet afgewerkt=0 (False) hebben door DEFAULT FALSE, "
             f"maar heeft {afgewerkt_waarde} (NULL zou None zijn)"
         )
+
+
+def test_upload_batch_slaat_ingelogde_gebruiker_op(client, db_session):
+    db_session.add(User(id="test-user-id", naam="Test User", email="test@etil.nl",
+                        rol="admin", password_hash=""))
+    db_session.commit()
+
+    csv_data = "naam\nTestbedrijf\n"
+    response = client.post(
+        "/batches/upload?naam=upload-tracking-test&jaar=2026",
+        files={"file": ("bedrijven.csv", csv_data.encode(), "text/csv")},
+    )
+    assert response.status_code == 200
+    batch_id = response.json()["batch_id"]
+
+    batch = db_session.get(Batch, batch_id)
+    assert batch.geupload_door == "test-user-id"
+
+
+def test_list_batches_toont_geupload_door_naam(client, db_session):
+    db_session.add(User(id="test-user-id", naam="Test User", email="test@etil.nl",
+                        rol="admin", password_hash=""))
+    db_session.commit()
+
+    csv_data = "naam\nTestbedrijf\n"
+    upload_response = client.post(
+        "/batches/upload?naam=upload-tracking-test-2&jaar=2026",
+        files={"file": ("bedrijven.csv", csv_data.encode(), "text/csv")},
+    )
+    assert upload_response.status_code == 200
+
+    response = client.get("/batches")
+    assert response.status_code == 200
+    item = next(b for b in response.json() if b["naam"] == "upload-tracking-test-2")
+    assert item["geupload_door_naam"] == "Test User"
+
+
+def test_list_batches_toont_none_zonder_bekende_uploader(client, db_session):
+    batch = Batch(naam="batch-zonder-uploader", jaar=2026, totaal=0)
+    db_session.add(batch)
+    db_session.commit()
+
+    response = client.get("/batches")
+    assert response.status_code == 200
+    item = next(b for b in response.json() if b["naam"] == "batch-zonder-uploader")
+    assert item["geupload_door_naam"] is None
+
+
+def test_backfill_geupload_door_kent_admin_toe_aan_oude_batches(db_session):
+    from scripts.backfill_geupload_door import backfill_geupload_door
+
+    db_session.add(User(id="admin-id", naam="Admin", email="admin@etil.nl",
+                        rol="admin", password_hash=""))
+    oude_batch = Batch(naam="oude-batch", jaar=2026, totaal=0)
+    db_session.add(oude_batch)
+    db_session.commit()
+
+    aantal = backfill_geupload_door(db_session, admin_email="admin@etil.nl")
+
+    db_session.refresh(oude_batch)
+    assert aantal == 1
+    assert oude_batch.geupload_door == "admin-id"
+
+    # Idempotent: een tweede aanroep vindt niets meer om bij te werken.
+    aantal_tweede_keer = backfill_geupload_door(db_session, admin_email="admin@etil.nl")
+    assert aantal_tweede_keer == 0
