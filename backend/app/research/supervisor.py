@@ -110,36 +110,45 @@ class ResearchSupervisor:
             self.tools.inspect(context, query, result)
             for query, result in te_inspecteren
         ], return_exceptions=True)
-        validaties = []
-        afwijzingen = []
-        documenten = 0
-        for item in [*seed_documents, *inspected]:
+        documenten_om_te_beoordelen = [
+            item for item in [*seed_documents, *inspected]
+            if item is not None and not isinstance(item, BaseException)
+        ]
+        for item in inspected:
             if isinstance(item, BaseException):
                 fouten.append(f"inspectie: {item}")
+
+        async def _beoordeel(document):
+            if self.reviewer is not None:
+                try:
+                    return await self.reviewer.review(context, document)
+                except Exception as exc:
+                    return exc
+            return valideer_bron(document)
+
+        beoordelingen = await asyncio.gather(*[
+            _beoordeel(document) for document in documenten_om_te_beoordelen
+        ])
+
+        validaties = []
+        afwijzingen = []
+        documenten = len(documenten_om_te_beoordelen)
+        for item, validatie in zip(documenten_om_te_beoordelen, beoordelingen):
+            if isinstance(validatie, BaseException):
+                fouten.append(f"bronreview: {validatie}")
                 continue
-            if item is not None:
-                documenten += 1
-                if self.reviewer is not None:
-                    try:
-                        validatie = await self.reviewer.review(context, item)
-                        validaties.append(validatie)
-                    except Exception as exc:
-                        fouten.append(f"bronreview: {exc}")
-                        continue
-                else:
-                    validatie = valideer_bron(item)
-                    validaties.append(validatie)
-                if validatie.is_afgewezen and len(afwijzingen) < 12:
-                    intelligente_review = validatie.validaties.get(
-                        "intelligente_review", {}
-                    )
-                    afwijzingen.append({
-                        "titel": item.titel,
-                        "url": item.url,
-                        "identity_class": validatie.identity_class,
-                        "redenen": list(validatie.afwijsredenen),
-                        "review_reden": intelligente_review.get("reden"),
-                    })
+            validaties.append(validatie)
+            if validatie.is_afgewezen and len(afwijzingen) < 12:
+                intelligente_review = validatie.validaties.get(
+                    "intelligente_review", {}
+                )
+                afwijzingen.append({
+                    "titel": item.titel,
+                    "url": item.url,
+                    "identity_class": validatie.identity_class,
+                    "redenen": list(validatie.afwijsredenen),
+                    "review_reden": intelligente_review.get("reden"),
+                })
 
         ranked = rank_bronnen(validaties)[:self.max_kandidaten]
         reden_teller = Counter(

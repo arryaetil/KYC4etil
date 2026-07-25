@@ -1,4 +1,5 @@
 """De supervisor routeert website-, document- en mediaonderzoek samen."""
+import asyncio
 from datetime import date
 
 import pytest
@@ -260,3 +261,42 @@ async def test_supervisor_neemt_gespecialiseerd_jaarverslag_als_seed_mee():
     assert outcome.status == "review_nodig"
     assert [item.document.url for item in outcome.kandidaten] == [seed.url]
     assert outcome.diagnostiek["gelezen_documenten"] == 1
+
+
+class TrageReviewTools(FakeResearchTools):
+    """3 documenten (1 per pad), elk met een kunstmatige vertraging in
+    inspect() zodat sequentieel vs. concurrent review meetbaar is."""
+
+    async def inspect(self, context, query, result):
+        await asyncio.sleep(0.05)
+        return await super().inspect(context, query, result)
+
+
+class TrageReviewer:
+    async def review(self, context, document):
+        from app.research.validation import valideer_bron
+        await asyncio.sleep(0.05)
+        return valideer_bron(document)
+
+
+@pytest.mark.asyncio
+async def test_bronreview_calls_lopen_concurrent():
+    tools = TrageReviewTools()
+
+    loop = asyncio.get_event_loop()
+    start = loop.time()
+    outcome = await ResearchSupervisor(
+        tools, max_queries=12, max_pages=20, reviewer=TrageReviewer(),
+    ).run(QueryContext(
+        naam="Voorbeeld Zorg",
+        gevraagd_jaar=2025,
+        website_url="https://voorbeeldzorg.nl",
+        huidig_jaar=2026,
+    ))
+    duur = loop.time() - start
+
+    # 3 documenten x (0.05s ophalen + 0.05s review) sequentieel zou >= 0.30s
+    # duren. Met concurrent ophalen (bestaand gedrag) én concurrent review
+    # (nieuw) moet dit ruim onder die grens blijven.
+    assert duur < 0.20
+    assert len(outcome.kandidaten) == 3
