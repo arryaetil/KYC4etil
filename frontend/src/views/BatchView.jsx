@@ -21,6 +21,7 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [researchCompanyId, setResearchCompanyId] = useState(null);
+  const [afgewerktBezig, setAfgewerktBezig] = useState(new Set());
   const loadPromiseRef = useRef(null);
 
   async function load() {
@@ -149,6 +150,29 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
     }
   }
 
+  async function toggleAfgewerkt(company) {
+    if (afgewerktBezig.has(company.company_id)) return;
+    setAfgewerktBezig((huidige) => new Set(huidige).add(company.company_id));
+    const nieuweWaarde = !company.afgewerkt;
+    setCompanies((huidige) => huidige.map((c) =>
+      c.company_id === company.company_id ? {...c, afgewerkt: nieuweWaarde} : c
+    ));
+    try {
+      await api.updateCompany(batchId, company.company_id, {afgewerkt: nieuweWaarde});
+    } catch (err) {
+      setCompanies((huidige) => huidige.map((c) =>
+        c.company_id === company.company_id ? {...c, afgewerkt: company.afgewerkt} : c
+      ));
+      setError(err.message);
+    } finally {
+      setAfgewerktBezig((huidige) => {
+        const volgende = new Set(huidige);
+        volgende.delete(company.company_id);
+        return volgende;
+      });
+    }
+  }
+
   async function deleteBatch() {
     if (!window.confirm(`Batch "${batch?.naam}" definitief verwijderen?`)) return;
     setBusy(true);
@@ -257,6 +281,7 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
               <th className="px-4 py-3">Legacy-WP</th>
               <th className="px-4 py-3">Vergelijking</th>
               <th className="px-4 py-3">Review</th>
+              <th className="px-4 py-3">Afgewerkt</th>
               <th className="px-4 py-3 text-right">Actie</th>
             </tr>
           </thead>
@@ -319,6 +344,16 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
                       : company.research_status
                   } />
                 </td>
+                <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    className="focus-ring h-4 w-4 rounded border-line"
+                    checked={!!company.afgewerkt}
+                    disabled={afgewerktBezig.has(company.company_id)}
+                    onChange={() => toggleAfgewerkt(company)}
+                    aria-label={`Markeer ${company.naam} als afgewerkt`}
+                  />
+                </td>
                 <td className="px-4 py-3 text-right">
                   <IconButton
                     icon={researchCompanyId === company.company_id ? ChevronUp : SearchCheck}
@@ -333,7 +368,7 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
               </tr>
               {researchCompanyId === company.company_id ? (
                 <tr className="border-t border-line">
-                  <td colSpan="7" className="p-0">
+                  <td colSpan="8" className="p-0">
                     <ResearchPanel api={api} company={company} batchJaar={batch?.jaar} />
                   </td>
                 </tr>
