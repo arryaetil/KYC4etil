@@ -39,6 +39,7 @@ class Batch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     is_monitoringlijst: Mapped[bool] = mapped_column(Boolean, default=False)
+    geupload_door: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
 
     companies: Mapped[list["Company"]] = relationship(back_populates="batch")
 

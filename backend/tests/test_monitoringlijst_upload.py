@@ -1,7 +1,16 @@
 """Tests voor de is_monitoringlijst-vlag op Batch en de upload-ondersteuning ervoor."""
 from io import BytesIO
 
-from app.models import Batch
+from app.models import Batch, User
+
+
+def _zorg_voor_test_user(db_session):
+    """Uploads koppelen geupload_door (FK naar users.id) aan de ingelogde
+    testgebruiker; die rij bestaat niet automatisch in de testdatabase."""
+    if db_session.get(User, "test-user-id") is None:
+        db_session.add(User(id="test-user-id", naam="Test User", email="test@etil.nl",
+                            rol="admin", password_hash=""))
+        db_session.commit()
 
 
 def _upload(client, naam: str, monitoringlijst: bool = False):
@@ -15,6 +24,7 @@ def _upload(client, naam: str, monitoringlijst: bool = False):
 
 
 def test_upload_met_monitoringlijst_true_zet_de_vlag(client, db_session):
+    _zorg_voor_test_user(db_session)
     response = _upload(client, "watchlist-test", monitoringlijst=True)
 
     assert response.status_code == 200
@@ -24,6 +34,7 @@ def test_upload_met_monitoringlijst_true_zet_de_vlag(client, db_session):
 
 
 def test_upload_zonder_monitoringlijst_laat_vlag_op_false(client, db_session):
+    _zorg_voor_test_user(db_session)
     response = _upload(client, "gewone-batch")
 
     assert response.status_code == 200
@@ -32,6 +43,7 @@ def test_upload_zonder_monitoringlijst_laat_vlag_op_false(client, db_session):
 
 
 def test_nieuwe_monitoringlijst_ontmarkeert_de_vorige(client, db_session):
+    _zorg_voor_test_user(db_session)
     eerste = _upload(client, "watchlist-v1", monitoringlijst=True)
     tweede = _upload(client, "watchlist-v2", monitoringlijst=True)
 
@@ -43,6 +55,7 @@ def test_nieuwe_monitoringlijst_ontmarkeert_de_vorige(client, db_session):
 
 
 def test_monitoringlijst_batch_verschijnt_niet_in_hoofdoverzicht(client, db_session):
+    _zorg_voor_test_user(db_session)
     _upload(client, "gewone-batch")
     _upload(client, "watchlist-test", monitoringlijst=True)
 

@@ -1,13 +1,16 @@
 from datetime import datetime, timezone
 from io import BytesIO
 
-from app.models import Company, JaarverslagMonitoring
+from app.models import Company, JaarverslagMonitoring, User
 
 
 def test_batch_met_monitoring_status_kan_verwijderd_worden(client, db_session):
     """Regressie: JaarverslagMonitoring-rijen blokkeerden het verwijderen van een
     batch (foreign-key-fout) omdat delete_batch ze niet opruimde vóór de
     company-rijen te verwijderen."""
+    db_session.add(User(id="test-user-id", naam="Test User", email="test@etil.nl",
+                        rol="admin", password_hash=""))
+    db_session.commit()
     upload = client.post(
         "/batches/upload?naam=delete-monitoring-test&jaar=2026",
         files={"file": ("bedrijven.csv", BytesIO(b"naam\nGemonitord B.V.\n"), "text/csv")},

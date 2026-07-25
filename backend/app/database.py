@@ -70,6 +70,8 @@ def ensure_lightweight_migrations() -> None:
                 conn.execute(text(
                     "ALTER TABLE batches ADD COLUMN is_monitoringlijst BOOLEAN DEFAULT FALSE"
                 ))
+            if "geupload_door" not in existing_batches:
+                conn.execute(text("ALTER TABLE batches ADD COLUMN geupload_door VARCHAR(36)"))
 
     if "agent_results" in tables:
         existing_ar = {col["name"] for col in inspector.get_columns("agent_results")}

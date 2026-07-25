@@ -11,7 +11,7 @@ from ..auth import get_current_user
 from ..database import SessionLocal, get_db
 from ..models import (AgentResult, Batch, CallListItem, Candidate, ChatSession,
                       Company, Enrichment, JaarverslagMonitoring, PipelineRun,
-                      VastgoedRecord, WPRecord)
+                      User, VastgoedRecord, WPRecord)
 from ..pipeline.runner import run_batch, verwerk_company
 
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
@@ -53,7 +53,8 @@ def run_single_background(company_id: str, batch_id: str) -> None:
 @router.post("/upload")
 async def upload_batch(file: UploadFile, naam: str | None = None,
                        jaar: int | None = None, monitoringlijst: bool = False,
-                       db: Session = Depends(get_db)):
+                       db: Session = Depends(get_db),
+                       current_user: User = Depends(get_current_user)):
     """CSV-upload -> batch + companies. Verwachte kolommen (flexibel):
     vestigingsnummer, naam, gemeente, adres, sbi_code, cb_er, kvk_nummer.
     monitoringlijst=true markeert deze batch als de actieve jaarverslag-watchlist
@@ -69,7 +70,8 @@ async def upload_batch(file: UploadFile, naam: str | None = None,
             {"is_monitoringlijst": False})
 
     batch = Batch(naam=naam or file.filename, jaar=jaar or datetime.now(timezone.utc).replace(tzinfo=None).year,
-                  totaal=len(rows), is_monitoringlijst=monitoringlijst)
+                  totaal=len(rows), is_monitoringlijst=monitoringlijst,
+                  geupload_door=current_user.id)
     db.add(batch)
     db.flush()
     for r in rows:
@@ -173,13 +175,20 @@ def zoek_companies(q: str = "", db: Session = Depends(get_db)):
 
 @router.get("")
 def list_batches(db: Session = Depends(get_db)):
+    batches = [b for b in db.query(Batch).filter(Batch.is_monitoringlijst.isnot(True))
+               .order_by(Batch.created_at.desc()).all()
+               if not _lijkt_monitoringlijst_batch(b)]
+    uploader_ids = {b.geupload_door for b in batches if b.geupload_door}
+    naam_per_id: dict[str, str] = {}
+    if uploader_ids:
+        for user in db.query(User).filter(User.id.in_(uploader_ids)):
+            naam_per_id[user.id] = user.naam
     return [{"id": b.id, "naam": b.naam, "jaar": b.jaar, "status": b.status,
              "totaal": b.totaal, "verwerkt": b.verwerkt,
              "created_at": b.created_at.isoformat() + "Z" if b.created_at else None,
-             "completed_at": b.completed_at.isoformat() + "Z" if b.completed_at else None}
-            for b in db.query(Batch).filter(Batch.is_monitoringlijst.isnot(True))
-                .order_by(Batch.created_at.desc()).all()
-            if not _lijkt_monitoringlijst_batch(b)]
+             "completed_at": b.completed_at.isoformat() + "Z" if b.completed_at else None,
+             "geupload_door_naam": naam_per_id.get(b.geupload_door)}
+            for b in batches]
 
 
 @router.get("/{batch_id}")
