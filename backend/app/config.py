@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     research_max_pages: int = 15
     research_max_pages_after_primary: int = 8
     research_max_rounds: int = 3
+    research_max_kandidaten: int = 8
     research_company_timeout_seconds: int = 300
     playwright_enabled: bool = False  # zet op true in Railway nadat Chromium getest is
     frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174"

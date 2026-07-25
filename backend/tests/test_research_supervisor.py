@@ -145,6 +145,63 @@ class ManyResultsResearchTools(FakeResearchTools):
         return await super().inspect(context, query, result)
 
 
+class VeleKandidatenResearchTools(FakeResearchTools):
+    """Levert veel unieke, goedgekeurde documenten om de
+    kandidaten-cap te kunnen testen los van het paginabudget."""
+
+    async def search(self, query: PlannedQuery, max_results: int):
+        return [
+            CombinedSearchResult(
+                title=f"{query.pad} bron {index}",
+                url=f"https://voorbeeldzorg.nl/{query.pad}/{index}",
+                canonical_url=f"https://voorbeeldzorg.nl/{query.pad}/{index}",
+                snippets=[f"{index} medewerkers."],
+                providers=["serper"],
+                queries=[query.query],
+            )
+            for index in range(max_results)
+        ]
+
+    async def inspect(self, context, query, result):
+        return SourceDocument(
+            naam=context.naam,
+            company_website_url=context.website_url,
+            url=result.url,
+            titel=result.title,
+            tekst=f"Voorbeeld Zorg telde {result.title}.",
+            brontype="officiele_website" if query.pad == "website" else (
+                "jaarverslag" if query.pad == "document" else "media"
+            ),
+            documenttype="teampagina",
+            wp_gevonden=47,
+            eenheid="werkzame_personen",
+            bewijsfragment=f"Voorbeeld Zorg telde {result.title}.",
+        )
+
+
+@pytest.mark.asyncio
+async def test_kandidaten_limiet_is_configureerbaar():
+    tools = VeleKandidatenResearchTools()
+
+    outcome_default = await ResearchSupervisor(
+        tools, max_queries=12, max_pages=9,
+    ).run(QueryContext(
+        naam="Voorbeeld Zorg",
+        website_url="https://voorbeeldzorg.nl",
+        huidig_jaar=2026,
+    ))
+    assert len(outcome_default.kandidaten) == 3
+
+    outcome_ruim = await ResearchSupervisor(
+        tools, max_queries=12, max_pages=9, max_kandidaten=8,
+    ).run(QueryContext(
+        naam="Voorbeeld Zorg",
+        website_url="https://voorbeeldzorg.nl",
+        huidig_jaar=2026,
+    ))
+    assert len(outcome_ruim.kandidaten) == 8
+
+
 @pytest.mark.asyncio
 async def test_klein_paginabudget_wordt_over_onderzoekspaden_verdeeld():
     tools = ManyResultsResearchTools()

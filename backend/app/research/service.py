@@ -202,6 +202,7 @@ async def run_research_run(run_id: str) -> None:
             tools,
             max_queries=settings.research_max_queries,
             max_pages=effectief_max_paginas,
+            max_kandidaten=settings.research_max_kandidaten,
             reviewer=(
                 IntelligentSourceReviewer()
                 if settings.provider_mode == "live"

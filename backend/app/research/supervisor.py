@@ -46,12 +46,14 @@ class ResearchSupervisor:
         max_queries: int,
         max_pages: int,
         max_results_per_query: int = 8,
+        max_kandidaten: int = 3,
         reviewer=None,
     ):
         self.tools = tools
         self.max_queries = max_queries
         self.max_pages = max_pages
         self.max_results_per_query = max_results_per_query
+        self.max_kandidaten = max_kandidaten
         self.reviewer = reviewer
 
     async def run(
@@ -139,7 +141,7 @@ class ResearchSupervisor:
                         "review_reden": intelligente_review.get("reden"),
                     })
 
-        ranked = rank_bronnen(validaties)[:3]
+        ranked = rank_bronnen(validaties)[:self.max_kandidaten]
         reden_teller = Counter(
             reden
             for validatie in validaties
