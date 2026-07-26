@@ -2,7 +2,10 @@
 buildCommand = "npm run build"
 
 [deploy]
-startCommand = "serve -s dist -l tcp://0.0.0.0:$PORT"
+# Geen -s: die vlag zet clean-URLs aan, waardoor /pdfjs/web/viewer.html?file=...
+# een 301 krijgt naar /pdfjs/web/viewer en de querystring verdwijnt — de PDF-viewer
+# kreeg daardoor de app zelf te zien. De SPA-fallback staat nu in public/serve.json.
+startCommand = "serve dist -l tcp://0.0.0.0:$PORT"
 healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

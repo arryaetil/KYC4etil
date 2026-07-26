@@ -10,5 +10,8 @@ export function buildPdfViewerUrl({bronUrl, pagina, citaat}) {
     fragments.push(`search=${encodeURIComponent(zoekterm)}`);
   }
   const hash = fragments.length ? `#${fragments.join("&")}` : "";
-  return `/pdfjs/viewer.html?${params.toString()}${hash}`;
+  // pdf.js verwacht zijn eigen standaardindeling: viewer in web/, naast build/.
+  // De viewer laadt zijn worker, cmaps en lettertypes relatief via ../build/ en
+  // ../web/, dus dit pad mag niet worden afgeplat.
+  return `/pdfjs/web/viewer.html?${params.toString()}${hash}`;
 }

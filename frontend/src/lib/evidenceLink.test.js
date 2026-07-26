@@ -15,7 +15,7 @@ describe("bewijsUrl", () => {
     });
     expect(resultaat.soort).toBe("pdf");
     expect(resultaat.kanInbedden).toBe(true);
-    expect(resultaat.url).toContain("/pdfjs/viewer.html");
+    expect(resultaat.url).toContain("/pdfjs/web/viewer.html");
     expect(resultaat.url).toContain("page=14");
     expect(resultaat.url).toContain("search=");
   });
