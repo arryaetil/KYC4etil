@@ -1,4 +1,5 @@
 """API voor autonome bronvinding en menselijke bronreview."""
+from collections import Counter
 from datetime import datetime, timezone
 
 import httpx
@@ -106,6 +107,84 @@ def _gedeelde_bronnen(
         .group_by(BronKandidaat.canonical_url)
         .all()
     )
+
+
+@router.get("/reviewer-statistics")
+def get_reviewer_statistics(
+    batch_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Vat expliciete reviewerbeslissingen samen, zonder data te wijzigen."""
+    reviewed_query = (
+        db.query(BronKandidaat)
+        .join(ResearchRun, ResearchRun.id == BronKandidaat.research_run_id)
+        .filter(
+            BronKandidaat.reviewed_at.is_not(None),
+            BronKandidaat.brontype != "handmatig",
+            BronKandidaat.status.in_(
+                {"geaccepteerd", "alternatief", "afgewezen"},
+            ),
+        )
+    )
+    completed_runs_query = db.query(ResearchRun).filter_by(status="completed")
+    candidates_query = (
+        db.query(BronKandidaat)
+        .join(ResearchRun, ResearchRun.id == BronKandidaat.research_run_id)
+        .filter(
+            ResearchRun.status == "completed",
+            BronKandidaat.brontype != "handmatig",
+        )
+    )
+    if batch_id:
+        reviewed_query = reviewed_query.filter(ResearchRun.batch_id == batch_id)
+        completed_runs_query = completed_runs_query.filter_by(batch_id=batch_id)
+        candidates_query = candidates_query.filter(
+            ResearchRun.batch_id == batch_id,
+        )
+
+    reviewed = reviewed_query.all()
+    accepted = [
+        item for item in reviewed
+        if item.status in {"geaccepteerd", "alternatief"}
+    ]
+    rejected = [item for item in reviewed if item.status == "afgewezen"]
+    rank_counts = Counter(
+        str(item.rang) for item in accepted if item.rang is not None
+    )
+    reason_counts = Counter(
+        item.review_reason.strip()
+        for item in rejected
+        if item.review_reason and item.review_reason.strip()
+    )
+    decision_count = len(reviewed)
+    completed_runs = completed_runs_query.count()
+
+    return {
+        "batch_id": batch_id,
+        "beoordeelde_bronnen": decision_count,
+        "geaccepteerd": len(accepted),
+        "afgewezen": len(rejected),
+        "acceptatiepercentage": (
+            round(len(accepted) / decision_count * 100, 1)
+            if decision_count else None
+        ),
+        "geaccepteerde_rangen": dict(
+            sorted(rank_counts.items(), key=lambda item: int(item[0])),
+        ),
+        "rang_1_percentage": (
+            round(rank_counts.get("1", 0) / len(accepted) * 100, 1)
+            if accepted else None
+        ),
+        "afwijsredenen": [
+            {"reden": reason, "aantal": count}
+            for reason, count in reason_counts.most_common()
+        ],
+        "afgeronde_runs": completed_runs,
+        "gemiddeld_kandidaten_per_run": (
+            round(candidates_query.count() / completed_runs, 1)
+            if completed_runs else None
+        ),
+    }
 
 
 @router.post(

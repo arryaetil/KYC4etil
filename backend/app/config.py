@@ -1,5 +1,4 @@
-"""Centrale configuratie. Gewichten en drempels staan hier (niet hardcoded
-in de pipeline) zodat kalibratie zonder code-wijziging kan."""
+"""Centrale applicatieconfiguratie."""
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,8 +8,6 @@ class Settings(BaseSettings):
 
     provider_mode: str = "mock"  # mock | live
     database_url: str = ""       # leeg -> SQLite
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-6"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"         # hoofd-model; overschrijfbaar via OPENAI_MODEL
     openai_model_extraction: str = ""          # leeg = fallback naar openai_model
@@ -30,7 +27,7 @@ class Settings(BaseSettings):
     openai_prijs_in_cent_per_1k: float = 0.015
     openai_prijs_out_cent_per_1k: float = 0.06
     research_company_timeout_seconds: int = 300
-    playwright_enabled: bool = False  # zet op true in Railway nadat Chromium getest is
+    playwright_enabled: bool = False
     frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174"
     frontend_url: str = "http://localhost:5173"  # publieke URL voor chat-links in emails
     resend_api_key: str = ""
@@ -48,14 +45,6 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me"
     register_peildatum: str = "2026-04-01"
 
-    # Confidence-gewichten (som = 1.0) — zie documentatie §9
-    w_locatie: float = 0.30
-    w_specificiteit: float = 0.25
-    w_bronkwaliteit: float = 0.20
-    w_consensus: float = 0.10
-    w_adres: float = 0.075
-    w_actualiteit: float = 0.075
-
     # Drempels
     drempel_hoog: float = 0.80
     drempel_middel: float = 0.50
@@ -63,8 +52,6 @@ class Settings(BaseSettings):
     # Penalties
     penalty_places_fuzzy: float = 0.05
     penalty_fte_only: float = 0.10
-    cap_llm_laag: float = 0.49
-
     # Bronranking staat los van WP-confidence (som = 1.0)
     rank_w_identiteit: float = 0.30
     rank_w_autoriteit: float = 0.25

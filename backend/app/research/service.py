@@ -73,7 +73,7 @@ def maak_research_run(
     return run
 
 
-async def run_research_run(run_id: str) -> None:
+async def _run_research_run(run_id: str) -> None:
     context = None
     website_resolution = {
         "status": "niet_gevonden",
@@ -285,6 +285,27 @@ async def run_research_run(run_id: str) -> None:
                 db.commit()
 
 
+async def run_research_run(run_id: str) -> None:
+    """Voer één researchrun uit binnen de centrale tijdslimiet."""
+    timeout_seconds = get_settings().research_company_timeout_seconds
+    try:
+        await asyncio.wait_for(
+            _run_research_run(run_id),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError:
+        with SessionLocal() as db:
+            run = db.get(ResearchRun, run_id)
+            if run is not None:
+                run.status = "error"
+                run.resultaat_status = "error"
+                run.fout = (
+                    f"onderzoek afgebroken na {timeout_seconds} seconden"
+                )
+                run.completed_at = _now()
+                db.commit()
+
+
 async def run_research_batch(batch_id: str) -> None:
     """Voert de primaire researchworkflow begrensd en sequentieel uit.
 
@@ -292,7 +313,6 @@ async def run_research_batch(batch_id: str) -> None:
     van twintig organisaties honderden extractiecalls tegelijk start.
     """
     try:
-        settings = get_settings()
         with SessionLocal() as db:
             batch = db.get(Batch, batch_id)
             if batch is None:
@@ -333,26 +353,7 @@ async def run_research_batch(batch_id: str) -> None:
                     return
                 company = db.get(Company, company_id)
                 run = maak_research_run(db, company, gevraagd_jaar)
-            try:
-                await asyncio.wait_for(
-                    run_research_run(run.id),
-                    timeout=settings.research_company_timeout_seconds,
-                )
-            except TimeoutError:
-                # Eén trage of niet-reagerende externe bron mag de overige
-                # organisaties niet blokkeren. Bewaar de timeout als expliciet
-                # onderzoeksresultaat en ga gecontroleerd door.
-                with SessionLocal() as db:
-                    timed_out_run = db.get(ResearchRun, run.id)
-                    if timed_out_run is not None:
-                        timed_out_run.status = "error"
-                        timed_out_run.resultaat_status = "error"
-                        timed_out_run.fout = (
-                            "onderzoek afgebroken na "
-                            f"{settings.research_company_timeout_seconds} seconden"
-                        )
-                        timed_out_run.completed_at = _now()
-                        db.commit()
+            await run_research_run(run.id)
             with SessionLocal() as db:
                 batch = db.get(Batch, batch_id)
                 if batch is None:

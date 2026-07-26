@@ -1,4 +1,6 @@
 """Human-in-the-loop API voor bronkandidaten."""
+from datetime import datetime
+
 from app.models import Batch, BronKandidaat, Company, ResearchRun, User
 
 
@@ -146,6 +148,84 @@ def test_run_api_toont_onderzoeksdiagnostiek(client, db_session):
 
     assert response.status_code == 200
     assert response.json()["diagnostiek"]["onderzochte_paginas"] == 12
+
+
+def test_reviewerstatistieken_meten_alleen_agentkandidaten(
+    client, db_session,
+):
+    company = _maak_company(db_session)
+    run = ResearchRun(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        doel="reviewstatistieken",
+        status="completed",
+    )
+    db_session.add(run)
+    db_session.flush()
+    reviewed_at = datetime(2026, 7, 26, 12, 0)
+    db_session.add_all([
+        BronKandidaat(
+            research_run_id=run.id,
+            company_id=company.id,
+            url="https://voorbeeldzorg.nl/tweede",
+            canonical_url="https://voorbeeldzorg.nl/tweede",
+            brontype="officiele_website",
+            status="geaccepteerd",
+            rang=2,
+            reviewed_at=reviewed_at,
+        ),
+        BronKandidaat(
+            research_run_id=run.id,
+            company_id=company.id,
+            url="https://voorbeeldzorg.nl/eerste",
+            canonical_url="https://voorbeeldzorg.nl/eerste",
+            brontype="media",
+            status="afgewezen",
+            rang=1,
+            reviewed_at=reviewed_at,
+            review_reason="verkeerde organisatie",
+        ),
+        BronKandidaat(
+            research_run_id=run.id,
+            company_id=company.id,
+            url="https://voorbeeldzorg.nl/onbeoordeeld",
+            canonical_url="https://voorbeeldzorg.nl/onbeoordeeld",
+            brontype="media",
+            status="voorgesteld",
+            rang=3,
+        ),
+        BronKandidaat(
+            research_run_id=run.id,
+            company_id=company.id,
+            url="https://voorbeeldzorg.nl/handmatig",
+            canonical_url="https://voorbeeldzorg.nl/handmatig",
+            brontype="handmatig",
+            status="geaccepteerd",
+            reviewed_at=reviewed_at,
+        ),
+    ])
+    db_session.commit()
+
+    response = client.get(
+        "/research/reviewer-statistics",
+        params={"batch_id": company.batch_id},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "batch_id": company.batch_id,
+        "beoordeelde_bronnen": 2,
+        "geaccepteerd": 1,
+        "afgewezen": 1,
+        "acceptatiepercentage": 50.0,
+        "geaccepteerde_rangen": {"2": 1},
+        "rang_1_percentage": 0.0,
+        "afwijsredenen": [
+            {"reden": "verkeerde organisatie", "aantal": 1},
+        ],
+        "afgeronde_runs": 1,
+        "gemiddeld_kandidaten_per_run": 3.0,
+    }
 
 
 def test_api_markeert_een_bron_die_bij_meerdere_vestigingen_terugkomt(
