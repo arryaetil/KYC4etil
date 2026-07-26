@@ -271,6 +271,42 @@ async def test_jaarverslagzoeker_negeert_andere_pdf_op_officieel_domein(
     assert result is None
 
 
+@pytest.mark.asyncio
+async def test_strikte_monitoring_weigert_oud_pdf_na_inhoudscontrole(
+    monkeypatch,
+):
+    from app.providers import live
+
+    monkeypatch.setattr(
+        live,
+        "_eerste_pdf_paginas",
+        AsyncMock(return_value="Rijkswaterstaat Jaarverslag 2009"),
+    )
+
+    assert await live._pdf_is_recent_jaarverslag(
+        "https://example.test/opaque.pdf",
+        2026,
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_strikte_monitoring_accepteert_recent_pdf_na_inhoudscontrole(
+    monkeypatch,
+):
+    from app.providers import live
+
+    monkeypatch.setattr(
+        live,
+        "_eerste_pdf_paginas",
+        AsyncMock(return_value="Bestuursverslag 2025 Zuyderland"),
+    )
+
+    assert await live._pdf_is_recent_jaarverslag(
+        "https://example.test/opaque.pdf",
+        2026,
+    ) is True
+
+
 def test_deterministische_pdf_fallback_vindt_explicitiete_headcount():
     from app.providers import live
 

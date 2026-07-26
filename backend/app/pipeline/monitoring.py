@@ -173,7 +173,10 @@ def _beste_moderne_jaarverslagbron(
     )
     geldig: list[tuple[int, BronKandidaat]] = []
     for kandidaat in kandidaten:
-        werkelijk_jaar = _documentjaar(kandidaat.url) or kandidaat.verslagjaar
+        # Alleen een aantoonbaar URL-jaar is veilig genoeg voor automatisch
+        # herstel. Oude records konden gevraagd_jaar als verslagjaar opslaan,
+        # zelfs bij een privacy- of ander fout document.
+        werkelijk_jaar = _documentjaar(kandidaat.url)
         if werkelijk_jaar is None or not jaar - 3 <= werkelijk_jaar <= jaar - 1:
             continue
         if kandidaat.verslagjaar != werkelijk_jaar:

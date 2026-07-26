@@ -593,6 +593,20 @@ async def _eerste_pdf_paginas(pdf_url: str) -> str:
     )
 
 
+async def _pdf_is_recent_jaarverslag(
+    pdf_url: str,
+    jaar: int,
+) -> bool:
+    try:
+        eerste_paginas = await _eerste_pdf_paginas(pdf_url)
+    except Exception:
+        return False
+    return any(
+        _lijkt_jaarverslag(eerste_paginas, verslagjaar)
+        for verslagjaar in (jaar - 1, jaar - 2, jaar - 3)
+    )
+
+
 async def _valideer_jaarverslag_bron(naam: str, pdf_url: str | None) -> bool:
     identity = await _classificeer_jaarverslag_bron_identiteit(naam, pdf_url)
     return identity != IdentityClass.MISMATCH
@@ -1133,6 +1147,15 @@ def _build_jaarverslag_research_graph():
             identity == IdentityClass.SAME_BRAND_OR_GROUP
             and not state.get("strict_identity", False)
         )
+        if (
+            toegestaan
+            and state.get("strict_identity", False)
+            and not await _pdf_is_recent_jaarverslag(
+                pdf_url,
+                state["jaar"],
+            )
+        ):
+            toegestaan = False
         if pdf_url and toegestaan:
             return {"pdf_url": pdf_url, "source_identity_class": identity.value}
         # Afgewezen (verkeerd bedrijf): uitsluiten zodat een retry een ANDER
@@ -1342,14 +1365,7 @@ class LiveJaarverslagAgent:
         strict_identity: bool = False,
     ) -> bool:
         """Herbeoordeel een legacy-baseline met de huidige strikte regels."""
-        try:
-            eerste_paginas = await _eerste_pdf_paginas(bron_url)
-        except Exception:
-            return False
-        if not any(
-            _lijkt_jaarverslag(eerste_paginas, verslagjaar)
-            for verslagjaar in (jaar - 1, jaar - 2, jaar - 3)
-        ):
+        if not await _pdf_is_recent_jaarverslag(bron_url, jaar):
             return False
         if domain_matches_company(bron_url, website_url) is True:
             return True
