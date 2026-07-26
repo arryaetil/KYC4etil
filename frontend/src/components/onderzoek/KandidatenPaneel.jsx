@@ -5,13 +5,14 @@ import {BronKaart} from "./BronKaart.jsx";
 import {Diagnostiek} from "./Diagnostiek.jsx";
 
 export function KandidatenPaneel({
-  api, company, batchJaar, geselecteerdeBronId, onSelecteerBron,
+  api, company, batchJaar, geselecteerdeBronId, onSelecteerBron, onGewijzigd,
 }) {
   const [items, setItems] = useState([]);
   const [diagnostiek, setDiagnostiek] = useState({});
   const [run, setRun] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [bezig, setBezig] = useState(false);
   const [handmatigOpen, setHandmatigOpen] = useState(false);
   const [handmatigUrl, setHandmatigUrl] = useState("");
 
@@ -38,6 +39,8 @@ export function KandidatenPaneel({
         if (["completed", "error"].includes(volgende.status)) {
           setItems(volgende.kandidaten || []);
           setDiagnostiek(volgende.diagnostiek || {});
+          // De organisatielijst kent nu een andere status: laat die verversen.
+          onGewijzigd?.();
         }
       } catch (err) {
         setError(err.message);
@@ -63,26 +66,38 @@ export function KandidatenPaneel({
     }
   }
 
+  // `bezig` voorkomt dat een dubbelklik twee beoordelingen verstuurt; dat racet
+  // met de demotie-logica in de backend.
   async function beoordeel(candidate, beslissing) {
+    if (bezig) return;
+    setBezig(true);
     setError("");
     try {
       await api.reviewResearchCandidate(candidate.id, beslissing);
       await laadKandidaten();
+      onGewijzigd?.();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setBezig(false);
     }
   }
 
   async function voegHandmatigToe(event) {
     event.preventDefault();
+    if (bezig) return;
+    setBezig(true);
     setError("");
     try {
       await api.addManualResearchSource(company.company_id, {url: handmatigUrl});
       setHandmatigUrl("");
       setHandmatigOpen(false);
       await laadKandidaten();
+      onGewijzigd?.();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setBezig(false);
     }
   }
 
@@ -108,6 +123,7 @@ export function KandidatenPaneel({
               rang={candidate.rang || index + 1}
               gevraagdJaar={gevraagdJaar}
               isGeselecteerd={candidate.id === geselecteerdeBronId}
+              bezig={bezig}
               onBekijk={onSelecteerBron}
               onAccepteer={(item) => beoordeel(item, "accepteren")}
               onWijsAf={(item) => beoordeel(item, "afwijzen")}
@@ -158,9 +174,10 @@ export function KandidatenPaneel({
           />
           <button
             type="submit"
-            className="focus-ring rounded-md bg-ink px-3 text-sm text-white transition hover:opacity-90"
+            disabled={bezig}
+            className="focus-ring rounded-md bg-ink px-3 text-sm text-white transition hover:opacity-90 disabled:opacity-50"
           >
-            Toevoegen
+            {bezig ? "Bezig…" : "Toevoegen"}
           </button>
         </form>
       ) : null}

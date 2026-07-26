@@ -138,9 +138,10 @@ export function BatchesView({api, onOpenBatch}) {
                 icon={FileDown}
                 variant="quiet"
                 title="Exporteren"
-                onClick={() => api.download(
+                disabled={busy}
+                onClick={() => voerUit(() => api.download(
                   `/batches/${batch.id}/export.xlsx`, "export.xlsx",
-                )}
+                ))}
               />
               <IconButton
                 icon={Trash2}

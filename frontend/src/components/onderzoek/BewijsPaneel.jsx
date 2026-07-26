@@ -40,6 +40,19 @@ export function BewijsPaneel({candidate}) {
         <p className="mt-0.5 truncate text-sm font-medium text-ink" title={candidate.titel || candidate.url}>
           {candidate.titel || candidate.url}
         </p>
+        {bewijs.kanInbedden ? (
+          // Ontsnappingsroute: als de ingesloten viewer faalt (CORS,
+          // X-Frame-Options) blijft het document zo bereikbaar.
+          <a
+            href={candidate.url}
+            target="_blank"
+            rel="noreferrer"
+            className="focus-ring mt-1.5 inline-flex items-center gap-1.5 rounded text-xs text-slate-500 transition hover:text-ink"
+          >
+            Open PDF in nieuw tabblad
+            <ExternalLink size={12} />
+          </a>
+        ) : null}
       </div>
 
       {bewijs.kanInbedden ? (

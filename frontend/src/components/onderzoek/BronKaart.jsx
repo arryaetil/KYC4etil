@@ -25,7 +25,8 @@ function herkomst(url) {
 }
 
 export function BronKaart({
-  candidate, rang, gevraagdJaar, isGeselecteerd, onBekijk, onAccepteer, onWijsAf,
+  candidate, rang, gevraagdJaar, isGeselecteerd, bezig,
+  onBekijk, onAccepteer, onWijsAf,
 }) {
   const [toonOnderbouwing, setToonOnderbouwing] = useState(false);
   const identiteit = identiteitLabel(candidate.identity_class);
@@ -102,14 +103,16 @@ export function BronKaart({
             <button
               type="button"
               onClick={() => onAccepteer(candidate)}
-              className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-ink px-2.5 py-1.5 text-sm text-white transition hover:opacity-90"
+              disabled={bezig}
+              className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-ink px-2.5 py-1.5 text-sm text-white transition hover:opacity-90 disabled:opacity-50"
             >
               <Check size={14} />Accepteren
             </button>
             <button
               type="button"
               onClick={() => onWijsAf(candidate)}
-              className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-slate-500 transition hover:text-ink"
+              disabled={bezig}
+              className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-slate-500 transition hover:text-ink disabled:opacity-50"
             >
               <X size={14} />Afwijzen
             </button>
@@ -148,7 +151,16 @@ export function BronKaart({
           ) : null}
           <div>
             <dt className="inline font-medium text-slate-600">Bron-URL: </dt>
-            <dd className="inline break-all">{candidate.url}</dd>
+            <dd className="inline break-all">
+              <a
+                href={candidate.url}
+                target="_blank"
+                rel="noreferrer"
+                className="focus-ring rounded underline decoration-slate-300 underline-offset-2 transition hover:text-ink"
+              >
+                {candidate.url}
+              </a>
+            </dd>
           </div>
         </dl>
       ) : null}

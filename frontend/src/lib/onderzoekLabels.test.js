@@ -4,8 +4,58 @@ import {
   bronwaarschuwingen,
   brontypeLabel,
   identiteitLabel,
+  monitoringStatus,
   organisatieStatus,
 } from "./onderzoekLabels.js";
+
+describe("monitoringStatus", () => {
+  it("meldt een mislukte controle met fout-toon", () => {
+    const status = monitoringStatus({fout: "timeout"});
+    expect(status).toEqual({
+      sleutel: "mislukt", label: "Controle mislukt", toon: "fout",
+    });
+  });
+
+  it("meldt een nieuwe vondst met aandacht-toon", () => {
+    const status = monitoringStatus({
+      nieuwe_bevinding: true, laatste_bron_url: "https://x.nl/jaar.pdf",
+    });
+    expect(status).toEqual({
+      sleutel: "nieuwe_vondst", label: "Nieuwe vondst", toon: "aandacht",
+    });
+  });
+
+  it("meldt een gevonden jaarverslag neutraal, niet als gekozen bron", () => {
+    const status = monitoringStatus({laatste_bron_url: "https://x.nl/jaar.pdf"});
+    expect(status).toEqual({
+      sleutel: "gevonden", label: "Jaarverslag gevonden", toon: "neutraal",
+    });
+    expect(status.toon).not.toBe("gekozen");
+  });
+
+  it("meldt aandacht als er niets is gevonden", () => {
+    expect(monitoringStatus({})).toEqual({
+      sleutel: "niet_gevonden",
+      label: "Geen jaarverslag gevonden",
+      toon: "aandacht",
+    });
+    expect(monitoringStatus(null).sleutel).toBe("niet_gevonden");
+  });
+
+  it("geeft een fout voorrang op een bevinding en op een gevonden bron", () => {
+    expect(monitoringStatus({
+      fout: "timeout",
+      nieuwe_bevinding: true,
+      laatste_bron_url: "https://x.nl/jaar.pdf",
+    }).sleutel).toBe("mislukt");
+  });
+
+  it("geeft een nieuwe bevinding voorrang op een reeds gevonden bron", () => {
+    expect(monitoringStatus({
+      nieuwe_bevinding: true, laatste_bron_url: "https://x.nl/jaar.pdf",
+    }).sleutel).toBe("nieuwe_vondst");
+  });
+});
 
 describe("organisatieStatus", () => {
   it("meldt een niet-gestart onderzoek", () => {
@@ -132,12 +182,74 @@ describe("bronwaarschuwingen", () => {
     expect(labels).toContain("Geen getal gevonden");
   });
 
-  it("maakt technische waarschuwingen leesbaar", () => {
+  it("vertaalt bekende backend-waarschuwingen naar Nederlands", () => {
     const labels = bronwaarschuwingen({
       wp_gevonden: 47,
       eenheid: "werkzame_personen",
-      waarschuwingen: ["geen_concreet_wp_bewijs"],
+      waarschuwingen: [
+        "geen_concreet_wp_bewijs",
+        "getal_zonder_bewijsfragment",
+        "alleen_context_geen_wp_voorstel",
+      ],
     }).map((item) => item.label);
-    expect(labels).toContain("geen concreet wp bewijs");
+    expect(labels).toContain("Geen hard WP-bewijs");
+    expect(labels).toContain("Getal zonder citaat");
+    expect(labels).toContain("Alleen context, geen WP-getal");
+  });
+
+  it("onderdrukt fte_geen_wp, want de FTE-chip zegt dat al", () => {
+    const labels = bronwaarschuwingen({
+      wp_gevonden: 47, eenheid: "fte", waarschuwingen: ["fte_geen_wp"],
+    }).map((item) => item.label);
+    expect(labels).toEqual(["FTE — geen WP"]);
+  });
+
+  it("onderdrukt afwijkend_verslagjaar, want het jaarsignaal zegt dat al", () => {
+    const labels = bronwaarschuwingen({
+      wp_gevonden: 47,
+      eenheid: "werkzame_personen",
+      verslagjaar: 2024,
+      gevraagd_jaar: 2025,
+      waarschuwingen: ["afwijkend_verslagjaar"],
+    }).map((item) => item.label);
+    expect(labels).toEqual(["Ander verslagjaar"]);
+  });
+
+  it("onderdrukt scope_breder_dan_vestiging, want de bereikchip zegt dat al", () => {
+    const labels = bronwaarschuwingen({
+      wp_gevonden: 47,
+      eenheid: "werkzame_personen",
+      waarschuwingen: ["scope_breder_dan_vestiging"],
+    }).map((item) => item.label);
+    expect(labels).toEqual([]);
+  });
+
+  it("toont recent_actualiteitssignaal niet: dat is een pluspunt, geen waarschuwing", () => {
+    const labels = bronwaarschuwingen({
+      wp_gevonden: 47,
+      eenheid: "werkzame_personen",
+      waarschuwingen: ["recent_actualiteitssignaal"],
+    }).map((item) => item.label);
+    expect(labels).toEqual([]);
+  });
+
+  it("maakt een onbekende sleutel cosmetisch leesbaar met aandacht-toon", () => {
+    const items = bronwaarschuwingen({
+      wp_gevonden: 47,
+      eenheid: "werkzame_personen",
+      waarschuwingen: ["een_nieuwe_backend_sleutel"],
+    });
+    expect(items).toEqual([
+      {label: "een nieuwe backend sleutel", toon: "aandacht"},
+    ]);
+  });
+
+  it("toont hetzelfde signaal nooit twee keer", () => {
+    const labels = bronwaarschuwingen({
+      wp_gevonden: null,
+      eenheid: "werkzame_personen",
+      waarschuwingen: ["geen_concreet_wp_bewijs", "geen_concreet_wp_bewijs"],
+    }).map((item) => item.label);
+    expect(labels).toEqual(["Geen getal gevonden", "Geen hard WP-bewijs"]);
   });
 });

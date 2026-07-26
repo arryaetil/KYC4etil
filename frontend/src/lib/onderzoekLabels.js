@@ -31,6 +31,27 @@ const BEREIK = {
   unknown: {label: "Onbekend bereik", toon: "aandacht"},
 };
 
+/**
+ * Backend-waarschuwingen naar leesbaar Nederlands.
+ *
+ * `null` betekent bewust onderdrukken. Drie sleutels leidt de frontend zelf al
+ * af uit de kandidaatvelden (eenheid, verslagjaar, scope_class); ze ook nog als
+ * losse chip tonen levert twee chips voor één feit op. `recent_actualiteits-
+ * signaal` is een pluspunt, geen "controleer dit", en hoort dus niet thuis in
+ * een rij waarschuwingen.
+ */
+const WAARSCHUWING = {
+  fte_geen_wp: null,
+  afwijkend_verslagjaar: null,
+  scope_breder_dan_vestiging: null,
+  recent_actualiteitssignaal: null,
+  getal_zonder_bewijsfragment: {label: "Getal zonder citaat", toon: "aandacht"},
+  geen_concreet_wp_bewijs: {label: "Geen hard WP-bewijs", toon: "aandacht"},
+  alleen_context_geen_wp_voorstel: {
+    label: "Alleen context, geen WP-getal", toon: "aandacht",
+  },
+};
+
 const BRONTYPE = {
   officiele_website: "Officiële website",
   jaarverslag: "Jaarverslag",
@@ -71,6 +92,30 @@ export function organisatieStatus(company) {
   return {sleutel: "afgerond", label: "Onderzoek afgerond", toon: "neutraal"};
 }
 
+/**
+ * Monitoring heeft een eigen vocabulaire. De agent vindt daar hooguit een
+ * jaarverslag; niemand kiest een bron. Daarom bewust geen "Bron gekozen" en
+ * geen groene toon — dat zou een menselijke keuze suggereren die er niet is.
+ */
+export function monitoringStatus(company) {
+  if (company?.fout) {
+    return {sleutel: "mislukt", label: "Controle mislukt", toon: "fout"};
+  }
+  if (company?.nieuwe_bevinding) {
+    return {sleutel: "nieuwe_vondst", label: "Nieuwe vondst", toon: "aandacht"};
+  }
+  if (company?.laatste_bron_url) {
+    return {
+      sleutel: "gevonden", label: "Jaarverslag gevonden", toon: "neutraal",
+    };
+  }
+  return {
+    sleutel: "niet_gevonden",
+    label: "Geen jaarverslag gevonden",
+    toon: "aandacht",
+  };
+}
+
 export function identiteitLabel(identityClass) {
   return IDENTITEIT[identityClass] || IDENTITEIT.unknown;
 }
@@ -100,10 +145,18 @@ export function bronwaarschuwingen(candidate) {
     items.push({label: "Geen getal gevonden", toon: "aandacht"});
   }
   for (const waarschuwing of candidate.waarschuwingen || []) {
-    items.push({
-      label: String(waarschuwing).replaceAll("_", " "),
-      toon: "aandacht",
-    });
+    const sleutel = String(waarschuwing);
+    if (sleutel in WAARSCHUWING) {
+      const bekend = WAARSCHUWING[sleutel];
+      if (bekend) items.push({...bekend});
+      continue;
+    }
+    items.push({label: sleutel.replaceAll("_", " "), toon: "aandacht"});
   }
-  return items;
+  const gezien = new Set();
+  return items.filter((item) => {
+    if (gezien.has(item.label)) return false;
+    gezien.add(item.label);
+    return true;
+  });
 }

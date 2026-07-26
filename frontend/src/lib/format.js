@@ -3,6 +3,17 @@ export function pct(value) {
   return Math.max(0, Math.min(100, Math.round(value * 100)));
 }
 
+/** Leesbaar Nederlands moment; "—" als er niets bekend is, nooit "Invalid Date". */
+export function formatMoment(iso) {
+  if (!iso) return "—";
+  const moment = new Date(iso);
+  if (Number.isNaN(moment.getTime())) return "—";
+  return moment.toLocaleString("nl-NL", {
+    day: "numeric", month: "long", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
 export function classNames(...items) {
   return items.filter(Boolean).join(" ");
 }

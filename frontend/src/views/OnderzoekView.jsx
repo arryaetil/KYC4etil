@@ -5,8 +5,10 @@ import {BatchesView} from "./BatchesView.jsx";
 import {OrganisatieLijst} from "../components/onderzoek/OrganisatieLijst.jsx";
 import {KandidatenPaneel} from "../components/onderzoek/KandidatenPaneel.jsx";
 import {BewijsPaneel} from "../components/onderzoek/BewijsPaneel.jsx";
+import {useIsXl} from "../lib/useBreakpoint.js";
 
 export function OnderzoekView({api}) {
+  const isXl = useIsXl();
   const [batchId, setBatchId] = useState(null);
   const [batch, setBatch] = useState(null);
   const [companies, setCompanies] = useState([]);
@@ -61,7 +63,9 @@ export function OnderzoekView({api}) {
 
       {error ? <div className="px-4 pt-4"><Alert message={error} /></div> : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(220px,1fr)_minmax(0,2fr)] xl:grid-cols-[minmax(240px,1fr)_minmax(0,2fr)_minmax(0,2fr)]">
+      {/* Onder lg staan de panelen gestapeld; zonder eigen scroller zou de
+          onderste helft buiten beeld vallen. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:overflow-visible lg:grid-cols-[minmax(220px,1fr)_minmax(0,2fr)] xl:grid-cols-[minmax(240px,1fr)_minmax(0,2fr)_minmax(0,2fr)]">
         <aside className="min-h-0 border-line lg:border-r">
           <OrganisatieLijst
             companies={companies}
@@ -82,6 +86,7 @@ export function OnderzoekView({api}) {
               batchJaar={batch?.jaar}
               geselecteerdeBronId={geselecteerdeBron?.id}
               onSelecteerBron={setGeselecteerdeBron}
+              onGewijzigd={() => load(batchId).catch(() => {})}
             />
           ) : (
             <div className="px-5 py-16 text-center text-sm text-slate-500">
@@ -90,13 +95,16 @@ export function OnderzoekView({api}) {
           )}
         </section>
 
-        <section className="hidden min-h-0 overflow-hidden bg-panel xl:block">
-          <BewijsPaneel candidate={geselecteerdeBron} />
-        </section>
+        {/* Precies één keer renderen: een verborgen iframe laadt gewoon door. */}
+        {isXl ? (
+          <section className="min-h-0 overflow-hidden bg-panel">
+            <BewijsPaneel candidate={geselecteerdeBron} />
+          </section>
+        ) : null}
       </div>
 
-      {geselecteerdeBron ? (
-        <section className="h-96 shrink-0 overflow-hidden border-t border-line bg-panel xl:hidden">
+      {!isXl && geselecteerdeBron ? (
+        <section className="h-96 shrink-0 overflow-hidden border-t border-line bg-panel">
           <BewijsPaneel candidate={geselecteerdeBron} />
         </section>
       ) : null}

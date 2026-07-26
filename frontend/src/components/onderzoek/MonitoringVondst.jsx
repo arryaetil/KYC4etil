@@ -1,0 +1,85 @@
+import {Eye} from "lucide-react";
+import {classNames, formatMoment} from "../../lib/format.js";
+import {monitoringStatus} from "../../lib/onderzoekLabels.js";
+
+/**
+ * Bouwt uit de monitoringvelden een kandidaat-vormig object, zodat het
+ * bewijspaneel de gevonden bron op dezelfde manier kan openen als een bronkaart.
+ */
+export function alsBewijsBron(company) {
+  if (!company?.laatste_bron_url) return null;
+  return {
+    id: `monitoring:${company.company_id}`,
+    url: company.laatste_bron_url,
+    titel: `Jaarverslag ${company.naam || ""}`.trim(),
+    brontype: "jaarverslag",
+  };
+}
+
+export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}) {
+  const status = monitoringStatus(company);
+  const bron = alsBewijsBron(company);
+
+  return (
+    <section className="border-b border-line px-5 py-5">
+      <div className="flex items-baseline gap-2">
+        <h3 className="text-xs uppercase tracking-wide text-slate-400">
+          Wat de monitoring vond
+        </h3>
+        <span className="ml-auto text-xs text-slate-400">
+          Gecontroleerd: {formatMoment(company.laatst_gecontroleerd_op)}
+        </span>
+      </div>
+
+      {company.fout ? (
+        <p className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          De laatste controle is mislukt: {company.fout}
+        </p>
+      ) : bron ? (
+        <>
+          <p className="mt-3 break-all text-base leading-relaxed text-ink">
+            <a
+              href={bron.url}
+              target="_blank"
+              rel="noreferrer"
+              className="focus-ring rounded underline decoration-slate-300 underline-offset-4 transition hover:decoration-ink"
+            >
+              {bron.url}
+            </a>
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onSelecteerBron(bron)}
+              aria-pressed={bron.id === geselecteerdeBronId}
+              className={classNames(
+                "focus-ring inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition",
+                bron.id === geselecteerdeBronId
+                  ? "border-etil text-ink"
+                  : "border-line text-ink hover:bg-panel",
+              )}
+            >
+              <Eye size={14} />Bewijs bekijken
+            </button>
+            {company.wp_kandidaat != null ? (
+              <span className="text-xs tabular-nums text-slate-500">
+                {company.wp_kandidaat} WP in het register
+                {company.confidence_label ? ` · ${company.confidence_label}` : ""}
+              </span>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="mt-3 text-sm text-slate-500">
+          {company.laatst_gecontroleerd_op
+            ? "Bij de laatste controle is geen jaarverslag gevonden."
+            : "Deze organisatie is nog niet gecontroleerd."}
+        </p>
+      )}
+
+      <p className="mt-3 text-xs text-slate-400">
+        Status: {status.label}. Monitoring vindt bronnen; kiezen doe je zelf.
+      </p>
+    </section>
+  );
+}
