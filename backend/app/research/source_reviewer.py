@@ -72,8 +72,10 @@ _SOCIAL_DOMAINS = {
     "facebook.com", "instagram.com", "x.com",
 }
 _GENERIEKE_NAAMWOORDEN = {
-    "bedrijf", "centrum", "groep", "kliniek", "locatie", "organisatie",
-    "stichting", "vestiging", "woonzorgcentrum", "zorg", "zorgcentrum",
+    "bedrijf", "behandelcentrum", "buurtkamer", "centrum",
+    "gezondheidscentrum", "groep", "kliniek", "locatie", "organisatie",
+    "revalidatiecentrum", "stichting", "vestiging", "woonzorgcentrum",
+    "zorg", "zorgcentrum",
 }
 _BRUIKBARE_GROEPSPAGINAS = {
     "jaarrekening", "jaarverslag", "bestuursverslag", "pdf_document",
@@ -238,9 +240,16 @@ class IntelligentSourceReviewer:
                     ),
                 }
                 return validatie
+            bekende_website_heeft_pad = bool(
+                urlsplit(document.company_website_url or "").path.strip("/")
+            )
+            zelfde_specifieke_pagina = (
+                zelfde_pagina
+                and (noemt_doelorganisatie or bekende_website_heeft_pad)
+            )
             identity = (
                 "exact_entity"
-                if zelfde_pagina or noemt_doelorganisatie
+                if zelfde_specifieke_pagina or noemt_doelorganisatie
                 else "same_brand_or_group"
             )
             beslissing = (
@@ -257,7 +266,7 @@ class IntelligentSourceReviewer:
                 "scope_class": scope,
                 "reden": (
                     "Exacte bekende organisatiepagina."
-                    if zelfde_pagina
+                    if zelfde_specifieke_pagina
                     else "Bron staat op hetzelfde officiële domein; dit bewijst "
                     "een merk- of groepsrelatie, niet automatisch de vestigingsscope."
                 ),

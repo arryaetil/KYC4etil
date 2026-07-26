@@ -407,3 +407,63 @@ async def test_locatienaam_alleen_in_sitefooter_maakt_nieuws_niet_exact():
         in reviewed.afwijsredenen
     )
     reviewer._llm_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_andere_revalidatielocatie_is_geen_match_op_generiek_woord():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    document = SourceDocument(
+        naam="Revalidatiecentrum Solidus",
+        company_website_url=(
+            "https://zorggroep.example/locaties/revalidatiecentrum-solidus"
+        ),
+        url=(
+            "https://zorggroep.example/locaties/"
+            "revalidatiecentrum-vita-nova"
+        ),
+        titel="Revalidatiecentrum Vita Nova",
+        tekst="Informatie over Vita Nova.",
+        brontype="officiele_website",
+        documenttype="organisatiepagina",
+    )
+
+    reviewed = await reviewer.review(
+        _context("Revalidatiecentrum Solidus"),
+        document,
+    )
+
+    assert reviewed.is_afgewezen is True
+    assert (
+        "zelfde_domein_maar_geen_relevante_doelorganisatie"
+        in reviewed.afwijsredenen
+    )
+    reviewer._llm_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_groepshomepage_is_geen_exacte_vestiging_zonder_naamsbewijs():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    document = SourceDocument(
+        naam="Woonzorgcentrum Amaliahof",
+        company_website_url="https://zorggroep.example/",
+        url="https://www.zorggroep.example/",
+        titel="De Zorggroep",
+        tekst="Welkom bij onze zorgorganisatie.",
+        brontype="officiele_website",
+        documenttype="organisatiepagina",
+    )
+
+    reviewed = await reviewer.review(
+        _context("Woonzorgcentrum Amaliahof"),
+        document,
+    )
+
+    assert reviewed.is_afgewezen is False
+    assert reviewed.identity_class == "same_brand_or_group"
+    assert (
+        reviewed.validaties["intelligente_review"]["beslissing"]
+        == "context_only"
+    )
+    reviewer._llm_review.assert_not_awaited()
