@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, get_current_user_of_querytoken
 from ..database import get_db
 from ..models import (
-    BronKandidaat, Company, JaarverslagMonitoring, ResearchRun, User,
+    AgentResult, BronKandidaat, Company, JaarverslagMonitoring, ResearchRun, User,
 )
 from ..research.service import maak_research_run, run_research_run
 from ..providers.live import USER_AGENT
@@ -240,6 +240,8 @@ def _is_bekende_bron(db: Session, url: str) -> bool:
     allowlist; die URL's komen aantoonbaar van het open web.
     """
     if db.query(BronKandidaat).filter_by(url=url).first() is not None:
+        return True
+    if db.query(AgentResult).filter_by(bron_url=url).first() is not None:
         return True
     return (
         db.query(JaarverslagMonitoring)

@@ -4,7 +4,12 @@ import {buildPdfViewerUrl} from "../../lib/pdfViewerLink.js";
 
 export function BronModal({open, onClose, bronUrl, pagina, citaat, titel}) {
   if (!open) return null;
-  const viewerUrl = buildPdfViewerUrl({bronUrl, pagina, citaat});
+  const viewerUrl = buildPdfViewerUrl({
+    bronUrl,
+    pagina,
+    citaat,
+    token: localStorage.getItem("token"),
+  });
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="flex h-full max-h-[90vh] w-full max-w-4xl flex-col rounded-lg border border-line bg-white shadow-sm">
