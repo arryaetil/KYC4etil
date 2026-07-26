@@ -1,10 +1,9 @@
 import {Fragment, useEffect, useMemo, useState} from "react";
 import {
-  AlertTriangle, Building2, ChevronUp, FileSearch, ListChecks, RefreshCw,
+  AlertTriangle, Building2, ChevronUp, FileSearch, RefreshCw,
   Search, SearchCheck, Sparkles,
 } from "lucide-react";
 import {classNames} from "../lib/format.js";
-import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
 import {Alert} from "../components/Alert.jsx";
 import {Metric} from "../components/Metric.jsx";
@@ -18,7 +17,7 @@ function formatDatumTijd(iso) {
   });
 }
 
-export function MonitoringView({api, user, onLogout, openDashboard, openCompany}) {
+export function MonitoringView({api}) {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,21 +63,14 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
   }), [companies, filter, zoek]);
 
   return (
-    <Shell
-      user={user}
-      onLogout={onLogout}
-      title="Bronnenmonitoring"
-      actions={
-        <>
-          <IconButton icon={ListChecks} onClick={openDashboard}>Dashboard</IconButton>
-          {batch ? (
-            <IconButton icon={RefreshCw} variant="primary" onClick={nuControleren} disabled={busy}>
-              {busy ? "Bezig…" : "Nu controleren"}
-            </IconButton>
-          ) : null}
-        </>
-      }
-    >
+    <div className="px-6 py-6">
+      {batch ? (
+        <div className="mb-4 flex justify-end">
+          <IconButton icon={RefreshCw} onClick={nuControleren} disabled={busy}>
+            {busy ? "Bezig…" : "Nu controleren"}
+          </IconButton>
+        </div>
+      ) : null}
       {error ? <Alert message={error} /> : null}
       {!batch ? (
         <div className="rounded-lg border border-dashed border-line bg-white p-8 text-center text-sm text-slate-600">
@@ -168,10 +160,7 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
               <tbody>
                 {gefilterd.map((company) => (
                   <Fragment key={company.company_id}>
-                    <tr
-                      className="cursor-pointer border-t border-line hover:bg-panel"
-                      onClick={() => openCompany(batch.id, company.company_id)}
-                    >
+                    <tr className="border-t border-line hover:bg-panel">
                       <td className="px-4 py-3">
                         <div className="font-semibold">{company.naam}</div>
                         <div className="text-xs text-slate-500">{company.gemeente}</div>
@@ -252,6 +241,6 @@ export function MonitoringView({api, user, onLogout, openDashboard, openCompany}
           </div>
         </>
       )}
-    </Shell>
+    </div>
   );
 }
