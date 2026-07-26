@@ -233,6 +233,48 @@ def test_check_company_jaarverslag_zelfde_url_zonder_wp_geen_wijziging_tweede_ke
 
 
 @pytest.mark.asyncio
+async def test_monitoring_verwerkt_nieuw_wp_bij_dezelfde_bron_url(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Nieuwe Extractie")
+    bron_url = "https://extractie.test/jaarverslag-2025.pdf"
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id,
+        laatste_bron_url=bron_url,
+    ))
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=11000,
+        context=(
+            "Nieuwe Extractie biedt aan bijna 11.000 medewerkers een baan."
+        ),
+        zekerheid="middel",
+        reden="deterministische fallback",
+        bron_url=bron_url,
+        bron_type="jaarverslag",
+        is_limburg_specifiek=True,
+    )
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=finding)
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, agent, None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+
+    candidate = db_session.query(Candidate).filter_by(
+        company_id=company.id,
+    ).one()
+    bron = db_session.query(BronKandidaat).filter_by(
+        company_id=company.id,
+    ).one()
+    assert candidate.wp_kandidaat == 11000
+    assert bron.wp_gevonden == 11000
+
+
+@pytest.mark.asyncio
 async def test_monitoring_slaat_nieuwe_bron_ook_modern_op(
     db_session, monkeypatch,
 ):
@@ -421,6 +463,33 @@ async def test_monitoring_herstelt_nieuwste_gevalideerde_moderne_bron(
         url="https://historie.test/jaarverslag-2025.pdf",
         canonical_url="https://historie.test/jaarverslag-2025.pdf",
         brontype="jaarverslag",
+        verslagjaar=2025,
+        status="voorgesteld",
+        rang=1,
+    ))
+    oudere_run = ResearchRun(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        doel="periodieke jaarverslagmonitoring",
+        gevraagd_jaar=2025,
+        status="completed",
+        resultaat_status="review_nodig",
+    )
+    db_session.add(oudere_run)
+    db_session.flush()
+    db_session.add(BronKandidaat(
+        research_run_id=oudere_run.id,
+        company_id=company.id,
+        url=(
+            "https://historie.test/"
+            "20250604_U2025_Jaarverslag_2024.pdf"
+        ),
+        canonical_url=(
+            "https://historie.test/"
+            "20250604_U2025_Jaarverslag_2024.pdf"
+        ),
+        brontype="jaarverslag",
+        # Simuleer de oude bug: DB zegt 2025 terwijl de URL 2024 zegt.
         verslagjaar=2025,
         status="voorgesteld",
         rang=1,

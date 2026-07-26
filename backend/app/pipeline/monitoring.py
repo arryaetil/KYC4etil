@@ -129,7 +129,10 @@ def _trek_candidate_van_afgewezen_bron_in(
     company: Company,
     afgewezen_url: str,
 ) -> None:
-    candidate = company.candidate
+    candidate = db.query(Candidate).filter_by(
+        company_id=company.id,
+        batch_id=company.batch_id,
+    ).one_or_none()
     if candidate is None or not candidate.gekozen_agent_result:
         return
     agent_result = db.get(AgentResult, candidate.gekozen_agent_result)
@@ -158,35 +161,64 @@ def _beste_moderne_jaarverslagbron(
     company: Company,
     jaar: int,
 ) -> BronKandidaat | None:
-    return (
+    kandidaten = (
         db.query(BronKandidaat)
         .filter(
             BronKandidaat.company_id == company.id,
             BronKandidaat.brontype == "jaarverslag",
             BronKandidaat.status != "afgewezen",
-            BronKandidaat.verslagjaar.isnot(None),
-            BronKandidaat.verslagjaar >= jaar - 3,
-            BronKandidaat.verslagjaar <= jaar - 1,
         )
-        .order_by(
-            BronKandidaat.verslagjaar.desc(),
-            BronKandidaat.created_at.desc(),
-        )
-        .first()
+        .order_by(BronKandidaat.created_at.desc())
+        .all()
     )
+    geldig: list[tuple[int, BronKandidaat]] = []
+    for kandidaat in kandidaten:
+        werkelijk_jaar = _documentjaar(kandidaat.url) or kandidaat.verslagjaar
+        if werkelijk_jaar is None or not jaar - 3 <= werkelijk_jaar <= jaar - 1:
+            continue
+        if kandidaat.verslagjaar != werkelijk_jaar:
+            kandidaat.verslagjaar = werkelijk_jaar
+        geldig.append((werkelijk_jaar, kandidaat))
+    return max(geldig, key=lambda item: item[0])[1] if geldig else None
 
 
 def _jaarverslagbron_van_candidate(
     db: Session,
     company: Company,
 ) -> str | None:
-    candidate = company.candidate
+    candidate = db.query(Candidate).filter_by(
+        company_id=company.id,
+        batch_id=company.batch_id,
+    ).one_or_none()
     if candidate is None or not candidate.gekozen_agent_result:
         return None
     agent_result = db.get(AgentResult, candidate.gekozen_agent_result)
     if agent_result is None or agent_result.agent_type != "jaarverslag":
         return None
     return agent_result.bron_url
+
+
+def _wp_is_nieuw_voor_bron(
+    db: Session,
+    company: Company,
+    bron_url: str,
+    wp_gevonden: int | None,
+) -> bool:
+    if wp_gevonden is None:
+        return False
+    candidate = db.query(Candidate).filter_by(
+        company_id=company.id,
+        batch_id=company.batch_id,
+    ).one_or_none()
+    if candidate is None or not candidate.gekozen_agent_result:
+        return True
+    agent_result = db.get(AgentResult, candidate.gekozen_agent_result)
+    return (
+        agent_result is None
+        or canonicaliseer_url(agent_result.bron_url or "")
+        != canonicaliseer_url(bron_url)
+        or candidate.wp_kandidaat != wp_gevonden
+    )
 
 
 async def check_company_jaarverslag(db: Session, company: Company, jaar: int) -> bool:
@@ -303,7 +335,13 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     )
     status.laatste_bron_url = finding.bron_url
 
-    if not url_gewijzigd:
+    wp_is_nieuw = _wp_is_nieuw_voor_bron(
+        db,
+        company,
+        finding.bron_url,
+        finding.wp_gevonden,
+    )
+    if not url_gewijzigd and not wp_is_nieuw:
         _log(db, company.batch_id, company.id, "jaarverslag_monitoring",
              "skipped", t0)
         db.commit()
