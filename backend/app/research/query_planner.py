@@ -1,9 +1,16 @@
 """Deterministische basisqueries; een LLM mag later alleen aanvullen."""
+import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 from .types import PlannedQuery
+
+_ADMINISTRATIEVE_NAAMDELEN = {
+    "afdeling", "filiaal", "groepswoning", "locatie", "regio", "unit",
+    "vestiging", "woongroep", "woonzorgcentrum", "zorgcentrum",
+}
 
 
 @dataclass(frozen=True)
@@ -19,6 +26,26 @@ def _domein(url: str | None) -> str | None:
     if not url:
         return None
     return urlsplit(url).netloc.lower().removeprefix("www.") or None
+
+
+def vereenvoudigde_zoeknaam(naam: str) -> str | None:
+    """Verwijder administratieve labels/codes, maar behoud de eigennaam."""
+    ascii_naam = unicodedata.normalize("NFKD", naam).encode(
+        "ascii", "ignore",
+    ).decode("ascii")
+    tokens = re.findall(r"[A-Za-z0-9]+", ascii_naam)
+    bruikbaar = [
+        token for token in tokens
+        if (
+            token.lower() not in _ADMINISTRATIEVE_NAAMDELEN
+            and not token.isdigit()
+            and len(token) > 1
+        )
+    ]
+    vereenvoudigd = " ".join(bruikbaar).strip()
+    if not vereenvoudigd or vereenvoudigd.lower() == ascii_naam.strip().lower():
+        return None
+    return vereenvoudigd
 
 
 def plan_queries(context: QueryContext) -> list[PlannedQuery]:
@@ -47,6 +74,13 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
         f'"{naam}"{gemeente} medewerkers personeel werknemers team',
         "officiële website of expliciete organisatiepagina vinden",
     ))
+    zoekalias = vereenvoudigde_zoeknaam(naam)
+    if zoekalias:
+        queries.append(PlannedQuery(
+            "website",
+            f'"{zoekalias}"{gemeente} medewerkers personeel werknemers team',
+            "openbare bronnen vinden onder de naam zonder administratieve code",
+        ))
 
     if context.gevraagd_jaar:
         jaar = context.gevraagd_jaar

@@ -3,7 +3,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.research.query_planner import QueryContext, plan_queries
+from app.research.query_planner import (
+    QueryContext,
+    plan_queries,
+    vereenvoudigde_zoeknaam,
+)
 from app.research.search import combineer_zoekresultaten
 from app.research.service import _dedupliceer_kandidaten
 from app.research.types import SearchResult
@@ -32,6 +36,27 @@ def test_queryplanner_dekt_website_documenten_en_recente_media():
     )
     assert site_document_index < open_document_index
     assert len({q.query for q in queries}) == len(queries)
+
+
+def test_administratieve_subwoning_krijgt_zoekalias_op_eigennaam():
+    assert vereenvoudigde_zoeknaam("Groepswoning Piushof B 2") == "Piushof"
+
+    queries = plan_queries(QueryContext(
+        naam="Groepswoning Piushof B 2",
+        gemeente="Venlo",
+        gevraagd_jaar=2025,
+    ))
+
+    assert any(
+        query.pad == "website"
+        and '"Piushof"' in query.query
+        and query.doel.startswith("openbare bronnen")
+        for query in queries
+    )
+
+
+def test_normale_bedrijfsnaam_wordt_niet_onnodig_vereenvoudigd():
+    assert vereenvoudigde_zoeknaam("Mondriaan") is None
 
 
 def test_canonicaliseer_url_verwijdert_tracking_fragment_en_www():
