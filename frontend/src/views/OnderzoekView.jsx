@@ -4,6 +4,7 @@ import {Alert} from "../components/Alert.jsx";
 import {BatchesView} from "./BatchesView.jsx";
 import {OrganisatieLijst} from "../components/onderzoek/OrganisatieLijst.jsx";
 import {KandidatenPaneel} from "../components/onderzoek/KandidatenPaneel.jsx";
+import {BewijsPaneel} from "../components/onderzoek/BewijsPaneel.jsx";
 
 export function OnderzoekView({api}) {
   const [batchId, setBatchId] = useState(null);
@@ -90,10 +91,14 @@ export function OnderzoekView({api}) {
         </section>
 
         <section className="hidden min-h-0 overflow-hidden bg-panel xl:block">
-          <div className="px-5 py-16 text-center text-sm text-slate-500">
-            Bewijs verschijnt hier.
-          </div>
+          <BewijsPaneel candidate={geselecteerdeBron} />
         </section>
+
+        {geselecteerdeBron ? (
+          <section className="min-h-[24rem] border-t border-line bg-panel xl:hidden">
+            <BewijsPaneel candidate={geselecteerdeBron} />
+          </section>
+        ) : null}
       </div>
     </div>
   );
