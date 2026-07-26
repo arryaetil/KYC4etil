@@ -53,6 +53,11 @@ def test_administratieve_subwoning_krijgt_zoekalias_op_eigennaam():
         and query.doel.startswith("openbare bronnen")
         for query in queries
     )
+    assert any(
+        query.query.startswith("Piushof ")
+        and query.doel.startswith("spellingtolerante")
+        for query in queries
+    )
 
 
 def test_normale_bedrijfsnaam_wordt_niet_onnodig_vereenvoudigd():

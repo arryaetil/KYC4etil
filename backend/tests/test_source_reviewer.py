@@ -381,3 +381,29 @@ async def test_vacaturepagina_zonder_wp_bewijs_wordt_afgewezen():
     assert reviewed.is_afgewezen is True
     assert "vacaturepagina_zonder_wp_bewijs" in reviewed.afwijsredenen
     reviewer._llm_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_locatienaam_alleen_in_sitefooter_maakt_nieuws_niet_exact():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    document = SourceDocument(
+        naam="Rooyhof",
+        company_website_url=(
+            "https://zorggroep.example/locaties/revalidatiecentrum-rooyhof"
+        ),
+        url="https://zorggroep.example/nieuws/samen-werken-aan-betere-zorg",
+        titel="Samen werken aan betere zorg",
+        tekst="Algemeen nieuws. Bekijk ook onze locaties: Rooyhof.",
+        brontype="officiele_website",
+        documenttype="nieuwsartikel",
+    )
+
+    reviewed = await reviewer.review(_context("Rooyhof"), document)
+
+    assert reviewed.is_afgewezen is True
+    assert (
+        "zelfde_domein_maar_geen_relevante_doelorganisatie"
+        in reviewed.afwijsredenen
+    )
+    reviewer._llm_review.assert_not_awaited()

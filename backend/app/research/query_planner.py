@@ -76,11 +76,18 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
     ))
     zoekalias = vereenvoudigde_zoeknaam(naam)
     if zoekalias:
-        queries.append(PlannedQuery(
-            "website",
-            f'"{zoekalias}"{gemeente} medewerkers personeel werknemers team',
-            "openbare bronnen vinden onder de naam zonder administratieve code",
-        ))
+        queries.extend([
+            PlannedQuery(
+                "website",
+                f'"{zoekalias}"{gemeente} medewerkers personeel werknemers team',
+                "openbare bronnen vinden onder de naam zonder administratieve code",
+            ),
+            PlannedQuery(
+                "website",
+                f"{zoekalias}{gemeente} medewerkers personeel werknemers team",
+                "spellingtolerante zoekroute voor de vereenvoudigde naam",
+            ),
+        ])
 
     if context.gevraagd_jaar:
         jaar = context.gevraagd_jaar

@@ -105,7 +105,6 @@ def _noemt_doelorganisatie(document: SourceDocument) -> bool:
         document.url,
         document.titel,
         document.bewijsfragment or "",
-        document.tekst[:10000],
     ]))
     return bool(zoektermen) and any(
         re.search(rf"\b{re.escape(token)}\b", context)
