@@ -3,12 +3,14 @@ import {ChevronLeft} from "lucide-react";
 import {Alert} from "../components/Alert.jsx";
 import {BatchesView} from "./BatchesView.jsx";
 import {OrganisatieLijst} from "../components/onderzoek/OrganisatieLijst.jsx";
+import {KandidatenPaneel} from "../components/onderzoek/KandidatenPaneel.jsx";
 
 export function OnderzoekView({api}) {
   const [batchId, setBatchId] = useState(null);
   const [batch, setBatch] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [geselecteerdId, setGeselecteerdId] = useState(null);
+  const [geselecteerdeBron, setGeselecteerdeBron] = useState(null);
   const [error, setError] = useState("");
 
   async function load(id) {
@@ -24,6 +26,7 @@ export function OnderzoekView({api}) {
   useEffect(() => {
     if (!batchId) return;
     setGeselecteerdId(null);
+    setGeselecteerdeBron(null);
     load(batchId).catch((err) => setError(err.message));
   }, [batchId]);
 
@@ -62,15 +65,23 @@ export function OnderzoekView({api}) {
           <OrganisatieLijst
             companies={companies}
             geselecteerdId={geselecteerdId}
-            onSelect={setGeselecteerdId}
+            onSelect={(id) => {
+              setGeselecteerdId(id);
+              setGeselecteerdeBron(null);
+            }}
           />
         </aside>
 
         <section className="min-h-0 overflow-y-auto border-line xl:border-r">
           {geselecteerd ? (
-            <div className="px-5 py-5 text-sm text-slate-500">
-              Kandidaten voor {geselecteerd.naam} volgen in de volgende stap.
-            </div>
+            <KandidatenPaneel
+              key={geselecteerd.company_id}
+              api={api}
+              company={geselecteerd}
+              batchJaar={batch?.jaar}
+              geselecteerdeBronId={geselecteerdeBron?.id}
+              onSelecteerBron={setGeselecteerdeBron}
+            />
           ) : (
             <div className="px-5 py-16 text-center text-sm text-slate-500">
               Kies een organisatie om de gevonden bronnen te beoordelen.
