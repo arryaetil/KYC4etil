@@ -1378,7 +1378,9 @@ class LiveJaarverslagAgent:
             return None
         data = await _llm_extract(naam, None, "\n\n".join(tekst for _, tekst in relevant))
         if not data or not data.get("wp_gevonden"):
-            return None
+            data = _deterministische_wp_uit_pdf(relevant)
+            if data is None:
+                return None
         pct = data.get("pct_op_locatie")
         return AgentFinding(
             wp_gevonden=data["wp_gevonden"], context=data.get("context"),
@@ -1394,6 +1396,53 @@ class LiveJaarverslagAgent:
             bron_pagina=_vind_paginanummer(data.get("context"), relevant),
             raw=data,
         )
+
+
+def _deterministische_wp_uit_pdf(
+    pagina_teksten: list[tuple[int, str]],
+) -> dict | None:
+    """Vang expliciete headcountzinnen op als de LLM ze incidenteel mist."""
+    patronen = (
+        re.compile(
+            r"(?i)(?P<context>"
+            r"(?:telt|heeft)\s+(?:bijna|ruim|circa|ongeveer)?\s*"
+            r"(?P<aantal>\d{1,3}(?:[.\s]\d{3})+|\d{2,6})\s+medewerkers"
+            r"[^.]{0,100})"
+        ),
+        re.compile(
+            r"(?i)(?P<context>"
+            r"biedt\s+[^.]{0,120}\s+aan\s+"
+            r"(?:bijna|ruim|circa|ongeveer)?\s*"
+            r"(?P<aantal>\d{1,3}(?:[.\s]\d{3})+|\d{2,6})\s+medewerkers"
+            r"[^.]{0,100})"
+        ),
+        re.compile(
+            r"(?i)(?P<context>"
+            r"(?:bijna|ruim|circa|ongeveer)?\s*"
+            r"(?P<aantal>\d{1,3}(?:[.\s]\d{3})+|\d{2,6})\s+medewerkers"
+            r"\s+(?:in dienst|werkzaam|actief)[^.]{0,100})"
+        ),
+    )
+    for paginanummer, tekst in pagina_teksten:
+        compacte_tekst = " ".join(tekst.split())
+        for patroon in patronen:
+            match = patroon.search(compacte_tekst)
+            if match:
+                aantal = int(
+                    match.group("aantal").replace(".", "").replace(" ", "")
+                )
+                return {
+                    "wp_gevonden": aantal,
+                    "context": match.group("context").strip(),
+                    "zekerheid": "middel",
+                    "reden": "expliciete headcountzin in jaarverslag",
+                    "is_limburg_specifiek": None,
+                    "is_fte": False,
+                    "peilmoment": None,
+                    "bron_pagina": paginanummer,
+                    "extractiemethode": "deterministische_fallback",
+                }
+    return None
 
 
 def _vind_paginanummer(context: str | None, pagina_teksten: list[tuple[int, str]]) -> int | None:

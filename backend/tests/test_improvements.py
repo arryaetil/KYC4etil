@@ -271,6 +271,38 @@ async def test_jaarverslagzoeker_negeert_andere_pdf_op_officieel_domein(
     assert result is None
 
 
+def test_deterministische_pdf_fallback_vindt_explicitiete_headcount():
+    from app.providers import live
+
+    result = live._deterministische_wp_uit_pdf([
+        (1, "Voorwoord"),
+        (
+            6,
+            "Door de unieke samenstelling biedt Zuyderland aan bijna "
+            "11.000 medewerkers de baan van hun leven.",
+        ),
+    ])
+
+    assert result is not None
+    assert result["wp_gevonden"] == 11000
+    assert result["bron_pagina"] == 6
+    assert result["extractiemethode"] == "deterministische_fallback"
+
+
+def test_deterministische_pdf_fallback_negeert_deelnemersaantal():
+    from app.providers import live
+
+    result = live._deterministische_wp_uit_pdf([
+        (
+            32,
+            "Het medewerkersonderzoek had bijna 4.900 deelnemers en "
+            "leverde waardevolle inzichten op.",
+        ),
+    ])
+
+    assert result is None
+
+
 @pytest.mark.asyncio
 async def test_live_jaarverslag_agent_handelt_pdf_fout_af():
     """Als run_with_pdf faalt en de web search-fallback (Fase C) niets oplevert,
