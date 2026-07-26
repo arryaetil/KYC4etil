@@ -172,8 +172,14 @@ async def start_batch(batch_id: str, background_tasks: BackgroundTasks,
         return {"batch_id": batch.id, "status": batch.status, "verwerkt": batch.verwerkt,
                 "totaal": batch.totaal}
 
+    afgerond = (
+        db.query(func.count(func.distinct(ResearchRun.company_id)))
+        .filter_by(batch_id=batch.id, status="completed")
+        .scalar()
+        or 0
+    )
     batch.status = "running"
-    batch.verwerkt = 0
+    batch.verwerkt = afgerond
     batch.completed_at = None
     db.commit()
     background_tasks.add_task(run_research_batch_background, batch.id)

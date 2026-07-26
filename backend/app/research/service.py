@@ -297,13 +297,32 @@ async def run_research_batch(batch_id: str) -> None:
             batch = db.get(Batch, batch_id)
             if batch is None:
                 return
+            stale_runs = (
+                db.query(ResearchRun)
+                .filter_by(batch_id=batch.id, status="running")
+                .all()
+            )
+            for stale_run in stale_runs:
+                stale_run.status = "error"
+                stale_run.resultaat_status = "error"
+                stale_run.fout = "onderbroken proces; opnieuw ingepland"
+                stale_run.completed_at = _now()
+            afgeronde_company_ids = {
+                company_id
+                for (company_id,) in (
+                    db.query(ResearchRun.company_id)
+                    .filter_by(batch_id=batch.id, status="completed")
+                    .distinct()
+                )
+            }
             company_ids = [
                 item.id
                 for item in db.query(Company).filter_by(batch_id=batch.id).all()
+                if item.id not in afgeronde_company_ids
             ]
             gevraagd_jaar = batch.jaar - 1
             batch.status = "running"
-            batch.verwerkt = 0
+            batch.verwerkt = len(afgeronde_company_ids)
             batch.completed_at = None
             db.commit()
 
