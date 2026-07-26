@@ -9,6 +9,11 @@ _TRACKING_PARAMETERS = {
 
 def canonicaliseer_url(url: str) -> str:
     parts = urlsplit(url.strip())
+    scheme = (
+        "https"
+        if parts.scheme.lower() in {"http", "https"}
+        else parts.scheme.lower()
+    )
     query = urlencode([
         (key, value)
         for key, value in parse_qsl(parts.query, keep_blank_values=True)
@@ -17,7 +22,7 @@ def canonicaliseer_url(url: str) -> str:
     ])
     path = parts.path.rstrip("/") or "/"
     return urlunsplit((
-        parts.scheme.lower(),
+        scheme,
         parts.netloc.lower().removeprefix("www."),
         path,
         query,

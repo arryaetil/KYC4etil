@@ -70,6 +70,14 @@ def test_canonicaliseer_url_verwijdert_tracking_fragment_en_www():
     ) == "https://example.nl/team?id=12"
 
 
+def test_canonicaliseer_url_dedupliceert_http_en_https_als_dezelfde_webbron():
+    assert canonicaliseer_url(
+        "http://www.dezorggroep.nl/"
+    ) == canonicaliseer_url(
+        "https://dezorggroep.nl"
+    )
+
+
 def test_parallelle_paden_worden_voor_opslag_canoniek_gededupliceerd():
     specialist = SimpleNamespace(document=SimpleNamespace(
         url="https://www.mondriaan.eu/jaarverslag-2024.pdf",
