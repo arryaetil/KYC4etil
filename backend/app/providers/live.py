@@ -8,7 +8,7 @@ import json
 import re
 import unicodedata
 from typing import Any, TypedDict
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 from langchain_core.output_parsers import JsonOutputParser
@@ -649,7 +649,7 @@ async def _eerste_pdf_uit_resultaten(
 ) -> str | None:
     uitgesloten = uitgesloten or set()
     for result in results:
-        url = result["url"]
+        url = _unwrap_safelink(result["url"])
         if url in uitgesloten:
             continue
         context = f"{result.get('title', '')} {url}"
@@ -665,6 +665,14 @@ async def _eerste_pdf_uit_resultaten(
         ):
             return pdf_from_page
     return None
+
+
+def _unwrap_safelink(url: str) -> str:
+    parsed = urlparse(url)
+    if "safelinks.protection.outlook.com" not in parsed.netloc.lower():
+        return url
+    target = parse_qs(parsed.query).get("url")
+    return target[0] if target else url
 
 
 def _lijkt_jaarverslag(tekst: str, zoekjaar: int) -> bool:

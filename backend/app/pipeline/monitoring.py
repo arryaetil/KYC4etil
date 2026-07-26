@@ -256,7 +256,8 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     website_url = (company.enrichment.website_url if company.enrichment else None) or company.website_url
     if not website_url and lookup is not None:
         try:
-            place = await lookup.lookup(company.naam, company.gemeente)
+            locatiehint = company.gemeente or company.adres
+            place = await lookup.lookup(company.naam, locatiehint)
             website_url = place.website if place else None
         except Exception:
             website_url = None

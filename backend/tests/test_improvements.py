@@ -307,6 +307,18 @@ async def test_strikte_monitoring_accepteert_recent_pdf_na_inhoudscontrole(
     ) is True
 
 
+def test_safelink_wordt_teruggebracht_naar_echte_bron_url():
+    from app.providers import live
+
+    result = live._unwrap_safelink(
+        "https://eur05.safelinks.protection.outlook.com/"
+        "?url=https%3A%2F%2Fexample.test%2FJaarverslag%25202025.pdf"
+        "&data=tracking",
+    )
+
+    assert result == "https://example.test/Jaarverslag%202025.pdf"
+
+
 def test_deterministische_pdf_fallback_vindt_explicitiete_headcount():
     from app.providers import live
 

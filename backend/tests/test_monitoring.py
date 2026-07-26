@@ -345,6 +345,32 @@ async def test_monitoring_ziet_trackingvariant_niet_als_nieuwe_bron(
 
 
 @pytest.mark.asyncio
+async def test_monitoring_gebruikt_adres_als_gemeente_ontbreekt(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Generieke Zorggroep")
+    company.gemeente = None
+    company.adres = "Markt 1, 5911 HD Venlo"
+    db_session.commit()
+    lookup = MagicMock()
+    lookup.lookup = AsyncMock(return_value=None)
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (lookup, None, agent, None),
+    )
+
+    await check_company_jaarverslag(db_session, company, 2026)
+
+    lookup.lookup.assert_awaited_once_with(
+        "Generieke Zorggroep",
+        "Markt 1, 5911 HD Venlo",
+    )
+
+
+@pytest.mark.asyncio
 async def test_monitoring_vervangt_recent_verslag_niet_door_ouder(
     db_session, monkeypatch,
 ):
