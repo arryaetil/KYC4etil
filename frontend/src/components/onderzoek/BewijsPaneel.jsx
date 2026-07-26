@@ -15,6 +15,24 @@ export function BewijsPaneel({candidate}) {
 
   const bewijs = bewijsUrl(candidate);
 
+  if (!bewijs.url) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="border-b border-line px-4 py-3">
+          <p className="text-xs text-slate-500">{brontypeLabel(candidate.brontype)}</p>
+          <p className="mt-0.5 truncate text-sm font-medium text-ink">
+            {candidate.titel || "Onbekende bron"}
+          </p>
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+          <p className="max-w-xs text-center text-sm text-slate-500">
+            Voor deze bron is geen URL vastgelegd, dus er is niets om te openen.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-line px-4 py-3">

@@ -93,13 +93,13 @@ export function OnderzoekView({api}) {
         <section className="hidden min-h-0 overflow-hidden bg-panel xl:block">
           <BewijsPaneel candidate={geselecteerdeBron} />
         </section>
-
-        {geselecteerdeBron ? (
-          <section className="min-h-[24rem] border-t border-line bg-panel xl:hidden">
-            <BewijsPaneel candidate={geselecteerdeBron} />
-          </section>
-        ) : null}
       </div>
+
+      {geselecteerdeBron ? (
+        <section className="h-96 shrink-0 overflow-hidden border-t border-line bg-panel xl:hidden">
+          <BewijsPaneel candidate={geselecteerdeBron} />
+        </section>
+      ) : null}
     </div>
   );
 }
