@@ -666,7 +666,10 @@ def _lijkt_jaarverslag(tekst: str, zoekjaar: int) -> bool:
         "annual-report",
         "integrated report",
     )
-    jaren = {int(match) for match in re.findall(r"\b20\d{2}\b", tekst)}
+    jaren = {
+        int(match)
+        for match in re.findall(r"(?<!\d)(20\d{2})(?!\d)", tekst)
+    }
     if jaren and zoekjaar not in jaren:
         return False
     return any(marker in lowered for marker in markers)

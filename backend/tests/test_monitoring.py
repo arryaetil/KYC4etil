@@ -54,6 +54,12 @@ def test_jaarverslag_monitoring_rij_aanmaken_en_opvragen():
         db.close()
 
 
+def test_documentjaar_neemt_verslagjaar_en_niet_publicatiedatum():
+    assert monitoring_module._documentjaar(
+        "https://example.test/20250604_U2025_Jaarverslag_2024.pdf",
+    ) == 2024
+
+
 def test_check_company_jaarverslag_nieuw_gevonden():
     db = SessionLocal()
     try:
@@ -336,9 +342,29 @@ async def test_monitoring_ruimt_ongeldige_legacy_baseline_op(
     db_session, monkeypatch,
 ):
     company = _maak_company(db_session, naam="Verkeerde Legacybron")
+    afgewezen_url = "https://ander-bedrijf.test/jaarverslag-2023.pdf"
     db_session.add(JaarverslagMonitoring(
         company_id=company.id,
-        laatste_bron_url="https://ander-bedrijf.test/jaarverslag-2023.pdf",
+        laatste_bron_url=afgewezen_url,
+    ))
+    agent_result = AgentResult(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        agent_type="jaarverslag",
+        wp_gevonden=999,
+        bron_url=afgewezen_url,
+        bron_type="jaarverslag",
+    )
+    db_session.add(agent_result)
+    db_session.flush()
+    db_session.add(Candidate(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        wp_kandidaat=999,
+        gekozen_agent_result=agent_result.id,
+        confidence_score=0.9,
+        confidence_label="hoog",
+        status="pending",
     ))
     db_session.commit()
 
@@ -361,6 +387,13 @@ async def test_monitoring_ruimt_ongeldige_legacy_baseline_op(
         company_id=company.id,
     ).one()
     assert status.laatste_bron_url is None
+    candidate = db_session.query(Candidate).filter_by(
+        company_id=company.id,
+    ).one()
+    assert candidate.wp_kandidaat is None
+    assert candidate.gekozen_agent_result is None
+    assert candidate.confidence_label is None
+    assert "ingetrokken" in candidate.reviewer_signaal.lower()
 
 
 @pytest.mark.asyncio

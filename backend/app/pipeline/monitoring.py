@@ -45,11 +45,7 @@ def _sla_moderne_bron_op(
         brontype="jaarverslag",
         documenttype="jaarverslag",
         gevraagd_jaar=gevraagd_jaar,
-        verslagjaar=(
-            gevraagd_jaar
-            if str(gevraagd_jaar) in finding.bron_url
-            else None
-        ),
+        verslagjaar=_documentjaar(finding.bron_url),
         informatie_peilmoment=finding.peilmoment,
         wp_gevonden=finding.wp_gevonden,
         eenheid=(
@@ -116,8 +112,45 @@ def _sla_moderne_bron_op(
 def _documentjaar(url: str | None) -> int | None:
     if not url:
         return None
-    jaren = [int(match) for match in re.findall(r"\b20\d{2}\b", unquote(url))]
-    return max(jaren) if jaren else None
+    jaren = [
+        int(match)
+        for match in re.findall(
+            r"(?<!\d)(20\d{2})(?!\d)",
+            unquote(url),
+        )
+    ]
+    # Bestandsnamen beginnen vaak met een publicatiedatum en eindigen met het
+    # verslagjaar, bv. 20250604_..._Jaarverslag_2024.pdf.
+    return jaren[-1] if jaren else None
+
+
+def _trek_candidate_van_afgewezen_bron_in(
+    db: Session,
+    company: Company,
+    afgewezen_url: str,
+) -> None:
+    candidate = company.candidate
+    if candidate is None or not candidate.gekozen_agent_result:
+        return
+    agent_result = db.get(AgentResult, candidate.gekozen_agent_result)
+    if (
+        agent_result is None
+        or agent_result.agent_type != "jaarverslag"
+        or canonicaliseer_url(agent_result.bron_url or "")
+        != canonicaliseer_url(afgewezen_url)
+    ):
+        return
+    candidate.wp_kandidaat = None
+    candidate.gekozen_agent_result = None
+    candidate.confidence_score = None
+    candidate.confidence_label = None
+    candidate.score_breakdown = None
+    candidate.reconciliatie_reden = "jaarverslagbron afgewezen bij hervalidatie"
+    candidate.status = "pending"
+    candidate.reviewer_signaal = (
+        "Eerder WP-getal ingetrokken: de bijbehorende jaarverslagbron voldoet "
+        "niet aan de huidige identiteits-, documenttype- of recentheidscontrole."
+    )
 
 
 async def check_company_jaarverslag(db: Session, company: Company, jaar: int) -> bool:
@@ -166,7 +199,13 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
                 strict_identity=True,
             )
             if not bron_is_nog_geldig:
+                afgewezen_url = status.laatste_bron_url
                 status.laatste_bron_url = None
+                _trek_candidate_van_afgewezen_bron_in(
+                    db,
+                    company,
+                    afgewezen_url,
+                )
                 _log(
                     db,
                     company.batch_id,
