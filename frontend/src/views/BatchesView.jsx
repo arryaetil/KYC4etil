@@ -67,7 +67,8 @@ export function BatchesView({api, onOpenBatch}) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-8">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto w-full max-w-5xl px-6 py-8">
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-ink">Onderzoek</h1>
@@ -160,6 +161,7 @@ export function BatchesView({api, onOpenBatch}) {
           </li>
         ) : null}
       </ul>
+      </div>
     </div>
   );
 }

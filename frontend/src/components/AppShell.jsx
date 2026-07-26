@@ -8,7 +8,7 @@ const MODULES = [
 
 export function AppShell({user, module, onModule, onLogout, children}) {
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <div className="flex h-screen flex-col overflow-hidden bg-white">
       <header className="border-b border-line">
         <div className="flex items-center justify-between gap-6 px-6 py-3">
           <div className="flex items-center gap-8">
