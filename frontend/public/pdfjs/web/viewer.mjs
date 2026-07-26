@@ -14455,8 +14455,18 @@ initCom(PDFViewerApplication);
       if (HOSTED_VIEWER_ORIGINS.includes(viewerOrigin)) {
         return;
       }
+      // ETIL-AANPASSING (zie frontend/src/lib/pdfViewerLink.js)
+      // Upstream weigert hier elk document van een ander domein. Dat is bedoeld
+      // voor een publiek gehoste viewer, waar die parameter door een willekeurige
+      // bezoeker gezet kan worden. Hier ligt dat anders: de viewer zit achter
+      // authenticatie en krijgt uitsluitend een adres van onze eigen
+      // /research/bron-pdf-proxy, die op zijn beurt alleen bronnen doorgeeft die
+      // al als kandidaat in de database staan. Die allowlist is de werkelijke
+      // grens; deze origin-vergelijking zou hier alleen de proxy blokkeren.
+      // Let op: dit is een aanpassing in een meegeleverd bestand van derden en
+      // moet opnieuw worden aangebracht bij het bijwerken van pdf.js.
       const fileOrigin = new URL(file, window.location.href).origin;
-      if (fileOrigin !== viewerOrigin) {
+      if (fileOrigin !== viewerOrigin && !/^https?:$/.test(new URL(file, window.location.href).protocol)) {
         throw new Error("file origin does not match viewer's");
       }
     } catch (ex) {

@@ -13,7 +13,9 @@ export function BewijsPaneel({candidate}) {
     );
   }
 
-  const bewijs = bewijsUrl(candidate);
+  // De ingesloten viewer haalt het document via de backend op en moet daarvoor
+  // het token meesturen; een iframe kan zelf geen Authorization-header zetten.
+  const bewijs = bewijsUrl(candidate, localStorage.getItem("token"));
 
   if (!bewijs.url) {
     return (

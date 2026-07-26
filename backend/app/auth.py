@@ -16,6 +16,11 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 12 * 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# Variant zonder automatische 401: nodig voor endpoints die het token ook
+# uit de query mogen halen (zie get_current_user_of_querytoken).
+oauth2_scheme_optioneel = OAuth2PasswordBearer(
+    tokenUrl="/auth/login", auto_error=False,
+)
 
 
 def hash_password(password: str) -> str:
@@ -68,3 +73,19 @@ def get_current_user(
     if user is None:
         raise credentials_error
     return user
+
+
+def get_current_user_of_querytoken(
+    db: Annotated[Session, Depends(get_db)],
+    header_token: Annotated[str | None, Depends(oauth2_scheme_optioneel)] = None,
+    token: str | None = None,
+) -> User:
+    """Zelfde controle als get_current_user, maar accepteert het token ook als
+    queryparameter.
+
+    De meegeleverde PDF-viewer haalt een document op met een gewone fetch en
+    kan daar geen Authorization-header aan meegeven; het token staat immers in
+    localStorage en niet in een cookie. Zonder deze variant zou een
+    ingesloten document altijd op een 401 stuklopen.
+    """
+    return get_current_user(header_token or token or "", db)

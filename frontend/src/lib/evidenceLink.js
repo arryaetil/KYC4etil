@@ -43,7 +43,7 @@ function codeerFragment(tekst) {
  * daarom een tekstfragment-URL gebouwd die in een nieuw tabblad geopend moet
  * worden, waar de browser zelf naar het citaat scrollt en het markeert.
  */
-export function bewijsUrl(candidate) {
+export function bewijsUrl(candidate, token) {
   const bron = candidate?.url;
   if (!bron) return {soort: null, url: null, kanInbedden: false};
 
@@ -54,6 +54,7 @@ export function bewijsUrl(candidate) {
         bronUrl: bron,
         pagina: candidate.bron_pagina,
         citaat: candidate.bewijsfragment,
+        token,
       }),
       kanInbedden: true,
     };

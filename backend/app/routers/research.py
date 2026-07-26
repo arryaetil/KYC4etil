@@ -1,14 +1,19 @@
 """API voor autonome bronvinding en menselijke bronreview."""
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..auth import get_current_user, get_current_user_of_querytoken
 from ..database import get_db
-from ..models import BronKandidaat, Company, ResearchRun, User
+from ..models import (
+    BronKandidaat, Company, JaarverslagMonitoring, ResearchRun, User,
+)
 from ..research.service import maak_research_run, run_research_run
+from ..providers.live import USER_AGENT
 from ..research.urls import canonicaliseer_url
 
 router = APIRouter(
@@ -16,6 +21,10 @@ router = APIRouter(
     tags=["research"],
     dependencies=[Depends(get_current_user)],
 )
+
+# De PDF-viewer kan geen Authorization-header meesturen; deze router laat
+# daarom het token ook als queryparameter toe (zie bron_pdf).
+bron_router = APIRouter(prefix="/research", tags=["research"])
 
 
 def _now() -> datetime:
@@ -213,3 +222,83 @@ def add_manual_source(
     db.add(candidate)
     db.commit()
     return {"candidate_id": candidate.id, "run_id": run.id}
+
+
+# Maximale omvang van een doorgegeven brondocument. Jaarverslagen zijn zelden
+# groter dan een paar tientallen MB; deze grens voorkomt dat één bron het
+# geheugen van de webserver opeet.
+MAX_BRON_BYTES = 60 * 1024 * 1024
+
+
+def _is_bekende_bron(db: Session, url: str) -> bool:
+    """Alleen URL's die de agent zelf heeft gevonden mogen worden opgehaald.
+
+    Zonder deze controle zou dit endpoint een server-side request forgery
+    opleveren: een ingelogde gebruiker zou de backend elk willekeurig adres
+    kunnen laten benaderen, inclusief interne diensten die van buitenaf niet
+    bereikbaar zijn. De kandidaten- en monitoringtabellen fungeren daarom als
+    allowlist; die URL's komen aantoonbaar van het open web.
+    """
+    if db.query(BronKandidaat).filter_by(url=url).first() is not None:
+        return True
+    return (
+        db.query(JaarverslagMonitoring)
+        .filter_by(laatste_bron_url=url)
+        .first()
+        is not None
+    )
+
+
+@bron_router.get("/bron-pdf")
+async def bron_pdf(
+    url: str,
+    db: Session = Depends(get_db),
+    _gebruiker=Depends(get_current_user_of_querytoken),
+):
+    """Geeft een brondocument door vanaf hetzelfde domein als de applicatie.
+
+    De ingebouwde PDF-viewer kan een document van een ander domein niet tonen:
+    de browser blokkeert het ophalen zodra de bronserver geen CORS-headers
+    stuurt, en dat doet lang niet elke organisatie. Door het document hier op
+    te halen en door te geven komt het voor de browser van onze eigen oorsprong
+    en werkt zowel de weergave als het springen naar de juiste pagina.
+    """
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "alleen http(s)-bronnen worden ondersteund")
+    if not _is_bekende_bron(db, url):
+        raise HTTPException(404, "onbekende bron")
+
+    client = httpx.AsyncClient(timeout=60, follow_redirects=True)
+    try:
+        request = client.build_request(
+            "GET", url, headers={"User-Agent": USER_AGENT},
+        )
+        response = await client.send(request, stream=True)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        raise HTTPException(502, f"bron niet op te halen: {exc}") from exc
+
+    lengte = response.headers.get("content-length")
+    if lengte and int(lengte) > MAX_BRON_BYTES:
+        await response.aclose()
+        await client.aclose()
+        raise HTTPException(413, "brondocument is te groot")
+
+    async def doorgeven():
+        gelezen = 0
+        try:
+            async for blok in response.aiter_bytes():
+                gelezen += len(blok)
+                if gelezen > MAX_BRON_BYTES:
+                    break
+                yield blok
+        finally:
+            await response.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        doorgeven(),
+        media_type=response.headers.get("content-type", "application/pdf"),
+        headers={"Content-Disposition": "inline"},
+    )

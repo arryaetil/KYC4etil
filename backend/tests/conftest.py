@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlite3 import Connection as SQLite3Connection
 
-from app.auth import get_current_user
+from app.auth import get_current_user, get_current_user_of_querytoken
 from app.database import get_db, Base
 from app.main import app as fastapi_app
 from app.models import User
@@ -56,6 +56,7 @@ def reset_db():
 def client():
     fastapi_app.dependency_overrides[get_db] = _override_db
     fastapi_app.dependency_overrides[get_current_user] = _override_auth
+    fastapi_app.dependency_overrides[get_current_user_of_querytoken] = _override_auth
     with TestClient(fastapi_app) as c:
         yield c
     fastapi_app.dependency_overrides.clear()

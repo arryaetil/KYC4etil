@@ -26,6 +26,7 @@ app.include_router(chat_admin.router)
 app.include_router(jaarverslagen.router)
 app.include_router(monitoring.router)
 app.include_router(research.router)
+app.include_router(research.bron_router)
 
 
 DEFAULT_TEMPLATE_CONFIG = {
