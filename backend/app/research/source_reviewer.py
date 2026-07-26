@@ -1,5 +1,7 @@
 """Intelligente, fail-closed beoordeling van bronkandidaten vóór ranking."""
 import json
+import re
+import unicodedata
 from dataclasses import replace
 from typing import Any
 from urllib.parse import urlsplit
@@ -69,10 +71,54 @@ _SOCIAL_DOMAINS = {
     "linkedin.com", "nl.linkedin.com", "be.linkedin.com",
     "facebook.com", "instagram.com", "x.com",
 }
+_GENERIEKE_NAAMWOORDEN = {
+    "bedrijf", "centrum", "groep", "kliniek", "locatie", "organisatie",
+    "stichting", "vestiging", "woonzorgcentrum", "zorg", "zorgcentrum",
+}
+_BRUIKBARE_GROEPSPAGINAS = {
+    "jaarrekening", "jaarverslag", "bestuursverslag", "pdf_document",
+}
 
 
 def _domain(url: str) -> str:
     return urlsplit(url).netloc.lower().removeprefix("www.")
+
+
+def _normaliseer(waarde: str) -> str:
+    return unicodedata.normalize("NFKD", waarde).encode(
+        "ascii", "ignore",
+    ).decode("ascii").lower()
+
+
+def _noemt_doelorganisatie(document: SourceDocument) -> bool:
+    tokens = re.findall(r"[a-z0-9]+", _normaliseer(document.naam))
+    onderscheidend = [
+        token for token in tokens
+        if len(token) >= 3 and token not in _GENERIEKE_NAAMWOORDEN
+    ]
+    zoektermen = onderscheidend or [token for token in tokens if len(token) >= 3]
+    context = _normaliseer(" ".join([
+        document.url,
+        document.titel,
+        document.bewijsfragment or "",
+        document.tekst[:10000],
+    ]))
+    return bool(zoektermen) and any(
+        re.search(rf"\b{re.escape(token)}\b", context)
+        for token in zoektermen
+    )
+
+
+def _bruikbare_groepscontext(document: SourceDocument) -> bool:
+    pad = _normaliseer(urlsplit(document.url).path)
+    return (
+        document.wp_gevonden is not None
+        or document.documenttype in _BRUIKBARE_GROEPSPAGINAS
+        or any(term in pad for term in (
+            "jaarverslag", "jaarrekening", "over-ons", "over_de_organisatie",
+            "over-de-organisatie",
+        ))
+    )
 
 
 class IntelligentSourceReviewer:
@@ -142,8 +188,32 @@ class IntelligentSourceReviewer:
                 canonicaliseer_url(document.url)
                 == canonicaliseer_url(document.company_website_url)
             )
+            noemt_doelorganisatie = _noemt_doelorganisatie(document)
+            if (
+                not zelfde_pagina
+                and not noemt_doelorganisatie
+                and not _bruikbare_groepscontext(document)
+            ):
+                validatie.identity_class = "mismatch"
+                validatie.is_afgewezen = True
+                validatie.afwijsredenen.append(
+                    "zelfde_domein_maar_geen_relevante_doelorganisatie"
+                )
+                validatie.validaties["intelligente_review"] = {
+                    "beslissing": "afwijzen",
+                    "identity_class": "mismatch",
+                    "scope_class": scope,
+                    "reden": (
+                        "De pagina staat op hetzelfde groepsdomein, maar noemt "
+                        "de gezochte organisatie niet en biedt geen bruikbare "
+                        "groeps- of personeelscontext."
+                    ),
+                }
+                return validatie
             identity = (
-                "exact_entity" if zelfde_pagina else "same_brand_or_group"
+                "exact_entity"
+                if zelfde_pagina or noemt_doelorganisatie
+                else "same_brand_or_group"
             )
             beslissing = (
                 "tonen_aan_reviewer"

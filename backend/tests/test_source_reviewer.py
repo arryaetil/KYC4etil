@@ -272,3 +272,88 @@ async def test_exacte_bekende_locatiepagina_blijft_exacte_entiteit():
     assert reviewed.identity_class == "exact_entity"
     assert reviewed.validaties["intelligente_review"]["beslissing"] == "context_only"
     reviewer._llm_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_andere_locatie_op_zelfde_groepsdomein_wordt_afgewezen():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    document = SourceDocument(
+        naam="Woonzorgcentrum Rozenhof",
+        company_website_url=(
+            "https://careyn.example/locaties/westland/careyn-rozenhof"
+        ),
+        url="https://careyn.example/locaties/wijkteam-breukelen-buiten",
+        titel="Wijkteam Breukelen Buiten",
+        tekst="Maak kennis met het wijkteam in Breukelen.",
+        brontype="officiele_website",
+        documenttype="teampagina",
+    )
+
+    reviewed = await reviewer.review(
+        _context("Woonzorgcentrum Rozenhof"),
+        document,
+    )
+
+    assert reviewed.is_afgewezen is True
+    assert reviewed.identity_class == "mismatch"
+    assert (
+        "zelfde_domein_maar_geen_relevante_doelorganisatie"
+        in reviewed.afwijsredenen
+    )
+    reviewer._llm_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_algemene_productpagina_op_groepsdomein_wordt_afgewezen():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    document = SourceDocument(
+        naam="Woonzorgcentrum Rozenhof",
+        company_website_url=(
+            "https://careyn.example/locaties/westland/careyn-rozenhof"
+        ),
+        url="https://careyn.example/ons-aanbod/volledig-pakket-thuis",
+        titel="Volledig pakket thuis",
+        tekst="Informatie over zorg aan huis.",
+        brontype="officiele_website",
+        documenttype="organisatiepagina",
+    )
+
+    reviewed = await reviewer.review(
+        _context("Woonzorgcentrum Rozenhof"),
+        document,
+    )
+
+    assert reviewed.is_afgewezen is True
+    reviewer._llm_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_relevant_locatienieuws_op_groepsdomein_blijft_context():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    document = SourceDocument(
+        naam="Woonzorgcentrum Rozenhof",
+        company_website_url=(
+            "https://careyn.example/locaties/westland/careyn-rozenhof"
+        ),
+        url="https://careyn.example/nieuws/nieuwbouw-rozenhof",
+        titel="Nieuwbouw Rozenhof weer een stap dichterbij",
+        tekst="De nieuwbouw van Rozenhof is gestart.",
+        brontype="officiele_website",
+        documenttype="nieuwsartikel",
+    )
+
+    reviewed = await reviewer.review(
+        _context("Woonzorgcentrum Rozenhof"),
+        document,
+    )
+
+    assert reviewed.is_afgewezen is False
+    assert reviewed.identity_class == "exact_entity"
+    assert (
+        reviewed.validaties["intelligente_review"]["beslissing"]
+        == "context_only"
+    )
+    reviewer._llm_review.assert_not_awaited()
