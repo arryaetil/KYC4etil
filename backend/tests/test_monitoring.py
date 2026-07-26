@@ -397,6 +397,108 @@ async def test_monitoring_ruimt_ongeldige_legacy_baseline_op(
 
 
 @pytest.mark.asyncio
+async def test_monitoring_herstelt_nieuwste_gevalideerde_moderne_bron(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Historie Bedrijf")
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id,
+        laatste_bron_url="https://historie.test/jaarverslag-2024.pdf",
+    ))
+    run = ResearchRun(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        doel="periodieke jaarverslagmonitoring",
+        gevraagd_jaar=2025,
+        status="completed",
+        resultaat_status="review_nodig",
+    )
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(BronKandidaat(
+        research_run_id=run.id,
+        company_id=company.id,
+        url="https://historie.test/jaarverslag-2025.pdf",
+        canonical_url="https://historie.test/jaarverslag-2025.pdf",
+        brontype="jaarverslag",
+        verslagjaar=2025,
+        status="voorgesteld",
+        rang=1,
+    ))
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=40,
+        context="40 medewerkers",
+        zekerheid="hoog",
+        reden="ouder",
+        bron_url="https://historie.test/jaarverslag-2024.pdf",
+        bron_type="jaarverslag",
+    )
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=finding)
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, agent, None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is False
+
+    status = db_session.query(JaarverslagMonitoring).filter_by(
+        company_id=company.id,
+    ).one()
+    assert status.laatste_bron_url.endswith("jaarverslag-2025.pdf")
+
+
+@pytest.mark.asyncio
+async def test_monitoring_ruimt_wees_wp_zonder_statusbron_op(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Wees WP")
+    bron_url = "https://verkeerd.test/jaarverslag-2023.pdf"
+    agent_result = AgentResult(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        agent_type="jaarverslag",
+        wp_gevonden=321,
+        bron_url=bron_url,
+        bron_type="jaarverslag",
+    )
+    db_session.add(agent_result)
+    db_session.flush()
+    db_session.add(Candidate(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        wp_kandidaat=321,
+        gekozen_agent_result=agent_result.id,
+        confidence_score=0.9,
+        confidence_label="hoog",
+        status="pending",
+    ))
+    db_session.commit()
+
+    class Agent:
+        async def run(self, *args, **kwargs):
+            return None
+
+        async def validate_source(self, *args, **kwargs):
+            return False
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+    candidate = db_session.query(Candidate).filter_by(
+        company_id=company.id,
+    ).one()
+    assert candidate.wp_kandidaat is None
+    assert candidate.gekozen_agent_result is None
+
+
+@pytest.mark.asyncio
 async def test_monitoring_begrenst_een_trage_organisatie(
     monkeypatch,
 ):

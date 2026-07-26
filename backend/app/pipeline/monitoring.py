@@ -153,6 +153,42 @@ def _trek_candidate_van_afgewezen_bron_in(
     )
 
 
+def _beste_moderne_jaarverslagbron(
+    db: Session,
+    company: Company,
+    jaar: int,
+) -> BronKandidaat | None:
+    return (
+        db.query(BronKandidaat)
+        .filter(
+            BronKandidaat.company_id == company.id,
+            BronKandidaat.brontype == "jaarverslag",
+            BronKandidaat.status != "afgewezen",
+            BronKandidaat.verslagjaar.isnot(None),
+            BronKandidaat.verslagjaar >= jaar - 3,
+            BronKandidaat.verslagjaar <= jaar - 1,
+        )
+        .order_by(
+            BronKandidaat.verslagjaar.desc(),
+            BronKandidaat.created_at.desc(),
+        )
+        .first()
+    )
+
+
+def _jaarverslagbron_van_candidate(
+    db: Session,
+    company: Company,
+) -> str | None:
+    candidate = company.candidate
+    if candidate is None or not candidate.gekozen_agent_result:
+        return None
+    agent_result = db.get(AgentResult, candidate.gekozen_agent_result)
+    if agent_result is None or agent_result.agent_type != "jaarverslag":
+        return None
+    return agent_result.bron_url
+
+
 async def check_company_jaarverslag(db: Session, company: Company, jaar: int) -> bool:
     """Controleert of er een nieuw jaarverslag is t.o.v. de laatst bekende bron.
     De laatst bekende bron_url wordt altijd bijgewerkt zodra de agent er één vindt,
@@ -168,6 +204,19 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     if status is None:
         status = JaarverslagMonitoring(company_id=company.id)
         db.add(status)
+
+    beste_moderne_bron = _beste_moderne_jaarverslagbron(
+        db,
+        company,
+        jaar,
+    )
+    if (
+        beste_moderne_bron is not None
+        and (
+            _documentjaar(status.laatste_bron_url) or 0
+        ) < (beste_moderne_bron.verslagjaar or 0)
+    ):
+        status.laatste_bron_url = beste_moderne_bron.url
 
     website_url = (company.enrichment.website_url if company.enrichment else None) or company.website_url
     if not website_url and lookup is not None:
@@ -190,16 +239,20 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
             "validate_source",
             None,
         )
-        if status.laatste_bron_url and validator is not None:
+        te_valideren_url = (
+            status.laatste_bron_url
+            or _jaarverslagbron_van_candidate(db, company)
+        )
+        if te_valideren_url and validator is not None:
             bron_is_nog_geldig = await jaarverslag_agent.validate_source(
                 company.naam,
                 jaar,
-                status.laatste_bron_url,
+                te_valideren_url,
                 website_url=website_url,
                 strict_identity=True,
             )
             if not bron_is_nog_geldig:
-                afgewezen_url = status.laatste_bron_url
+                afgewezen_url = te_valideren_url
                 status.laatste_bron_url = None
                 _trek_candidate_van_afgewezen_bron_in(
                     db,
@@ -217,6 +270,8 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
                 )
                 db.commit()
                 return True
+            if not status.laatste_bron_url:
+                status.laatste_bron_url = te_valideren_url
         _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "skipped", t0)
         db.commit()
         return False
