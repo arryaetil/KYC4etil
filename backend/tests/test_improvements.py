@@ -242,10 +242,33 @@ async def test_jaarverslagzoeker_slaat_aantoonbaar_verouderde_hit_over(
 
     result = await live._zoek_jaarverslag_pdf_voor_jaar(
         "Testbedrijf",
-        2026,
+        2025,
     )
 
     assert result == "https://example.test/jaarverslag-2025.pdf"
+
+
+@pytest.mark.asyncio
+async def test_jaarverslagzoeker_negeert_andere_pdf_op_officieel_domein(
+    monkeypatch,
+):
+    from app.providers import live
+
+    async def fake_web_search(query, max_results=8):
+        return [{
+            "title": "Privacy statement",
+            "url": "https://example.test/privacy-statement.pdf",
+        }]
+
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+
+    result = await live._zoek_jaarverslag_pdf_voor_jaar(
+        "Testbedrijf",
+        2025,
+        website_url="https://example.test",
+    )
+
+    assert result is None
 
 
 @pytest.mark.asyncio

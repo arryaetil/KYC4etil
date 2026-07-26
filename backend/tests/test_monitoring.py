@@ -297,6 +297,73 @@ async def test_monitoring_ziet_trackingvariant_niet_als_nieuwe_bron(
 
 
 @pytest.mark.asyncio
+async def test_monitoring_vervangt_recent_verslag_niet_door_ouder(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Recent Bedrijf")
+    recente_url = "https://recent.example/jaarverslag-2024.pdf"
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id,
+        laatste_bron_url=recente_url,
+    ))
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=10,
+        context="10 medewerkers",
+        zekerheid="hoog",
+        reden="ouder verslag",
+        bron_url="https://recent.example/jaarverslag-2022.pdf",
+        bron_type="jaarverslag",
+    )
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=finding)
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, agent, None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is False
+
+    status = db_session.query(JaarverslagMonitoring).filter_by(
+        company_id=company.id,
+    ).one()
+    assert status.laatste_bron_url == recente_url
+
+
+@pytest.mark.asyncio
+async def test_monitoring_ruimt_ongeldige_legacy_baseline_op(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Verkeerde Legacybron")
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id,
+        laatste_bron_url="https://ander-bedrijf.test/jaarverslag-2023.pdf",
+    ))
+    db_session.commit()
+
+    class Agent:
+        async def run(self, *args, **kwargs):
+            return None
+
+        async def validate_source(self, *args, **kwargs):
+            return False
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+
+    status = db_session.query(JaarverslagMonitoring).filter_by(
+        company_id=company.id,
+    ).one()
+    assert status.laatste_bron_url is None
+
+
+@pytest.mark.asyncio
 async def test_monitoring_begrenst_een_trage_organisatie(
     monkeypatch,
 ):

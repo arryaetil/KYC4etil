@@ -2,6 +2,7 @@
 en reconciliatie-/confidence-logica, maar draait buiten een handmatige batch-run om."""
 import asyncio
 import logging
+import re
 import time
 from pathlib import PurePosixPath
 from urllib.parse import unquote, urlsplit
@@ -112,6 +113,13 @@ def _sla_moderne_bron_op(
     ))
 
 
+def _documentjaar(url: str | None) -> int | None:
+    if not url:
+        return None
+    jaren = [int(match) for match in re.findall(r"\b20\d{2}\b", unquote(url))]
+    return max(jaren) if jaren else None
+
+
 async def check_company_jaarverslag(db: Session, company: Company, jaar: int) -> bool:
     """Controleert of er een nieuw jaarverslag is t.o.v. de laatst bekende bron.
     De laatst bekende bron_url wordt altijd bijgewerkt zodra de agent er één vindt,
@@ -144,7 +152,54 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     status.laatst_gecontroleerd_op = _now()
 
     if finding is None or not finding.bron_url:
+        validator = getattr(
+            type(jaarverslag_agent),
+            "validate_source",
+            None,
+        )
+        if status.laatste_bron_url and validator is not None:
+            bron_is_nog_geldig = await jaarverslag_agent.validate_source(
+                company.naam,
+                jaar,
+                status.laatste_bron_url,
+                website_url=website_url,
+                strict_identity=True,
+            )
+            if not bron_is_nog_geldig:
+                status.laatste_bron_url = None
+                _log(
+                    db,
+                    company.batch_id,
+                    company.id,
+                    "jaarverslag_monitoring",
+                    "ok",
+                    t0,
+                    error="legacy-baseline afgewezen door huidige validatie",
+                )
+                db.commit()
+                return True
         _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "skipped", t0)
+        db.commit()
+        return False
+
+    bestaand_jaar = _documentjaar(status.laatste_bron_url)
+    gevonden_jaar = _documentjaar(finding.bron_url)
+    if (
+        bestaand_jaar is not None
+        and gevonden_jaar is not None
+        and gevonden_jaar < bestaand_jaar
+    ):
+        _log(
+            db,
+            company.batch_id,
+            company.id,
+            "jaarverslag_monitoring",
+            "skipped",
+            t0,
+            error=(
+                f"ouder verslag genegeerd: {gevonden_jaar} < {bestaand_jaar}"
+            ),
+        )
         db.commit()
         return False
 

@@ -67,6 +67,14 @@ class JaarverslagAgent(Protocol):
         website_url: str | None = None,
         strict_identity: bool = False,
     ) -> AgentFinding | None: ...
+    async def validate_source(
+        self,
+        naam: str,
+        jaar: int,
+        bron_url: str,
+        website_url: str | None = None,
+        strict_identity: bool = False,
+    ) -> bool: ...
 
 
 class IdentityScopeClassifier(Protocol):

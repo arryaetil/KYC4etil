@@ -97,6 +97,17 @@ class MockJaarverslagAgent:
             pct_op_locatie=finding.get("pct_op_locatie"),
         )
 
+    async def validate_source(
+        self,
+        naam: str,
+        jaar: int,
+        bron_url: str,
+        website_url: str | None = None,
+        strict_identity: bool = False,
+    ) -> bool:
+        finding = self.data.get(naam, {}).get("jaarverslag")
+        return bool(finding and finding.get("url") == bron_url)
+
 
 class MockIdentityScopeClassifier:
     """Volledig heuristisch en deterministisch — geen API-calls, zodat

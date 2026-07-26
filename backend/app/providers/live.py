@@ -502,7 +502,7 @@ async def _zoek_jaarverslag_pdf(
     naam: str, jaar: int, website_url: str | None = None, uitgesloten: set[str] | None = None,
 ) -> str | None:
     """Zoek van recent naar ouder, met maximaal drie jaar context."""
-    for zoekjaar in (jaar, jaar - 1, jaar - 2):
+    for zoekjaar in (jaar - 1, jaar - 2, jaar - 3):
         result = await _zoek_jaarverslag_pdf_voor_jaar(
             naam, zoekjaar, website_url=website_url, uitgesloten=uitgesloten)
         if result:
@@ -560,13 +560,7 @@ async def _classificeer_jaarverslag_bron_identiteit(
     if not pdf_url:
         return IdentityClass.UNKNOWN
     try:
-        import fitz  # PyMuPDF
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True,
-                                     headers={"User-Agent": USER_AGENT}) as client:
-            r = await client.get(pdf_url)
-            r.raise_for_status()
-        doc = fitz.open(stream=r.content, filetype="pdf")
-        eerste_paginas = "\n".join(doc.load_page(i).get_text() for i in range(min(5, len(doc))))
+        eerste_paginas = await _eerste_pdf_paginas(pdf_url)
     except Exception:
         return IdentityClass.UNKNOWN
 
@@ -580,6 +574,23 @@ async def _classificeer_jaarverslag_bron_identiteit(
     if matches == 1:
         return IdentityClass.SAME_BRAND_OR_GROUP
     return IdentityClass.MISMATCH
+
+
+async def _eerste_pdf_paginas(pdf_url: str) -> str:
+    import fitz  # PyMuPDF
+
+    async with httpx.AsyncClient(
+        timeout=30,
+        follow_redirects=True,
+        headers={"User-Agent": USER_AGENT},
+    ) as client:
+        response = await client.get(pdf_url)
+        response.raise_for_status()
+    doc = fitz.open(stream=response.content, filetype="pdf")
+    return "\n".join(
+        doc.load_page(index).get_text()
+        for index in range(min(5, len(doc)))
+    )
 
 
 async def _valideer_jaarverslag_bron(naam: str, pdf_url: str | None) -> bool:
@@ -627,21 +638,38 @@ async def _eerste_pdf_uit_resultaten(
         url = result["url"]
         if url in uitgesloten:
             continue
-        jaren = {
-            int(match)
-            for match in re.findall(
-                r"\b20\d{2}\b",
-                f"{result.get('title', '')} {url}",
-            )
-        }
-        if jaren and not jaren.intersection({zoekjaar, zoekjaar - 1}):
+        context = f"{result.get('title', '')} {url}"
+        if not _lijkt_jaarverslag(context, zoekjaar):
             continue
         if ".pdf" in url.lower():
             return url
         pdf_from_page = await _scrape_pdf_van_pagina(url, zoekjaar)
-        if pdf_from_page and pdf_from_page not in uitgesloten:
+        if (
+            pdf_from_page
+            and pdf_from_page not in uitgesloten
+            and _lijkt_jaarverslag(pdf_from_page, zoekjaar)
+        ):
             return pdf_from_page
     return None
+
+
+def _lijkt_jaarverslag(tekst: str, zoekjaar: int) -> bool:
+    """Weiger andere PDF-soorten en aantoonbaar verkeerde verslagjaren."""
+    lowered = tekst.lower()
+    markers = (
+        "jaarverslag",
+        "jaarrekening",
+        "bestuursverslag",
+        "jaardocument",
+        "jaarverantwoording",
+        "annual report",
+        "annual-report",
+        "integrated report",
+    )
+    jaren = {int(match) for match in re.findall(r"\b20\d{2}\b", tekst)}
+    if jaren and zoekjaar not in jaren:
+        return False
+    return any(marker in lowered for marker in markers)
 
 
 def _domein_van_url(website_url: str | None) -> str | None:
@@ -667,8 +695,10 @@ async def _scrape_pdf_van_pagina(pagina_url: str, jaar: int) -> str | None:
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(r.text, "html.parser")
-    keywords = ["jaarverslag", "annual report", "jaarrapport", "jaarrekening",
-                str(jaar - 1), str(jaar)]
+    keywords = [
+        "jaarverslag", "annual report", "jaarrapport", "jaarrekening",
+        "bestuursverslag", "jaarverantwoording", str(jaar),
+    ]
 
     candidates: list[tuple[int, str]] = []
     for a in soup.find_all("a", href=True):
@@ -1298,6 +1328,35 @@ class LiveJaarverslagAgent:
             jaar,
             website_url=website_url,
             strict_identity=strict_identity,
+        )
+
+    async def validate_source(
+        self,
+        naam: str,
+        jaar: int,
+        bron_url: str,
+        website_url: str | None = None,
+        strict_identity: bool = False,
+    ) -> bool:
+        """Herbeoordeel een legacy-baseline met de huidige strikte regels."""
+        try:
+            eerste_paginas = await _eerste_pdf_paginas(bron_url)
+        except Exception:
+            return False
+        if not any(
+            _lijkt_jaarverslag(eerste_paginas, verslagjaar)
+            for verslagjaar in (jaar - 1, jaar - 2, jaar - 3)
+        ):
+            return False
+        if domain_matches_company(bron_url, website_url) is True:
+            return True
+        identity = await _classificeer_jaarverslag_bron_identiteit(
+            naam,
+            bron_url,
+        )
+        return identity == IdentityClass.EXACT_ENTITY or (
+            identity == IdentityClass.SAME_BRAND_OR_GROUP
+            and not strict_identity
         )
 
     async def run_with_pdf(self, naam: str, pdf_url: str) -> AgentFinding | None:
