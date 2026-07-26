@@ -2,6 +2,7 @@ import {useEffect, useState} from "react";
 import {Plus, RefreshCw, Search} from "lucide-react";
 import {Alert} from "../Alert.jsx";
 import {BronKaart} from "./BronKaart.jsx";
+import {Diagnostiek} from "./Diagnostiek.jsx";
 
 export function KandidatenPaneel({
   api, company, batchJaar, geselecteerdeBronId, onSelecteerBron,
@@ -117,6 +118,8 @@ export function KandidatenPaneel({
         <p className="py-10 text-center text-sm text-slate-500">
           De agent onderzoekt websites, documenten en recente media…
         </p>
+      ) : Object.keys(diagnostiek).length ? (
+        <Diagnostiek diagnostiek={diagnostiek} />
       ) : (
         <p className="py-10 text-center text-sm text-slate-500">
           Nog geen bronnen. Start een onderzoek of voeg zelf een bron toe.
