@@ -8,6 +8,7 @@ from ..config import get_settings
 from ..pipeline.identity_scope import domain_matches_company
 from .query_planner import QueryContext
 from .usage import record_response_usage
+from .urls import canonicaliseer_url
 from .validation import BronValidatie, SourceDocument, valideer_bron
 
 
@@ -136,13 +137,40 @@ class IntelligentSourceReviewer:
         if domain_matches_company(
             document.url, document.company_website_url,
         ) is True:
-            validatie.identity_class = "exact_entity"
+            scope = document.scope_class or "unknown"
+            zelfde_pagina = (
+                canonicaliseer_url(document.url)
+                == canonicaliseer_url(document.company_website_url)
+            )
+            identity = (
+                "exact_entity" if zelfde_pagina else "same_brand_or_group"
+            )
+            beslissing = (
+                "tonen_aan_reviewer"
+                if document.wp_gevonden is not None
+                and scope in {"vestiging", "limburg"}
+                else "context_only"
+            )
+            validatie.document = replace(document, scope_class=scope)
+            validatie.identity_class = identity
             validatie.validaties["intelligente_review"] = {
-                "beslissing": "tonen_aan_reviewer",
-                "identity_class": "exact_entity",
-                "scope_class": document.scope_class or "unknown",
-                "reden": "Bron staat op het bevestigde officiële domein.",
+                "beslissing": beslissing,
+                "identity_class": identity,
+                "scope_class": scope,
+                "reden": (
+                    "Exacte bekende organisatiepagina."
+                    if zelfde_pagina
+                    else "Bron staat op hetzelfde officiële domein; dit bewijst "
+                    "een merk- of groepsrelatie, niet automatisch de vestigingsscope."
+                ),
             }
+            validatie.validaties["scope_is_bruikbaar"] = scope in {
+                "vestiging", "limburg",
+            }
+            if beslissing == "context_only":
+                validatie.waarschuwingen.append(
+                    "alleen_context_geen_wp_voorstel"
+                )
             return validatie
 
         try:

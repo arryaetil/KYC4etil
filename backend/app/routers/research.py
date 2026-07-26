@@ -5,6 +5,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, HttpUrl
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, get_current_user_of_querytoken
@@ -46,7 +47,10 @@ class ManualSourceBody(BaseModel):
     reden: str | None = Field(default=None, max_length=2000)
 
 
-def _candidate_dict(candidate: BronKandidaat) -> dict:
+def _candidate_dict(
+    candidate: BronKandidaat,
+    gedeeld_met_vestigingen: int = 1,
+) -> dict:
     return {
         "id": candidate.id,
         "research_run_id": candidate.research_run_id,
@@ -73,6 +77,7 @@ def _candidate_dict(candidate: BronKandidaat) -> dict:
         "status": candidate.status,
         "rang": candidate.rang,
         "review_reason": candidate.review_reason,
+        "gedeeld_met_vestigingen": gedeeld_met_vestigingen,
     }
 
 
@@ -82,6 +87,25 @@ def _run_diagnostiek(run: ResearchRun) -> dict:
 
 def _run_kosten(run: ResearchRun) -> dict:
     return (run.configuratie or {}).get("kosten") or {}
+
+
+def _gedeelde_bronnen(
+    db: Session,
+    batch_id: str,
+) -> dict[str, int]:
+    return dict(
+        db.query(
+            BronKandidaat.canonical_url,
+            func.count(func.distinct(BronKandidaat.company_id)),
+        )
+        .join(
+            ResearchRun,
+            ResearchRun.id == BronKandidaat.research_run_id,
+        )
+        .filter(ResearchRun.batch_id == batch_id)
+        .group_by(BronKandidaat.canonical_url)
+        .all()
+    )
 
 
 @router.post(
@@ -113,6 +137,7 @@ def get_research_run(run_id: str, db: Session = Depends(get_db)):
         .order_by(BronKandidaat.rang)
         .all()
     )
+    gedeelde_bronnen = _gedeelde_bronnen(db, run.batch_id)
     return {
         "id": run.id,
         "company_id": run.company_id,
@@ -122,7 +147,13 @@ def get_research_run(run_id: str, db: Session = Depends(get_db)):
         "fout": run.fout,
         "kosten": _run_kosten(run),
         "diagnostiek": _run_diagnostiek(run),
-        "kandidaten": [_candidate_dict(item) for item in kandidaten],
+        "kandidaten": [
+            _candidate_dict(
+                item,
+                gedeelde_bronnen.get(item.canonical_url, 1),
+            )
+            for item in kandidaten
+        ],
     }
 
 
@@ -144,8 +175,15 @@ def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
         .order_by(BronKandidaat.rang)
         .all()
     )
+    gedeelde_bronnen = _gedeelde_bronnen(db, laatste_run.batch_id)
     return {
-        "items": [_candidate_dict(item) for item in kandidaten],
+        "items": [
+            _candidate_dict(
+                item,
+                gedeelde_bronnen.get(item.canonical_url, 1),
+            )
+            for item in kandidaten
+        ],
         "kosten": _run_kosten(laatste_run),
         "diagnostiek": _run_diagnostiek(laatste_run),
     }

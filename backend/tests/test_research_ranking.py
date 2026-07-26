@@ -1,7 +1,7 @@
 """Bronvalidatie en ranking blijven deterministisch en uitlegbaar."""
 from datetime import date
 
-from app.research.ranking import rank_bronnen
+from app.research.ranking import rank_bronnen, selecteer_bronportfolio
 from app.research.validation import SourceDocument, valideer_bron
 
 
@@ -111,3 +111,51 @@ def test_fte_bron_krijgt_waarschuwing_en_geen_wp_bewijsscore():
 
     assert "fte_geen_wp" in ranked[0].waarschuwingen
     assert ranked[0].score_breakdown["bewijs"] == 0.0
+
+
+def test_bronportfolio_levert_complementaire_routes_met_menselijke_actie():
+    documenten = [
+        SourceDocument(
+            naam="Voorbeeld Zorg",
+            company_website_url="https://voorbeeldzorg.nl",
+            url="https://voorbeeldzorg.nl/team",
+            titel="Ons team",
+            tekst="Maak kennis met ons team.",
+            brontype="officiele_website",
+            documenttype="teampagina",
+        ),
+        SourceDocument(
+            naam="Voorbeeld Zorg",
+            company_website_url="https://voorbeeldzorg.nl",
+            url="https://voorbeeldzorg.nl/jaarverslag-2025.pdf",
+            titel="Jaarverslag 2025",
+            tekst="Jaarverslag van Voorbeeld Zorg.",
+            brontype="jaarverslag",
+            documenttype="jaarverslag",
+            gevraagd_jaar=2025,
+            verslagjaar=2025,
+        ),
+        SourceDocument(
+            naam="Voorbeeld Zorg",
+            company_website_url="https://voorbeeldzorg.nl",
+            url="https://nieuws.example/voorbeeld-zorg-breidt-uit",
+            titel="Voorbeeld Zorg breidt uit",
+            tekst="Voorbeeld Zorg opent een nieuwe locatie.",
+            brontype="media",
+            documenttype="nieuwsartikel",
+            publicatiedatum=date(2026, 7, 1),
+        ),
+    ]
+    ranked = rank_bronnen([valideer_bron(item) for item in documenten])
+
+    portfolio = selecteer_bronportfolio(ranked, maximum=3)
+
+    rollen = {
+        item.validaties["menselijke_waarde"]["rol"]
+        for item in portfolio
+    }
+    assert rollen == {"teamoverzicht", "formeel_document", "actuele_context"}
+    assert all(
+        item.validaties["menselijke_waarde"]["actie"]
+        for item in portfolio
+    )

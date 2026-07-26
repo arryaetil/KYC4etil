@@ -3,6 +3,7 @@ import {Check, ChevronDown, ChevronUp, Eye, X} from "lucide-react";
 import {classNames} from "../../lib/format.js";
 import {
   TOON_STYLE, bereikLabel, bronwaarschuwingen, brontypeLabel, identiteitLabel,
+  menselijkeWaarde,
 } from "../../lib/onderzoekLabels.js";
 
 function Signaal({label, toon}) {
@@ -31,6 +32,7 @@ export function BronKaart({
   const [toonOnderbouwing, setToonOnderbouwing] = useState(false);
   const identiteit = identiteitLabel(candidate.identity_class);
   const bereik = bereikLabel(candidate.scope_class);
+  const waarde = menselijkeWaarde(candidate);
   const waarschuwingen = bronwaarschuwingen({...candidate, gevraagd_jaar: gevraagdJaar});
   const beoordeeld = ["geaccepteerd", "afgewezen"].includes(candidate.status);
 
@@ -56,6 +58,12 @@ export function BronKaart({
           </span>
         ) : null}
       </div>
+
+      {candidate.gedeeld_met_vestigingen > 1 ? (
+        <p className="mt-1 text-xs text-slate-500">
+          Gedeelde bron voor {candidate.gedeeld_met_vestigingen} vestigingen
+        </p>
+      ) : null}
 
       {candidate.bewijsfragment ? (
         <blockquote className="mt-3 text-base leading-relaxed text-ink">
@@ -89,6 +97,11 @@ export function BronKaart({
           ))}
         </div>
       ) : null}
+
+      <div className="mt-3 border-t border-line pt-3 text-sm">
+        <p className="font-medium text-ink">{waarde.label}</p>
+        <p className="mt-0.5 max-w-[70ch] text-slate-600">{waarde.actie}</p>
+      </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button

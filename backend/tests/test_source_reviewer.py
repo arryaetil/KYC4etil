@@ -225,3 +225,50 @@ async def test_correcte_bron_vorig_jaar_blijft_als_context_beschikbaar():
         reviewed.validaties["intelligente_review"]["beslissing"]
         == "context_only"
     )
+
+
+@pytest.mark.asyncio
+async def test_officieel_groepsdocument_is_niet_automatisch_exacte_vestiging():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    document = SourceDocument(
+        naam="Zorglocatie Binnenhof",
+        company_website_url="https://zorggroep.example/locaties/binnenhof",
+        url="https://zorggroep.example/jaarverslag-2025.pdf",
+        titel="Jaarverslag Zorggroep",
+        tekst="De zorggroep heeft 4.900 medewerkers.",
+        bewijsfragment="De zorggroep heeft 4.900 medewerkers.",
+        brontype="jaarverslag",
+        documenttype="jaarverslag",
+        wp_gevonden=4900,
+        eenheid="werkzame_personen",
+    )
+
+    reviewed = await reviewer.review(_context("Zorglocatie Binnenhof"), document)
+
+    assert reviewed.is_afgewezen is False
+    assert reviewed.identity_class == "same_brand_or_group"
+    assert reviewed.document.scope_class == "unknown"
+    assert reviewed.validaties["intelligente_review"]["beslissing"] == "context_only"
+    reviewer._llm_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_exacte_bekende_locatiepagina_blijft_exacte_entiteit():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    document = SourceDocument(
+        naam="Zorglocatie Binnenhof",
+        company_website_url="https://zorggroep.example/locaties/binnenhof/",
+        url="https://www.zorggroep.example/locaties/binnenhof",
+        titel="Zorglocatie Binnenhof",
+        tekst="Welkom bij Zorglocatie Binnenhof.",
+        brontype="officiele_website",
+        documenttype="organisatiepagina",
+    )
+
+    reviewed = await reviewer.review(_context("Zorglocatie Binnenhof"), document)
+
+    assert reviewed.identity_class == "exact_entity"
+    assert reviewed.validaties["intelligente_review"]["beslissing"] == "context_only"
+    reviewer._llm_review.assert_not_awaited()

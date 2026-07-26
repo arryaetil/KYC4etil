@@ -146,3 +146,44 @@ def test_run_api_toont_onderzoeksdiagnostiek(client, db_session):
 
     assert response.status_code == 200
     assert response.json()["diagnostiek"]["onderzochte_paginas"] == 12
+
+
+def test_api_markeert_een_bron_die_bij_meerdere_vestigingen_terugkomt(
+    client, db_session,
+):
+    eerste = _maak_company(db_session)
+    tweede = Company(
+        batch_id=eerste.batch_id,
+        naam="Voorbeeld Zorglocatie Twee",
+        vestigingsnummer="RESEARCH-API-2",
+    )
+    db_session.add(tweede)
+    db_session.flush()
+    runs = [
+        ResearchRun(
+            company_id=company.id,
+            batch_id=company.batch_id,
+            doel="gedeelde bron",
+            status="completed",
+            resultaat_status="review_nodig",
+        )
+        for company in (eerste, tweede)
+    ]
+    db_session.add_all(runs)
+    db_session.flush()
+    for run, company in zip(runs, (eerste, tweede)):
+        db_session.add(BronKandidaat(
+            research_run_id=run.id,
+            company_id=company.id,
+            url="https://voorbeeldzorg.nl/jaarverslag-2025.pdf",
+            canonical_url="https://voorbeeldzorg.nl/jaarverslag-2025.pdf",
+            brontype="jaarverslag",
+            status="voorgesteld",
+            rang=1,
+        ))
+    db_session.commit()
+
+    response = client.get(f"/research/companies/{eerste.id}/candidates")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["gedeeld_met_vestigingen"] == 2

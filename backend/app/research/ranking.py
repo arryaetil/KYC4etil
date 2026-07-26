@@ -80,6 +80,64 @@ def _evidence_score(bron: BronValidatie) -> float:
     return 1.0 if document.bewijsfragment else 0.4
 
 
+def _menselijke_waarde(bron: BronValidatie) -> dict[str, str]:
+    document = bron.document
+    heeft_wp_bewijs = (
+        document.wp_gevonden is not None
+        and document.eenheid == "werkzame_personen"
+        and bool(document.bewijsfragment)
+    )
+    if heeft_wp_bewijs and document.scope_class in {"vestiging", "limburg"}:
+        return {
+            "rol": "direct_wp_bewijs",
+            "label": "Direct WP-bewijs",
+            "actie": "Controleer het citaat en de scope; het personeelsgetal staat al in de bron.",
+        }
+    if heeft_wp_bewijs:
+        return {
+            "rol": "organisatieomvang",
+            "label": "Indicatie organisatieomvang",
+            "actie": "Gebruik dit groeps- of organisatiecijfer als context en zoek in de bron naar een vestigingsuitsplitsing.",
+        }
+    if document.documenttype == "teampagina":
+        return {
+            "rol": "teamoverzicht",
+            "label": "Teamoverzicht",
+            "actie": "Bekijk of tel de genoemde teamleden en controleer of alle functies en locaties zijn opgenomen.",
+        }
+    if document.documenttype in {
+        "jaarverslag", "jaarrekening", "bestuursverslag", "pdf_document",
+    }:
+        return {
+            "rol": "formeel_document",
+            "label": "Formeel document",
+            "actie": "Doorzoek het document op medewerkers, personeel, werknemers, fte en vestigingsnamen.",
+        }
+    if bron.is_officieel is True:
+        return {
+            "rol": "officiele_route",
+            "label": "Officiële onderzoeksroute",
+            "actie": "Open team-, over-ons-, contact- en locatiepagina’s om de personeelsomvang te herleiden.",
+        }
+    if document.brontype in {"overheid", "sectorportaal"}:
+        return {
+            "rol": "register_of_sectorbron",
+            "label": "Register- of sectorbron",
+            "actie": "Controleer organisatie-identiteit, vestigingsscope en eventuele personeelsklasse.",
+        }
+    if document.brontype == "media":
+        return {
+            "rol": "actuele_context",
+            "label": "Actuele context",
+            "actie": "Gebruik recente groei, krimp, overname of reorganisatie om formele cijfers te actualiseren.",
+        }
+    return {
+        "rol": "aanvullende_context",
+        "label": "Aanvullende onderzoeksroute",
+        "actie": "Controleer de bron op namen, locaties of verwijzingen naar een sterkere primaire bron.",
+    }
+
+
 def rank_bronnen(
     bronnen: list[BronValidatie],
     referentiedatum: date | None = None,
@@ -110,8 +168,41 @@ def rank_bronnen(
             ranking_score=round(score, 4),
             score_breakdown=breakdown,
             identity_class=bron.identity_class,
-            validaties=bron.validaties,
+            validaties={
+                **bron.validaties,
+                "menselijke_waarde": _menselijke_waarde(bron),
+            },
             waarschuwingen=list(bron.waarschuwingen),
         ))
 
     return sorted(ranked, key=lambda item: item.ranking_score, reverse=True)
+
+
+def selecteer_bronportfolio(
+    ranked: list[RankedBron],
+    maximum: int,
+) -> list[RankedBron]:
+    """Behoud de beste bron en voeg daarna complementaire onderzoeksroutes toe."""
+    if maximum <= 0 or not ranked:
+        return []
+    gekozen = [ranked[0]]
+    gekozen_ids = {id(ranked[0])}
+    geziene_rollen = {
+        ranked[0].validaties["menselijke_waarde"]["rol"],
+    }
+    for kandidaat in ranked[1:]:
+        rol = kandidaat.validaties["menselijke_waarde"]["rol"]
+        if rol in geziene_rollen:
+            continue
+        gekozen.append(kandidaat)
+        gekozen_ids.add(id(kandidaat))
+        geziene_rollen.add(rol)
+        if len(gekozen) >= maximum:
+            return gekozen
+    for kandidaat in ranked:
+        if id(kandidaat) in gekozen_ids:
+            continue
+        gekozen.append(kandidaat)
+        if len(gekozen) >= maximum:
+            break
+    return gekozen

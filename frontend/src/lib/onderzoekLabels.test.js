@@ -4,6 +4,7 @@ import {
   bronwaarschuwingen,
   brontypeLabel,
   identiteitLabel,
+  menselijkeWaarde,
   monitoringStatus,
   organisatieStatus,
 } from "./onderzoekLabels.js";
@@ -251,5 +252,38 @@ describe("bronwaarschuwingen", () => {
       waarschuwingen: ["geen_concreet_wp_bewijs", "geen_concreet_wp_bewijs"],
     }).map((item) => item.label);
     expect(labels).toEqual(["Geen getal gevonden", "Geen hard WP-bewijs"]);
+  });
+});
+
+describe("menselijkeWaarde", () => {
+  it("maakt een lokaal citaat direct bruikbaar", () => {
+    expect(menselijkeWaarde({
+      wp_gevonden: 47,
+      eenheid: "werkzame_personen",
+      bewijsfragment: "Ons team telt 47 medewerkers.",
+      scope_class: "vestiging",
+    }).rol).toBe("direct_wp_bewijs");
+  });
+
+  it("presenteert een groepsgetal als onderzoekscontext", () => {
+    const waarde = menselijkeWaarde({
+      wp_gevonden: 4900,
+      eenheid: "werkzame_personen",
+      bewijsfragment: "De groep telt 4.900 medewerkers.",
+      scope_class: "concern",
+    });
+
+    expect(waarde.rol).toBe("organisatieomvang");
+    expect(waarde.actie).toContain("vestigingsuitsplitsing");
+  });
+
+  it("geeft een teamoverzicht een concrete handmatige vervolgstap", () => {
+    const waarde = menselijkeWaarde({
+      documenttype: "teampagina",
+      wp_gevonden: null,
+    });
+
+    expect(waarde.label).toBe("Teamoverzicht");
+    expect(waarde.actie).toContain("tel");
   });
 });

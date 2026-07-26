@@ -128,6 +128,49 @@ export function brontypeLabel(brontype) {
   return BRONTYPE[brontype] || "Openbare bron";
 }
 
+export function menselijkeWaarde(candidate) {
+  const vastgelegd = candidate?.validaties?.menselijke_waarde;
+  if (vastgelegd?.label && vastgelegd?.actie) return vastgelegd;
+  if (
+    candidate?.wp_gevonden != null
+    && candidate?.eenheid === "werkzame_personen"
+    && candidate?.bewijsfragment
+  ) {
+    return candidate.scope_class === "vestiging" || candidate.scope_class === "limburg"
+      ? {
+          rol: "direct_wp_bewijs",
+          label: "Direct WP-bewijs",
+          actie: "Controleer het citaat en de scope; het personeelsgetal staat al in de bron.",
+        }
+      : {
+          rol: "organisatieomvang",
+          label: "Indicatie organisatieomvang",
+          actie: "Gebruik dit groeps- of organisatiecijfer als context en zoek naar een vestigingsuitsplitsing.",
+        };
+  }
+  if (candidate?.documenttype === "teampagina") {
+    return {
+      rol: "teamoverzicht",
+      label: "Teamoverzicht",
+      actie: "Bekijk of tel de genoemde teamleden en controleer of alle functies en locaties zijn opgenomen.",
+    };
+  }
+  if (["jaarverslag", "jaarrekening", "bestuursverslag", "pdf_document"].includes(
+    candidate?.documenttype,
+  )) {
+    return {
+      rol: "formeel_document",
+      label: "Formeel document",
+      actie: "Doorzoek het document op medewerkers, personeel, werknemers, fte en vestigingsnamen.",
+    };
+  }
+  return {
+    rol: "aanvullende_context",
+    label: "Aanvullende onderzoeksroute",
+    actie: "Controleer de bron op namen, locaties of verwijzingen naar een sterkere primaire bron.",
+  };
+}
+
 export function bronwaarschuwingen(candidate) {
   if (!candidate) return [];
   const items = [];

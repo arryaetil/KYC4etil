@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from .query_planner import QueryContext, plan_queries
-from .ranking import RankedBron, rank_bronnen
+from .ranking import RankedBron, rank_bronnen, selecteer_bronportfolio
 from .types import CombinedSearchResult, PlannedQuery
 from .validation import SourceDocument, valideer_bron
 
@@ -155,7 +155,10 @@ class ResearchSupervisor:
                     "review_reden": intelligente_review.get("reden"),
                 })
 
-        ranked = rank_bronnen(validaties)[:self.max_kandidaten]
+        ranked = selecteer_bronportfolio(
+            rank_bronnen(validaties),
+            self.max_kandidaten,
+        )
         reden_teller = Counter(
             reden
             for validatie in validaties
