@@ -79,7 +79,7 @@ export function BatchesView({api, onOpenBatch}) {
         <input
           ref={fileRef}
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           className="hidden"
           onChange={upload}
         />
@@ -158,7 +158,7 @@ export function BatchesView({api, onOpenBatch}) {
         ))}
         {!batches.length ? (
           <li className="py-12 text-center text-sm text-slate-500">
-            Nog geen lijsten. Upload een CSV om te beginnen.
+            Nog geen lijsten. Upload een CSV- of Excel-bestand om te beginnen.
           </li>
         ) : null}
       </ul>

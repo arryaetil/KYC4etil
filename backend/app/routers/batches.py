@@ -2,8 +2,12 @@ import csv
 import io
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
+from zipfile import BadZipFile
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -19,6 +23,7 @@ from ..research.service import run_research_batch
 router = APIRouter(prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
 
 CSV_VELDEN = {"naam"}  # minimaal vereist
+KOLOM_ALIASSEN = {"vestnr": "vestigingsnummer"}
 MONITORINGLIJST_NAAM_MARKERS = ("monitoringlijst", "monitorlijst", "watchlist")
 
 
@@ -86,20 +91,56 @@ def run_single_background(company_id: str, batch_id: str) -> None:
         db.close()
 
 
+def _lees_upload(content: bytes, bestandsnaam: str) -> tuple[set[str], list[dict]]:
+    if Path(bestandsnaam).suffix.lower() == ".xlsx":
+        try:
+            workbook = load_workbook(
+                io.BytesIO(content), read_only=True, data_only=True,
+            )
+            worksheet = workbook.active
+            waarden = worksheet.iter_rows(values_only=True)
+            kop = next(waarden, ())
+            rows = [dict(zip(kop, row)) for row in waarden]
+            workbook.close()
+        except (BadZipFile, InvalidFileException, OSError, ValueError) as exc:
+            raise HTTPException(422, "Ongeldig Excel-bestand") from exc
+    else:
+        try:
+            tekst = content.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(422, "Bestand moet CSV of Excel (.xlsx) zijn") from exc
+        reader = csv.DictReader(io.StringIO(tekst))
+        kop = reader.fieldnames or ()
+        rows = list(reader)
+
+    kolommen = {
+        KOLOM_ALIASSEN.get(str(k).strip().lower(), str(k).strip().lower())
+        for k in kop if k is not None
+    }
+    genormaliseerd = []
+    for row in rows:
+        schoon = {
+            KOLOM_ALIASSEN.get(str(k).strip().lower(), str(k).strip().lower()):
+                (str(v).strip() if v is not None and str(v).strip() else None)
+            for k, v in row.items() if k is not None
+        }
+        if schoon.get("naam"):
+            genormaliseerd.append(schoon)
+    return kolommen, genormaliseerd
+
+
 @router.post("/upload")
 async def upload_batch(file: UploadFile, naam: str | None = None,
                        jaar: int | None = None, monitoringlijst: bool = False,
                        db: Session = Depends(get_db),
                        current_user: User = Depends(get_current_user)):
-    """CSV-upload -> batch + companies. Verwachte kolommen (flexibel):
+    """CSV/Excel-upload -> batch + companies. Verwachte kolommen (flexibel):
     vestigingsnummer, naam, gemeente, adres, sbi_code, cb_er, kvk_nummer.
     monitoringlijst=true markeert deze batch als de actieve jaarverslag-watchlist
     en ontmarkeert automatisch een eventuele vorige watchlist."""
-    content = (await file.read()).decode("utf-8-sig")
-    reader = csv.DictReader(io.StringIO(content))
-    rows = list(reader)
-    if not rows or not CSV_VELDEN.issubset({k.strip().lower() for k in rows[0]}):
-        raise HTTPException(422, "CSV mist verplichte kolom 'naam'")
+    kolommen, rows = _lees_upload(await file.read(), file.filename or "")
+    if not rows or not CSV_VELDEN.issubset(kolommen):
+        raise HTTPException(422, "Bestand mist verplichte kolom 'naam'")
 
     if monitoringlijst:
         db.query(Batch).filter_by(is_monitoringlijst=True).update(
@@ -111,7 +152,6 @@ async def upload_batch(file: UploadFile, naam: str | None = None,
     db.add(batch)
     db.flush()
     for r in rows:
-        r = {k.strip().lower(): (v.strip() if v else None) for k, v in r.items()}
         db.add(Company(batch_id=batch.id, vestigingsnummer=r.get("vestigingsnummer"),
                        naam=r["naam"], gemeente=r.get("gemeente"), adres=r.get("adres"),
                        sbi_code=r.get("sbi_code"), cb_er=r.get("cb_er"),

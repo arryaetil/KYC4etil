@@ -147,12 +147,12 @@ export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, op
       title=""
       actions={
         <>
-          <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={upload} />
+          <input ref={fileRef} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={upload} />
           <IconButton icon={BookOpen} variant="quiet" onClick={openJaarverslagen}>Jaarverslagen</IconButton>
           <IconButton icon={SearchCheck} variant="quiet" onClick={openMonitoring}>Jaarverslag-monitoring</IconButton>
           <IconButton icon={Settings} variant="quiet" onClick={openChatTemplates}>Chat-templates</IconButton>
           <IconButton icon={RefreshCw} onClick={() => load().catch((err) => setError(err.message))}>Verversen</IconButton>
-          <IconButton icon={FileUp} variant="primary" onClick={() => fileRef.current?.click()} disabled={busy}>CSV uploaden</IconButton>
+          <IconButton icon={FileUp} variant="primary" onClick={() => fileRef.current?.click()} disabled={busy}>Lijst uploaden</IconButton>
         </>
       }
     >
