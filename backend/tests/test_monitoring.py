@@ -581,3 +581,45 @@ def test_run_monitoring_watchlist_background_respecteert_limit(monkeypatch):
         db.query(Batch).delete()
         db.commit()
         db.close()
+
+
+def test_run_monitoring_watchlist_background_respecteert_offset(monkeypatch):
+    from app.pipeline.monitoring import run_monitoring_watchlist_background
+
+    db = SessionLocal()
+    try:
+        batch = Batch(
+            naam="watchlist-offset-test",
+            jaar=2026,
+            totaal=4,
+            is_monitoringlijst=True,
+        )
+        db.add(batch)
+        db.flush()
+        for naam in ["Org A", "Org B", "Org C", "Org D"]:
+            db.add(Company(batch_id=batch.id, naam=naam))
+        db.commit()
+        alle_ids = [
+            company.id
+            for company in db.query(Company).filter_by(batch_id=batch.id).all()
+        ]
+        doorgegeven_ids = []
+
+        async def fake_check_batch(
+            batch_id, jaar, company_ids, max_concurrent=8,
+        ):
+            doorgegeven_ids.extend(company_ids)
+
+        monkeypatch.setattr(
+            "app.pipeline.monitoring.check_batch_jaarverslagen",
+            fake_check_batch,
+        )
+
+        run_monitoring_watchlist_background(limit=2, offset=1)
+
+        assert doorgegeven_ids == alle_ids[1:3]
+    finally:
+        db.query(Company).delete()
+        db.query(Batch).delete()
+        db.commit()
+        db.close()

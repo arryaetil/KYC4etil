@@ -80,14 +80,27 @@ def monitoring_status(db: Session = Depends(get_db)):
 
 
 @router.post("/run")
-def start_monitoring_run(background_tasks: BackgroundTasks, limit: int | None = None,
-                         db: Session = Depends(get_db)):
+def start_monitoring_run(
+    background_tasks: BackgroundTasks,
+    limit: int | None = None,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
     """Start handmatig een controle van de actieve watchlist.
     Optioneel: ?limit=N controleert alleen de eerste N organisaties — handig om
     tijdens testen niet steeds de volledige (live, kostbare) watchlist te draaien."""
     batch = _actieve_watchlist(db)
     if batch is None:
         raise HTTPException(404, "geen watchlist ingesteld")
-    aantal = len(batch.companies) if limit is None else min(limit, len(batch.companies))
-    background_tasks.add_task(run_monitoring_watchlist_background, limit)
-    return {"batch_id": batch.id, "aantal_companies": aantal}
+    resterend = max(0, len(batch.companies) - max(offset, 0))
+    aantal = resterend if limit is None else min(limit, resterend)
+    background_tasks.add_task(
+        run_monitoring_watchlist_background,
+        limit,
+        max(offset, 0),
+    )
+    return {
+        "batch_id": batch.id,
+        "aantal_companies": aantal,
+        "offset": max(offset, 0),
+    }

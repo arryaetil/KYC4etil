@@ -128,8 +128,10 @@ def test_monitoring_run_start_achtergrondtaak(client, db_session, monkeypatch):
 
     gestart = []
 
-    def fake_run_monitoring_watchlist_background(limit=None) -> None:
-        gestart.append(limit)
+    def fake_run_monitoring_watchlist_background(
+        limit=None, offset=0,
+    ) -> None:
+        gestart.append((limit, offset))
 
     monkeypatch.setattr(monitoring_router, "run_monitoring_watchlist_background",
                         fake_run_monitoring_watchlist_background)
@@ -137,8 +139,12 @@ def test_monitoring_run_start_achtergrondtaak(client, db_session, monkeypatch):
     response = client.post("/monitoring/run")
 
     assert response.status_code == 200
-    assert response.json() == {"batch_id": batch_id, "aantal_companies": 1}
-    assert gestart == [None]
+    assert response.json() == {
+        "batch_id": batch_id,
+        "aantal_companies": 1,
+        "offset": 0,
+    }
+    assert gestart == [(None, 0)]
 
 
 def test_monitoring_run_met_limit_beperkt_aantal_companies(client, db_session, monkeypatch):
@@ -157,8 +163,10 @@ def test_monitoring_run_met_limit_beperkt_aantal_companies(client, db_session, m
 
     gestart = []
 
-    def fake_run_monitoring_watchlist_background(limit=None) -> None:
-        gestart.append(limit)
+    def fake_run_monitoring_watchlist_background(
+        limit=None, offset=0,
+    ) -> None:
+        gestart.append((limit, offset))
 
     monkeypatch.setattr(monitoring_router, "run_monitoring_watchlist_background",
                         fake_run_monitoring_watchlist_background)
@@ -166,8 +174,12 @@ def test_monitoring_run_met_limit_beperkt_aantal_companies(client, db_session, m
     response = client.post("/monitoring/run?limit=2")
 
     assert response.status_code == 200
-    assert response.json() == {"batch_id": batch_id, "aantal_companies": 2}
-    assert gestart == [2]
+    assert response.json() == {
+        "batch_id": batch_id,
+        "aantal_companies": 2,
+        "offset": 0,
+    }
+    assert gestart == [(2, 0)]
 
 
 def test_monitoring_run_met_limit_groter_dan_watchlist_gebruikt_totaal(client, db_session, monkeypatch):
@@ -179,10 +191,48 @@ def test_monitoring_run_met_limit_groter_dan_watchlist_gebruikt_totaal(client, d
     assert upload.status_code == 200
     batch_id = upload.json()["batch_id"]
 
-    monkeypatch.setattr(monitoring_router, "run_monitoring_watchlist_background",
-                        lambda limit=None: None)
+    monkeypatch.setattr(
+        monitoring_router,
+        "run_monitoring_watchlist_background",
+        lambda limit=None, offset=0: None,
+    )
 
     response = client.post("/monitoring/run?limit=50")
 
     assert response.status_code == 200
-    assert response.json() == {"batch_id": batch_id, "aantal_companies": 1}
+    assert response.json() == {
+        "batch_id": batch_id,
+        "aantal_companies": 1,
+        "offset": 0,
+    }
+
+
+def test_monitoring_run_met_offset_start_bij_latere_organisatie(
+    client, db_session, monkeypatch,
+):
+    _zorg_voor_test_user(db_session)
+    upload = client.post(
+        "/batches/upload?naam=watchlist-offset&jaar=2026&monitoringlijst=true",
+        files={"file": (
+            "orgs.csv",
+            BytesIO(b"naam\nA\nB\nC\nD\n"),
+            "text/csv",
+        )},
+    )
+    batch_id = upload.json()["batch_id"]
+    gestart = []
+    monkeypatch.setattr(
+        monitoring_router,
+        "run_monitoring_watchlist_background",
+        lambda limit=None, offset=0: gestart.append((limit, offset)),
+    )
+
+    response = client.post("/monitoring/run?limit=2&offset=2")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "batch_id": batch_id,
+        "aantal_companies": 2,
+        "offset": 2,
+    }
+    assert gestart == [(2, 2)]

@@ -377,7 +377,10 @@ async def check_batch_jaarverslagen(batch_id: str, jaar: int, company_ids: list[
     ))
 
 
-def run_monitoring_watchlist_background(limit: int | None = None) -> None:
+def run_monitoring_watchlist_background(
+    limit: int | None = None,
+    offset: int = 0,
+) -> None:
     """Zoekt de gemarkeerde watchlist-batch op (Batch.is_monitoringlijst=True) en
     controleert alle organisaties daarin gelijktijdig op nieuwe jaarverslagen.
     Geen watchlist ingesteld of leeg -> stille no-op.
@@ -395,6 +398,7 @@ def run_monitoring_watchlist_background(limit: int | None = None) -> None:
     finally:
         db.close()
 
+    company_ids = company_ids[offset:]
     if limit is not None:
         company_ids = company_ids[:limit]
     if not company_ids:
