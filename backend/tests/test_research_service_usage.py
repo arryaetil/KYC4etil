@@ -25,7 +25,7 @@ def geisoleerde_sessionmaker():
 async def test_run_research_run_vult_tokentracking(
     monkeypatch, geisoleerde_sessionmaker,
 ):
-    from app.research import service, usage
+    from app.research import service
 
     monkeypatch.setattr(service, "SessionLocal", geisoleerde_sessionmaker)
 
@@ -51,11 +51,19 @@ async def test_run_research_run_vult_tokentracking(
         service.get_settings(), "provider_mode", "mock",
     )
 
-    def fake_get_usage_totals():
-        return (321, 45)
-
-    monkeypatch.setattr(usage, "get_usage_totals", fake_get_usage_totals)
-    monkeypatch.setattr(service, "get_usage_totals", fake_get_usage_totals)
+    kosten = {
+        "currency": "USD",
+        "tokens_in": 321,
+        "tokens_out": 45,
+        "providers": {
+            "openai_tokens": {"calls": 1, "kosten_usd": 0.000075},
+            "serper_search": {"calls": 2, "kosten_usd": 0.002},
+        },
+        "totaal_usd": 0.002075,
+        "totaal_cents": 0,
+    }
+    monkeypatch.setattr(service, "get_usage_totals", lambda: (321, 45))
+    monkeypatch.setattr(service, "get_cost_summary", lambda: kosten)
 
     await service.run_research_run(run_id)
 
@@ -64,4 +72,5 @@ async def test_run_research_run_vult_tokentracking(
         assert opgeslagen.status == "completed"
         assert opgeslagen.tokens_in == 321
         assert opgeslagen.tokens_out == 45
-        assert opgeslagen.kosten_cents == usage.bereken_kosten_cents(321, 45)
+        assert opgeslagen.kosten_cents == 0
+        assert opgeslagen.configuratie["kosten"] == kosten

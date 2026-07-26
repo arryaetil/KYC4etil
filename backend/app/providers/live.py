@@ -16,7 +16,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from ..config import get_settings
 from ..pipeline.evidence import IdentityClass, ScopeClass
 from ..pipeline.identity_scope import domain_matches_company
-from ..research.usage import record_response_usage
+from ..research.usage import record_provider_call, record_response_usage
 from .base import AgentFinding, LocationInfo, PlacesResult
 
 _JSON_PARSER = JsonOutputParser()
@@ -181,6 +181,7 @@ async def _serper_places(query: str) -> dict | None:
     totdat de KvK-koppeling er is."""
     if not settings.serper_api_key:
         return None
+    record_provider_call("serper_places", kosten_micro_usd=1_000)
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(
@@ -207,6 +208,7 @@ class LivePlacesProvider:
             )
         if not settings.google_places_api_key:
             return await _web_search_contact(naam, gemeente)
+        record_provider_call("google_places_text_search", kosten_micro_usd=32_000)
         try:
             async with httpx.AsyncClient(timeout=20) as client:
                 r = await client.post(
@@ -240,6 +242,7 @@ class LivePlacesProvider:
     async def locations(self, naam: str, kvk_nummer: str | None) -> LocationInfo:
         if not settings.google_places_api_key:
             return LocationInfo(count_nl=None, count_lb=None, bron="web_search")
+        record_provider_call("google_places_text_search", kosten_micro_usd=32_000)
         try:
             async with httpx.AsyncClient(timeout=20) as client:
                 r = await client.post(
@@ -303,6 +306,7 @@ async def _duckduckgo_search(query: str, max_results: int = 5) -> list[dict[str,
     """Zoek publieke bronnen via DuckDuckGo HTML en parse resultaten met BeautifulSoup."""
     from bs4 import BeautifulSoup
 
+    record_provider_call("duckduckgo_search")
     try:
         async with httpx.AsyncClient(timeout=20, follow_redirects=True,
                                      headers={"User-Agent": DUCKDUCKGO_USER_AGENT}) as client:
@@ -343,6 +347,7 @@ async def _serper_search(query: str, max_results: int = 5) -> list[dict[str, str
     goedkoper dan OpenAI's ingebouwde web_search-tool."""
     if not settings.serper_api_key:
         return []
+    record_provider_call("serper_search", kosten_micro_usd=1_000)
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(

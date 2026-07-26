@@ -15,7 +15,7 @@ from .seeds import verzamel_seed_documenten
 from .source_reviewer import IntelligentSourceReviewer
 from .supervisor import ResearchSupervisor
 from .urls import canonicaliseer_url
-from .usage import bereken_kosten_cents, get_usage_totals, start_usage_tracking
+from .usage import get_cost_summary, get_usage_totals, start_usage_tracking
 
 
 def _now() -> datetime:
@@ -33,6 +33,18 @@ def _dedupliceer_kandidaten(kandidaten):
         geziene_canonical_urls.add(canonical_url)
         uniek.append((ranked, canonical_url))
     return uniek
+
+
+def _sla_kosten_op(run: ResearchRun) -> None:
+    tokens_in, tokens_out = get_usage_totals()
+    kosten = get_cost_summary()
+    run.tokens_in = tokens_in
+    run.tokens_out = tokens_out
+    run.kosten_cents = kosten["totaal_cents"]
+    run.configuratie = {
+        **(run.configuratie or {}),
+        "kosten": kosten,
+    }
 
 
 def maak_research_run(
@@ -232,13 +244,10 @@ async def run_research_run(run_id: str) -> None:
                     rang=rang,
                 ))
 
-            tokens_in, tokens_out = get_usage_totals()
             run.status = "completed"
             run.resultaat_status = outcome.status
             run.completed_at = _now()
-            run.tokens_in = tokens_in
-            run.tokens_out = tokens_out
-            run.kosten_cents = bereken_kosten_cents(tokens_in, tokens_out)
+            _sla_kosten_op(run)
             run.configuratie = {
                 **(run.configuratie or {}),
                 "effectief_max_paginas": effectief_max_paginas,
@@ -253,6 +262,17 @@ async def run_research_run(run_id: str) -> None:
             if outcome.fouten:
                 run.fout = " | ".join(outcome.fouten)[:4000]
             db.commit()
+    except asyncio.CancelledError:
+        with SessionLocal() as db:
+            run = db.get(ResearchRun, run_id)
+            if run is not None:
+                run.status = "error"
+                run.resultaat_status = "error"
+                run.fout = "onderzoek afgebroken"
+                _sla_kosten_op(run)
+                run.completed_at = _now()
+                db.commit()
+        raise
     except Exception as exc:
         with SessionLocal() as db:
             run = db.get(ResearchRun, run_id)
@@ -260,6 +280,7 @@ async def run_research_run(run_id: str) -> None:
                 run.status = "error"
                 run.resultaat_status = "error"
                 run.fout = str(exc)[:4000]
+                _sla_kosten_op(run)
                 run.completed_at = _now()
                 db.commit()
 

@@ -8,7 +8,9 @@ import pytest
 from app.research import usage
 from app.research.usage import (
     bereken_kosten_cents,
+    get_cost_summary,
     get_usage_totals,
+    record_provider_call,
     record_response_usage,
     start_usage_tracking,
 )
@@ -87,3 +89,43 @@ def test_bereken_kosten_cents():
     assert cents > 0
     assert cents == round(200_000 / 1000 * 0.015 + 50_000 / 1000 * 0.06)
     assert cents == 6
+
+
+def test_kostenoverzicht_telt_tokens_en_alle_providercalls():
+    start_usage_tracking()
+    record_response_usage(_response(15_000, 400))
+    record_provider_call("serper_search", kosten_micro_usd=1_000)
+    record_provider_call("serper_search", kosten_micro_usd=1_000)
+    record_provider_call("google_places_text_search", kosten_micro_usd=32_000)
+    record_provider_call("duckduckgo_search")
+
+    kosten = get_cost_summary()
+
+    assert kosten["providers"]["openai_tokens"]["calls"] == 1
+    assert kosten["providers"]["serper_search"] == {
+        "calls": 2, "kosten_usd": 0.002,
+    }
+    assert kosten["providers"]["google_places_text_search"] == {
+        "calls": 1, "kosten_usd": 0.032,
+    }
+    assert kosten["providers"]["duckduckgo_search"] == {
+        "calls": 1, "kosten_usd": 0.0,
+    }
+    assert kosten["providers"]["openai_tokens"]["kosten_usd"] == 0.00249
+    assert kosten["totaal_usd"] == 0.03649
+    assert kosten["totaal_cents"] == 4
+
+
+def test_openai_web_search_toolcall_wordt_apart_geregistreerd():
+    start_usage_tracking()
+    response = _response(100, 10)
+    response.model_dump = lambda: {
+        "output": [{"type": "web_search_call"}],
+    }
+
+    record_response_usage(response)
+
+    kosten = get_cost_summary()
+    assert kosten["providers"]["openai_web_search"] == {
+        "calls": 1, "kosten_usd": 0.01,
+    }
