@@ -33,3 +33,25 @@ een nieuwe keuze de status `alternatief` kreeg, blijft als acceptatie meetellen.
 De statistieken zijn beschrijvend. Er wordt nog geen automatische
 rankingkalibratie of modeltraining aan gekoppeld; daarvoor is eerst voldoende
 reviewvolume en een aparte evaluatieset nodig.
+
+## Jaarverslagmonitoring
+
+De wekelijkse monitoring gebruikt dezelfde gespecialiseerde
+jaarverslagenagent als de researchflow. Een nieuw gevonden jaarverslag wordt
+naast de bestaande legacy-velden ook als moderne `ResearchRun` en
+`BronKandidaat` opgeslagen. Daardoor komt de bron beschikbaar voor dezelfde
+validatie, ranking, PDF-paginaverwijzing en menselijke review als regulier
+bronnenonderzoek.
+
+URL's worden voor de wijzigingsdetectie gecanonicaliseerd. Verschillen zoals
+`http`/`https`, `www` en trackingparameters veroorzaken daardoor geen vals
+alarm. Iedere organisatie gebruikt dezelfde centrale onderzoekstimeout; een
+trage bron blokkeert de rest van de watchlist niet.
+
+Het dashboard baseert “nieuwe bevinding” en fouten op de laatste controle per
+organisatie. Een oude vondst blijft daardoor niet na een latere ongewijzigde
+controle als nieuw gemarkeerd.
+
+De bestaande `AgentResult`- en `Candidate`-opslag blijft voorlopig parallel
+actief voor compatibiliteit met het huidige monitoringdashboard. Deze brug kan
+worden verwijderd zodra dat dashboard volledig op `BronKandidaat` leest.

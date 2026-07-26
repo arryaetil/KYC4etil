@@ -72,6 +72,46 @@ def test_monitoring_status_met_actieve_watchlist(client, db_session):
     assert per_naam["Nog Niet Gecontroleerd"]["bron_status"] == "ontbreekt"
 
 
+def test_monitoring_dashboard_toont_alleen_laatste_controleuitkomst(
+    client, db_session,
+):
+    _zorg_voor_test_user(db_session)
+    upload = client.post(
+        "/batches/upload?naam=watchlist-latest&jaar=2026&monitoringlijst=true",
+        files={"file": (
+            "orgs.csv",
+            BytesIO(b"naam\nOrganisatie X\n"),
+            "text/csv",
+        )},
+    )
+    batch_id = upload.json()["batch_id"]
+    company = db_session.query(Company).filter_by(batch_id=batch_id).one()
+    db_session.add_all([
+        PipelineRun(
+            batch_id=batch_id,
+            company_id=company.id,
+            stap="jaarverslag_monitoring",
+            status="ok",
+            duur_ms=100,
+            created_at=datetime(2026, 7, 1),
+        ),
+        PipelineRun(
+            batch_id=batch_id,
+            company_id=company.id,
+            stap="jaarverslag_monitoring",
+            status="skipped",
+            duur_ms=100,
+            created_at=datetime(2026, 7, 8),
+        ),
+    ])
+    db_session.commit()
+
+    data = client.get("/monitoring").json()
+
+    assert data["nieuwe_bevindingen"] == 0
+    assert data["companies"][0]["nieuwe_bevinding"] is False
+
+
 def test_monitoring_run_zonder_watchlist_geeft_404(client):
     response = client.post("/monitoring/run")
     assert response.status_code == 404

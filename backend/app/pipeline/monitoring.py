@@ -3,15 +3,113 @@ en reconciliatie-/confidence-logica, maar draait buiten een handmatige batch-run
 import asyncio
 import logging
 import time
+from pathlib import PurePosixPath
+from urllib.parse import unquote, urlsplit
 
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..database import SessionLocal
-from ..models import AgentResult, Batch, Candidate, Company, JaarverslagMonitoring, PipelineRun
+from ..models import (
+    AgentResult, Batch, BronKandidaat, Candidate, Company,
+    JaarverslagMonitoring, PipelineRun, ResearchRun,
+)
+from ..pipeline.identity_scope import heuristic_scope_class
 from ..providers import get_providers
+from ..research.ranking import rank_bronnen
+from ..research.urls import canonicaliseer_url
+from ..research.validation import SourceDocument, valideer_bron
 from .confidence import bereken_confidence
 from .reconcile import reconcilieer
 from .runner import _log, _now
+
+
+def _sla_moderne_bron_op(
+    db: Session,
+    company: Company,
+    jaar: int,
+    finding,
+) -> None:
+    """Maak een moderne, reviewbare bronkandidaat naast legacy-compatibiliteit."""
+    gevraagd_jaar = jaar - 1
+    titel = unquote(PurePosixPath(urlsplit(finding.bron_url).path).name)
+    document = SourceDocument(
+        naam=company.naam,
+        company_website_url=(
+            (company.enrichment.website_url if company.enrichment else None)
+            or company.website_url
+        ),
+        url=finding.bron_url,
+        titel=titel or "Gevonden jaarverslag",
+        brontype="jaarverslag",
+        documenttype="jaarverslag",
+        gevraagd_jaar=gevraagd_jaar,
+        verslagjaar=(
+            gevraagd_jaar
+            if str(gevraagd_jaar) in finding.bron_url
+            else None
+        ),
+        informatie_peilmoment=finding.peilmoment,
+        wp_gevonden=finding.wp_gevonden,
+        eenheid=(
+            "fte" if finding.is_fte
+            else "werkzame_personen"
+            if finding.wp_gevonden is not None
+            else None
+        ),
+        bewijsfragment=finding.context,
+        bron_pagina=finding.bron_pagina,
+        scope_class=heuristic_scope_class(
+            finding.is_limburg_specifiek,
+            "jaarverslag",
+        ),
+    )
+    ranked = rank_bronnen([valideer_bron(document)])
+    run = ResearchRun(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        doel="periodieke jaarverslagmonitoring",
+        gevraagd_jaar=gevraagd_jaar,
+        status="completed",
+        resultaat_status="review_nodig" if ranked else "niet_gevonden",
+        onderzoekspaden=["document"],
+        configuratie={"bron": "jaarverslag_monitoring"},
+        started_at=_now(),
+        completed_at=_now(),
+    )
+    db.add(run)
+    db.flush()
+    if not ranked:
+        return
+    bron = ranked[0]
+    db.add(BronKandidaat(
+        research_run_id=run.id,
+        company_id=company.id,
+        url=document.url,
+        canonical_url=canonicaliseer_url(document.url),
+        titel=document.titel,
+        brontype=document.brontype,
+        documenttype=document.documenttype,
+        verslagjaar=document.verslagjaar,
+        informatie_peilmoment=document.informatie_peilmoment,
+        wp_gevonden=document.wp_gevonden,
+        eenheid=document.eenheid,
+        bewijsfragment=document.bewijsfragment,
+        bron_pagina=document.bron_pagina,
+        identity_class=bron.identity_class,
+        scope_class=document.scope_class,
+        autoriteit_score=bron.score_breakdown["autoriteit"],
+        actualiteit_score=bron.score_breakdown["actualiteit"],
+        identiteit_score=bron.score_breakdown["identiteit"],
+        relevantie_score=bron.score_breakdown["relevantie"],
+        ranking_score=bron.ranking_score,
+        score_breakdown=bron.score_breakdown,
+        validaties=bron.validaties,
+        waarschuwingen=bron.waarschuwingen,
+        raw_data=finding.raw or None,
+        status="voorgesteld",
+        rang=1,
+    ))
 
 
 async def check_company_jaarverslag(db: Session, company: Company, jaar: int) -> bool:
@@ -39,14 +137,24 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         db.commit()
         return False
 
-    url_gewijzigd = finding.bron_url != status.laatste_bron_url
+    url_gewijzigd = (
+        canonicaliseer_url(finding.bron_url)
+        != canonicaliseer_url(status.laatste_bron_url or "")
+    )
     status.laatste_bron_url = finding.bron_url
 
-    if not url_gewijzigd or not finding.wp_gevonden:
+    if not url_gewijzigd:
         _log(db, company.batch_id, company.id, "jaarverslag_monitoring",
-             "ok" if url_gewijzigd else "skipped", t0)
+             "skipped", t0)
         db.commit()
-        return url_gewijzigd
+        return False
+
+    _sla_moderne_bron_op(db, company, jaar, finding)
+
+    if not finding.wp_gevonden:
+        _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "ok", t0)
+        db.commit()
+        return True
 
     ar = AgentResult(
         company_id=company.id, batch_id=company.batch_id, agent_type="jaarverslag",
@@ -119,7 +227,24 @@ async def _check_company_met_eigen_sessie(batch_id: str, company_id: str, jaar: 
             company = db.get(Company, company_id)
             if company is None:
                 return
-            await check_company_jaarverslag(db, company, jaar)
+            await asyncio.wait_for(
+                check_company_jaarverslag(db, company, jaar),
+                timeout=get_settings().research_company_timeout_seconds,
+            )
+        except TimeoutError:
+            db.rollback()
+            db.add(PipelineRun(
+                batch_id=batch_id,
+                company_id=company_id,
+                stap="jaarverslag_monitoring",
+                status="error",
+                duur_ms=int((time.monotonic() - t0) * 1000),
+                error=(
+                    "jaarverslagcontrole afgebroken na "
+                    f"{get_settings().research_company_timeout_seconds} seconden"
+                ),
+            ))
+            db.commit()
         except Exception as exc:
             try:
                 db.rollback()

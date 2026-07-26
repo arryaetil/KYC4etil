@@ -37,10 +37,13 @@ def monitoring_status(db: Session = Depends(get_db)):
     bevindingen: set[str] = set()
     fouten_map: dict[str, str] = {}
     if company_ids:
+        laatste_status: dict[str, PipelineRun] = {}
         for pr in (db.query(PipelineRun)
                    .filter(PipelineRun.company_id.in_(company_ids),
                            PipelineRun.stap == "jaarverslag_monitoring")
                    .order_by(PipelineRun.created_at)):
+            laatste_status[pr.company_id] = pr
+        for pr in laatste_status.values():
             if pr.status == "ok":
                 bevindingen.add(pr.company_id)
             elif pr.status == "error":

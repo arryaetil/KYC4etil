@@ -2,10 +2,16 @@
 import asyncio
 import asyncio as _asyncio_voor_lock  # alias voorkomt naamsbotsing met bovenstaande `import asyncio`
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from app.database import SessionLocal
-from app.models import AgentResult, Batch, Candidate, Company, JaarverslagMonitoring
+from app.models import (
+    AgentResult, Batch, BronKandidaat, Candidate, Company,
+    JaarverslagMonitoring, PipelineRun, ResearchRun,
+)
 from app.pipeline import monitoring as monitoring_module
 from app.pipeline.monitoring import check_company_jaarverslag
 from app.providers.base import AgentFinding
@@ -216,6 +222,124 @@ def test_check_company_jaarverslag_zelfde_url_zonder_wp_geen_wijziging_tweede_ke
         db.query(JaarverslagMonitoring).delete()
         db.query(Company).delete()
         db.query(Batch).delete()
+        db.commit()
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_monitoring_slaat_nieuwe_bron_ook_modern_op(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Modern Bedrijf")
+    finding = AgentFinding(
+        wp_gevonden=42,
+        context="Modern Bedrijf heeft 42 medewerkers.",
+        zekerheid="hoog",
+        reden="jaarverslag",
+        bron_url="https://modern.example/jaarverslag-2025.pdf",
+        bron_type="jaarverslag",
+        is_limburg_specifiek=True,
+        bron_pagina=17,
+    )
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=finding)
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, agent, None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+
+    run = db_session.query(ResearchRun).filter_by(company_id=company.id).one()
+    bron = db_session.query(BronKandidaat).filter_by(company_id=company.id).one()
+    assert run.doel == "periodieke jaarverslagmonitoring"
+    assert run.gevraagd_jaar == 2025
+    assert run.resultaat_status == "review_nodig"
+    assert bron.wp_gevonden == 42
+    assert bron.bron_pagina == 17
+    assert bron.status == "voorgesteld"
+
+
+@pytest.mark.asyncio
+async def test_monitoring_ziet_trackingvariant_niet_als_nieuwe_bron(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Canonical Bedrijf")
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id,
+        laatste_bron_url=(
+            "https://www.canonical.example/jaarverslag.pdf?utm_source=mail"
+        ),
+    ))
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=None,
+        context=None,
+        zekerheid="laag",
+        reden="baseline",
+        bron_url="http://canonical.example/jaarverslag.pdf",
+        bron_type="jaarverslag",
+    )
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=finding)
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, agent, None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is False
+    assert (
+        db_session.query(ResearchRun).filter_by(company_id=company.id).count()
+        == 0
+    )
+
+
+@pytest.mark.asyncio
+async def test_monitoring_begrenst_een_trage_organisatie(
+    monkeypatch,
+):
+    db = SessionLocal()
+    batch = Batch(naam="timeout-monitoring", jaar=2026, totaal=1)
+    db.add(batch)
+    db.flush()
+    company = Company(batch_id=batch.id, naam="Trage monitor")
+    db.add(company)
+    db.commit()
+    batch_id, company_id = batch.id, company.id
+    db.close()
+
+    async def trage_check(*_args):
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "check_company_jaarverslag",
+        trage_check,
+    )
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_settings",
+        lambda: SimpleNamespace(research_company_timeout_seconds=0.01),
+    )
+
+    await monitoring_module._check_company_met_eigen_sessie(
+        batch_id,
+        company_id,
+        2026,
+        asyncio.Semaphore(1),
+    )
+
+    db = SessionLocal()
+    try:
+        fout = db.query(PipelineRun).filter_by(company_id=company_id).one()
+        assert fout.status == "error"
+        assert fout.error == "jaarverslagcontrole afgebroken na 0.01 seconden"
+    finally:
+        db.query(PipelineRun).filter_by(company_id=company_id).delete()
+        db.query(Company).filter_by(id=company_id).delete()
+        db.query(Batch).filter_by(id=batch_id).delete()
         db.commit()
         db.close()
 
