@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from "react";
 import {FileDown, FileUp, Play, Square, Trash2} from "lucide-react";
 import {Alert} from "../components/Alert.jsx";
 import {IconButton} from "../components/IconButton.jsx";
+import {researchBevestiging} from "../lib/researchCost.js";
 
 function formatDatum(iso) {
   if (!iso) return "—";
@@ -64,6 +65,11 @@ export function BatchesView({api, onOpenBatch}) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function startOnderzoek(batch) {
+    if (!window.confirm(researchBevestiging(batch.totaal))) return;
+    voerUit(() => api.runBatch(batch.id));
   }
 
   return (
@@ -129,7 +135,7 @@ export function BatchesView({api, onOpenBatch}) {
                   icon={Play}
                   variant="quiet"
                   disabled={busy}
-                  onClick={() => voerUit(() => api.runBatch(batch.id))}
+                  onClick={() => startOnderzoek(batch)}
                 >
                   Onderzoeken
                 </IconButton>

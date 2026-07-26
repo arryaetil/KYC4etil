@@ -7,6 +7,7 @@ import {BatchTimestamp} from "../components/BatchTimestamp.jsx";
 import {Progress} from "../components/Progress.jsx";
 import {LabelCounts} from "../components/LabelCounts.jsx";
 import {StatusPill} from "../components/StatusPill.jsx";
+import {researchBevestiging} from "../lib/researchCost.js";
 
 function isoWeekGrenzen(weekOffset) {
   const nu = new Date();
@@ -103,10 +104,11 @@ export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, op
     }
   }
 
-  async function run(batchId) {
+  async function run(batch) {
+    if (!window.confirm(researchBevestiging(batch.totaal))) return;
     setBusy(true);
     try {
-      await api.runBatch(batchId);
+      await api.runBatch(batch.id);
       await load();
     } catch (err) {
       setError(err.message);
@@ -218,7 +220,7 @@ export function Dashboard({api, user, onLogout, openBatch, openChatTemplates, op
                   <div className="inline-flex items-center gap-2">
                     {batch.status === "running"
                       ? <IconButton icon={Square} variant="quiet" onClick={() => cancel(batch.id)} disabled={busy}>Annuleren</IconButton>
-                      : <IconButton icon={Play} onClick={() => run(batch.id)} disabled={busy}>Run</IconButton>
+                      : <IconButton icon={Play} onClick={() => run(batch)} disabled={busy}>Onderzoeken</IconButton>
                     }
                     <IconButton icon={Trash2} variant="quiet" onClick={() => deleteBatch(batch.id, batch.naam)} disabled={busy || batch.status === "running"} title="Batch verwijderen" />
                   </div>

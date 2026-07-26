@@ -5,6 +5,7 @@ import {
   Square, Trash2,
 } from "lucide-react";
 import {classNames} from "../lib/format.js";
+import {researchBevestiging} from "../lib/researchCost.js";
 import {Shell} from "../components/Shell.jsx";
 import {IconButton} from "../components/IconButton.jsx";
 import {Alert} from "../components/Alert.jsx";
@@ -89,11 +90,7 @@ export function BatchView({api, user, onLogout, batchId, openDashboard, openComp
   }
 
   async function runBatch() {
-    if (!window.confirm(
-      `Autonoom bronnenonderzoek starten voor ${batch?.totaal || 0} organisaties?\n\n` +
-      "Verwachte externe kosten voor 20 organisaties: circa $0,70–$1,50. " +
-      "De agent stelt bronnen voor; een reviewer blijft beslissen.",
-    )) return;
+    if (!window.confirm(researchBevestiging(batch?.totaal))) return;
     setBusy(true);
     setError("");
     try {
