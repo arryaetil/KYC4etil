@@ -26,8 +26,8 @@ export function buildPdfViewerUrl({bronUrl, pagina, citaat, token}) {
   if (pagina) fragments.push(`page=${pagina}`);
   if (citaat) {
     const zoekterm = citaat.trim().slice(0, 80);
-    params.set("phrase", "true");
     fragments.push(`search=${encodeURIComponent(zoekterm)}`);
+    fragments.push("phrase=true");
   }
   const hash = fragments.length ? `#${fragments.join("&")}` : "";
   // pdf.js verwacht zijn eigen standaardindeling: viewer in web/, naast build/.

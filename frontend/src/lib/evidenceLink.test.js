@@ -18,6 +18,8 @@ describe("bewijsUrl", () => {
     expect(resultaat.url).toContain("/pdfjs/web/viewer.html");
     expect(resultaat.url).toContain("page=14");
     expect(resultaat.url).toContain("search=");
+    expect(resultaat.url).toContain("#page=14&search=47%20medewerkers%20in%20dienst&phrase=true");
+    expect(resultaat.url.split("#")[0]).not.toContain("phrase=");
   });
 
   it("herkent een pdf ook met queryparameters achter de extensie", () => {
