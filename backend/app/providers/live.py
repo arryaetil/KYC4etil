@@ -501,10 +501,8 @@ async def _web_search_wp(naam: str, gemeente: str | None) -> AgentFinding | None
 async def _zoek_jaarverslag_pdf(
     naam: str, jaar: int, website_url: str | None = None, uitgesloten: set[str] | None = None,
 ) -> str | None:
-    """Zoek jaarverslag-PDF: probeer eerst het huidige jaar, daarna jaar-1 als fallback.
-    Sommige organisaties publiceren het verslag al in het lopende jaar (bijv. bestuursverslag 2025)."""
-    # Probeer huidig jaar eerst, daarna jaar-1
-    for zoekjaar in (jaar, jaar - 1):
+    """Zoek van recent naar ouder, met maximaal drie jaar context."""
+    for zoekjaar in (jaar, jaar - 1, jaar - 2):
         result = await _zoek_jaarverslag_pdf_voor_jaar(
             naam, zoekjaar, website_url=website_url, uitgesloten=uitgesloten)
         if result:
@@ -628,6 +626,15 @@ async def _eerste_pdf_uit_resultaten(
     for result in results:
         url = result["url"]
         if url in uitgesloten:
+            continue
+        jaren = {
+            int(match)
+            for match in re.findall(
+                r"\b20\d{2}\b",
+                f"{result.get('title', '')} {url}",
+            )
+        }
+        if jaren and not jaren.intersection({zoekjaar, zoekjaar - 1}):
             continue
         if ".pdf" in url.lower():
             return url
@@ -910,6 +917,7 @@ class JaarverslagResearchState(TypedDict, total=False):
     afgewezen_urls: set[str]
     pogingen: int
     source_identity_class: str | None
+    strict_identity: bool
     finding: AgentFinding | None
 
 
@@ -1076,8 +1084,23 @@ def _build_jaarverslag_research_graph():
 
     async def valideer_bron(state: JaarverslagResearchState) -> dict:
         pdf_url = state.get("pdf_url")
-        identity = await _classificeer_jaarverslag_bron_identiteit(state["naam"], pdf_url)
-        if pdf_url and identity != IdentityClass.MISMATCH:
+        domein_match = domain_matches_company(
+            pdf_url,
+            state.get("website_url"),
+        )
+        identity = (
+            IdentityClass.EXACT_ENTITY
+            if domein_match is True
+            else await _classificeer_jaarverslag_bron_identiteit(
+                state["naam"],
+                pdf_url,
+            )
+        )
+        toegestaan = identity == IdentityClass.EXACT_ENTITY or (
+            identity == IdentityClass.SAME_BRAND_OR_GROUP
+            and not state.get("strict_identity", False)
+        )
+        if pdf_url and toegestaan:
             return {"pdf_url": pdf_url, "source_identity_class": identity.value}
         # Afgewezen (verkeerd bedrijf): uitsluiten zodat een retry een ANDER
         # zoekresultaat probeert i.p.v. dezelfde foute bron opnieuw te vinden.
@@ -1155,7 +1178,10 @@ def _build_jaarverslag_research_graph():
 
 
 async def _run_jaarverslag_research_graph(
-    naam: str, jaar: int, website_url: str | None = None,
+    naam: str,
+    jaar: int,
+    website_url: str | None = None,
+    strict_identity: bool = False,
 ) -> AgentFinding | None:
     graph = _build_jaarverslag_research_graph()
     result = await graph.ainvoke({
@@ -1167,6 +1193,7 @@ async def _run_jaarverslag_research_graph(
         "afgewezen_urls": set(),
         "pogingen": 0,
         "source_identity_class": None,
+        "strict_identity": strict_identity,
         "finding": None,
     })
     return result.get("finding")
@@ -1248,7 +1275,13 @@ async def _web_search_jaarverslag_wp(naam: str, jaar: int) -> AgentFinding | Non
 
 
 class LiveJaarverslagAgent:
-    async def run(self, naam: str, jaar: int, website_url: str | None = None) -> AgentFinding | None:
+    async def run(
+        self,
+        naam: str,
+        jaar: int,
+        website_url: str | None = None,
+        strict_identity: bool = False,
+    ) -> AgentFinding | None:
         """Fase A: zoek jaarverslag-PDF via web search; Fase B: extraheer WP uit PDF.
         Fase C (optioneel): directe WP-zoekopdracht op jaarverslagdata als PDF-pad mislukt.
         Fase C is standaard uitgeschakeld (JAARVERSLAG_WEB_FALLBACK=false) voor kostenbeheersing.
@@ -1260,7 +1293,12 @@ class LiveJaarverslagAgent:
         website_url wordt, indien bekend, gebruikt om de PDF-zoekopdracht eerst binnen
         het eigen domein te laten zoeken (site:-scoped) — dat is veel minder gevoelig
         voor niet-determinisme/mismatches dan een open zoekopdracht op alleen de naam."""
-        return await _run_jaarverslag_research_graph(naam, jaar, website_url=website_url)
+        return await _run_jaarverslag_research_graph(
+            naam,
+            jaar,
+            website_url=website_url,
+            strict_identity=strict_identity,
+        )
 
     async def run_with_pdf(self, naam: str, pdf_url: str) -> AgentFinding | None:
         import fitz  # PyMuPDF

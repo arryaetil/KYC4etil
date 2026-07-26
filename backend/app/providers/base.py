@@ -60,7 +60,13 @@ class WebsiteAgent(Protocol):
 
 
 class JaarverslagAgent(Protocol):
-    async def run(self, naam: str, jaar: int, website_url: str | None = None) -> AgentFinding | None: ...
+    async def run(
+        self,
+        naam: str,
+        jaar: int,
+        website_url: str | None = None,
+        strict_identity: bool = False,
+    ) -> AgentFinding | None: ...
 
 
 class IdentityScopeClassifier(Protocol):

@@ -191,6 +191,64 @@ async def test_live_jaarverslag_agent_laat_brand_of_group_match_door():
 
 
 @pytest.mark.asyncio
+async def test_monitoringmodus_weigert_onzekere_of_alleen_groepsmatch():
+    """Monitoring mag een twijfelachtige bron niet als nieuwe baseline opslaan."""
+    from app.providers import live
+
+    async def fake_zoek_pdf(
+        naam, jaar, website_url=None, uitgesloten=None,
+    ):
+        return "https://onbekende-bron.test/jaarverslag-2025.pdf"
+
+    with patch(
+        "app.providers.live._zoek_jaarverslag_pdf",
+        new=fake_zoek_pdf,
+    ), patch(
+        "app.providers.live._classificeer_jaarverslag_bron_identiteit",
+        new=AsyncMock(return_value=IdentityClass.SAME_BRAND_OR_GROUP),
+    ), patch(
+        "app.providers.live.LiveJaarverslagAgent.run_with_pdf",
+        new=AsyncMock(),
+    ) as extract:
+        result = await live.LiveJaarverslagAgent().run(
+            "Testbedrijf Limburg",
+            2026,
+            strict_identity=True,
+        )
+
+    assert result is None
+    extract.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_jaarverslagzoeker_slaat_aantoonbaar_verouderde_hit_over(
+    monkeypatch,
+):
+    from app.providers import live
+
+    async def fake_web_search(query, max_results=8):
+        return [
+            {
+                "title": "Jaarverslag 2012",
+                "url": "https://example.test/jaarverslag-2012.pdf",
+            },
+            {
+                "title": "Jaarverslag 2025",
+                "url": "https://example.test/jaarverslag-2025.pdf",
+            },
+        ]
+
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+
+    result = await live._zoek_jaarverslag_pdf_voor_jaar(
+        "Testbedrijf",
+        2026,
+    )
+
+    assert result == "https://example.test/jaarverslag-2025.pdf"
+
+
+@pytest.mark.asyncio
 async def test_live_jaarverslag_agent_handelt_pdf_fout_af():
     """Als run_with_pdf faalt en de web search-fallback (Fase C) niets oplevert,
     geeft de agent toch de gevonden bron_url door (zonder wp_gevonden) — zodat de

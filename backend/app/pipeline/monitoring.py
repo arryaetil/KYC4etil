@@ -120,7 +120,7 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     aangemaakt/bijgewerkt als er zowel een nieuwe URL als een bruikbaar WP-getal is.
     Retourneert True als er een wijziging is vastgesteld (nieuwe URL, met of zonder
     WP-getal)."""
-    _, _, jaarverslag_agent, _ = get_providers()
+    lookup, _, jaarverslag_agent, _ = get_providers()
     t0 = time.monotonic()
 
     status = db.query(JaarverslagMonitoring).filter_by(company_id=company.id).one_or_none()
@@ -129,7 +129,18 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         db.add(status)
 
     website_url = (company.enrichment.website_url if company.enrichment else None) or company.website_url
-    finding = await jaarverslag_agent.run(company.naam, jaar, website_url=website_url)
+    if not website_url and lookup is not None:
+        try:
+            place = await lookup.lookup(company.naam, company.gemeente)
+            website_url = place.website if place else None
+        except Exception:
+            website_url = None
+    finding = await jaarverslag_agent.run(
+        company.naam,
+        jaar,
+        website_url=website_url,
+        strict_identity=True,
+    )
     status.laatst_gecontroleerd_op = _now()
 
     if finding is None or not finding.bron_url:
