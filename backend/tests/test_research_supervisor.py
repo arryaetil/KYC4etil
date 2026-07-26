@@ -200,7 +200,10 @@ async def test_kandidaten_limiet_is_configureerbaar():
         website_url="https://voorbeeldzorg.nl",
         huidig_jaar=2026,
     ))
-    assert len(outcome_ruim.kandidaten) == 8
+    # De limiet is een bovengrens: per menselijke bronrol worden maximaal
+    # twee alternatieven getoond om handmatig dubbelwerk te voorkomen.
+    assert len(outcome_ruim.kandidaten) == 4
+    assert len(outcome_ruim.kandidaten) <= 8
 
 
 @pytest.mark.asyncio

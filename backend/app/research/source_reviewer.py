@@ -78,6 +78,10 @@ _GENERIEKE_NAAMWOORDEN = {
 _BRUIKBARE_GROEPSPAGINAS = {
     "jaarrekening", "jaarverslag", "bestuursverslag", "pdf_document",
 }
+_LAGE_WAARDE_ZONDER_WP = {
+    "baan", "banen", "job", "jobs", "vacature", "vacatures", "werken-bij",
+    "werken_bij",
+}
 
 
 def _domain(url: str) -> str:
@@ -119,6 +123,15 @@ def _bruikbare_groepscontext(document: SourceDocument) -> bool:
             "over-de-organisatie",
         ))
     )
+
+
+def _is_lage_waarde_zonder_wp(document: SourceDocument) -> bool:
+    if document.wp_gevonden is not None:
+        return False
+    pad_en_titel = _normaliseer(
+        f"{urlsplit(document.url).path} {document.titel}"
+    )
+    return any(term in pad_en_titel for term in _LAGE_WAARDE_ZONDER_WP)
 
 
 class IntelligentSourceReviewer:
@@ -184,6 +197,22 @@ class IntelligentSourceReviewer:
             document.url, document.company_website_url,
         ) is True:
             scope = document.scope_class or "unknown"
+            if _is_lage_waarde_zonder_wp(document):
+                validatie.identity_class = "exact_entity"
+                validatie.is_afgewezen = True
+                validatie.afwijsredenen.append(
+                    "vacaturepagina_zonder_wp_bewijs"
+                )
+                validatie.validaties["intelligente_review"] = {
+                    "beslissing": "afwijzen",
+                    "identity_class": "exact_entity",
+                    "scope_class": scope,
+                    "reden": (
+                        "Een vacature- of werken-bijpagina zonder concreet "
+                        "personeelsbewijs verkort het handmatige onderzoek niet."
+                    ),
+                }
+                return validatie
             zelfde_pagina = (
                 canonicaliseer_url(document.url)
                 == canonicaliseer_url(document.company_website_url)

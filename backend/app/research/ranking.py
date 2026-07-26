@@ -93,6 +93,12 @@ def _menselijke_waarde(bron: BronValidatie) -> dict[str, str]:
             "label": "Direct WP-bewijs",
             "actie": "Controleer het citaat en de scope; het personeelsgetal staat al in de bron.",
         }
+    if heeft_wp_bewijs and document.brontype == "media":
+        return {
+            "rol": "actuele_context",
+            "label": "Actuele indicatie organisatieomvang",
+            "actie": "Gebruik het recente personeelscijfer om groei of krimp sinds de formele bron te beoordelen.",
+        }
     if heeft_wp_bewijs:
         return {
             "rol": "organisatieomvang",
@@ -181,28 +187,32 @@ def rank_bronnen(
 def selecteer_bronportfolio(
     ranked: list[RankedBron],
     maximum: int,
+    maximum_per_rol: int = 2,
 ) -> list[RankedBron]:
-    """Behoud de beste bron en voeg daarna complementaire onderzoeksroutes toe."""
-    if maximum <= 0 or not ranked:
+    """Behoud sterke complementaire routes zonder een rij rol-duplicaten."""
+    if maximum <= 0 or maximum_per_rol <= 0 or not ranked:
         return []
     gekozen = [ranked[0]]
     gekozen_ids = {id(ranked[0])}
-    geziene_rollen = {
-        ranked[0].validaties["menselijke_waarde"]["rol"],
-    }
+    eerste_rol = ranked[0].validaties["menselijke_waarde"]["rol"]
+    rol_aantallen = {eerste_rol: 1}
     for kandidaat in ranked[1:]:
         rol = kandidaat.validaties["menselijke_waarde"]["rol"]
-        if rol in geziene_rollen:
+        if rol in rol_aantallen:
             continue
         gekozen.append(kandidaat)
         gekozen_ids.add(id(kandidaat))
-        geziene_rollen.add(rol)
+        rol_aantallen[rol] = 1
         if len(gekozen) >= maximum:
             return gekozen
     for kandidaat in ranked:
         if id(kandidaat) in gekozen_ids:
             continue
+        rol = kandidaat.validaties["menselijke_waarde"]["rol"]
+        if rol_aantallen.get(rol, 0) >= maximum_per_rol:
+            continue
         gekozen.append(kandidaat)
+        rol_aantallen[rol] = rol_aantallen.get(rol, 0) + 1
         if len(gekozen) >= maximum:
             break
     return gekozen

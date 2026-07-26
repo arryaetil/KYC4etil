@@ -159,3 +159,27 @@ def test_bronportfolio_levert_complementaire_routes_met_menselijke_actie():
         item.validaties["menselijke_waarde"]["actie"]
         for item in portfolio
     )
+
+
+def test_bronportfolio_beperkt_dubbele_rollen_tot_twee():
+    documenten = [
+        SourceDocument(
+            naam="Voorbeeld Zorg",
+            company_website_url="https://voorbeeldzorg.nl",
+            url=f"https://voorbeeldzorg.nl/pagina-{index}",
+            titel=f"Organisatiepagina {index}",
+            tekst="Voorbeeld Zorg",
+            brontype="officiele_website",
+            documenttype="organisatiepagina",
+        )
+        for index in range(5)
+    ]
+    ranked = rank_bronnen([valideer_bron(item) for item in documenten])
+
+    portfolio = selecteer_bronportfolio(ranked, maximum=8)
+
+    assert len(portfolio) == 2
+    assert {
+        item.validaties["menselijke_waarde"]["rol"]
+        for item in portfolio
+    } == {"officiele_route"}

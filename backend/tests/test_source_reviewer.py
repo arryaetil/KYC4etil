@@ -357,3 +357,27 @@ async def test_relevant_locatienieuws_op_groepsdomein_blijft_context():
         == "context_only"
     )
     reviewer._llm_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_vacaturepagina_zonder_wp_bewijs_wordt_afgewezen():
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    document = SourceDocument(
+        naam="Groene Kruis Kraamzorg",
+        company_website_url="https://kraamzorg.example/",
+        url="https://kraamzorg.example/vacature-medewerker-e-consult",
+        titel="Vacature medewerker E-consult",
+        tekst="Kom werken bij Groene Kruis Kraamzorg.",
+        brontype="officiele_website",
+        documenttype="organisatiepagina",
+    )
+
+    reviewed = await reviewer.review(
+        _context("Groene Kruis Kraamzorg"),
+        document,
+    )
+
+    assert reviewed.is_afgewezen is True
+    assert "vacaturepagina_zonder_wp_bewijs" in reviewed.afwijsredenen
+    reviewer._llm_review.assert_not_awaited()
