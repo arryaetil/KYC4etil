@@ -430,6 +430,11 @@ async def test_geldige_jaarverslagbron_blijft_behouden_zonder_wp_getal(
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(live, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        live,
+        "_is_organisatiebreed_jaarverslag",
+        AsyncMock(return_value=True),
+    )
     monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
 
     finding = await live._run_jaarverslag_research_graph(
@@ -442,6 +447,46 @@ async def test_geldige_jaarverslagbron_blijft_behouden_zonder_wp_getal(
     assert finding is not None
     assert finding.bron_url == url
     assert finding.wp_gevonden is None
+
+
+@pytest.mark.asyncio
+async def test_strikte_monitoring_weigert_jaarverslag_van_deelorganisatie(
+    monkeypatch,
+):
+    from app.providers import live
+
+    deelrapport = "https://organisatie.test/vrienden-jaarrekening-2025.pdf"
+    hoofdrapport = "https://organisatie.test/bestuursverslag-2024.pdf"
+
+    async def fake_zoek(*args, uitgesloten=None, **kwargs):
+        uitgesloten = uitgesloten or set()
+        if hoofdrapport in uitgesloten:
+            return None
+        return hoofdrapport if deelrapport in uitgesloten else deelrapport
+
+    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek)
+    monkeypatch.setattr(
+        live,
+        "_is_organisatiebreed_jaarverslag",
+        AsyncMock(side_effect=[False, True]),
+    )
+    monkeypatch.setattr(live, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        live.LiveJaarverslagAgent,
+        "run_with_pdf",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
+
+    finding = await live._run_jaarverslag_research_graph(
+        "Organisatie",
+        2026,
+        website_url="https://organisatie.test",
+        strict_identity=True,
+    )
+
+    assert finding is not None
+    assert finding.bron_url == hoofdrapport
 
 
 @pytest.mark.asyncio
