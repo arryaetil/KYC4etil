@@ -360,6 +360,86 @@ async def test_monitoring_ziet_trackingvariant_niet_als_nieuwe_bron(
 
 
 @pytest.mark.asyncio
+async def test_andere_url_voor_hetzelfde_verslagjaar_is_geen_nieuw_verslag(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Zelfde Jaar")
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id,
+        laatste_bron_url="https://organisatie.test/verslag-2025-v1.pdf",
+        laatste_verslagjaar=2025,
+    ))
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=None,
+        context=None,
+        zekerheid="hoog",
+        reden="dezelfde editie op een nieuwe URL",
+        bron_url="https://organisatie.test/verslag-2025-definitief.pdf",
+        bron_type="jaarverslag",
+        raw={"verslagjaar": 2025},
+    )
+
+    class Agent:
+        async def run(self, *args, **kwargs):
+            return finding
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+    run = db_session.query(PipelineRun).filter_by(
+        company_id=company.id,
+        stap="jaarverslag_monitoring",
+    ).order_by(PipelineRun.created_at.desc()).first()
+    assert run.status == "updated"
+
+
+@pytest.mark.asyncio
+async def test_hoger_verslagjaar_geeft_nieuw_signaal(db_session, monkeypatch):
+    company = _maak_company(db_session, naam="Nieuw Jaar")
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id,
+        laatste_bron_url="https://organisatie.test/verslag-2024.pdf",
+        laatste_verslagjaar=2024,
+    ))
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=None,
+        context=None,
+        zekerheid="hoog",
+        reden="nieuwe editie",
+        bron_url="https://organisatie.test/verslag-2025.pdf",
+        bron_type="jaarverslag",
+        raw={"verslagjaar": 2025},
+    )
+
+    class Agent:
+        async def run(self, *args, **kwargs):
+            return finding
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+    status = db_session.query(JaarverslagMonitoring).filter_by(
+        company_id=company.id,
+    ).one()
+    run = db_session.query(PipelineRun).filter_by(
+        company_id=company.id,
+        stap="jaarverslag_monitoring",
+    ).order_by(PipelineRun.created_at.desc()).first()
+    assert status.laatste_verslagjaar == 2025
+    assert run.status == "new"
+
+
+@pytest.mark.asyncio
 async def test_monitoring_gebruikt_adres_als_gemeente_ontbreekt(
     db_session, monkeypatch,
 ):
@@ -383,6 +463,30 @@ async def test_monitoring_gebruikt_adres_als_gemeente_ontbreekt(
         "Generieke Zorggroep",
         "Markt 1, 5911 HD Venlo",
     )
+
+
+@pytest.mark.asyncio
+async def test_monitoring_gebruikt_nederland_en_bewaart_gevonden_website(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Koraal Groep")
+    lookup = MagicMock()
+    lookup.lookup = AsyncMock(return_value=SimpleNamespace(
+        website="https://www.koraal.nl",
+    ))
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (lookup, None, agent, None),
+    )
+
+    await check_company_jaarverslag(db_session, company, 2026)
+
+    lookup.lookup.assert_awaited_once_with("Koraal Groep", "Nederland")
+    db_session.refresh(company)
+    assert company.website_url == "https://www.koraal.nl"
 
 
 @pytest.mark.asyncio

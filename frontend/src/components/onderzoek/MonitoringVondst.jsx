@@ -11,7 +11,7 @@ export function alsBewijsBron(company) {
   return {
     id: `monitoring:${company.company_id}`,
     url: company.laatste_bron_url,
-    titel: `Jaarverslag ${company.naam || ""}`.trim(),
+    titel: `Jaarverslag${company.verslagjaar ? ` ${company.verslagjaar}` : ""} ${company.naam || ""}`.trim(),
     brontype: "jaarverslag",
   };
 }
@@ -48,6 +48,11 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
             </a>
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
+            {company.verslagjaar ? (
+              <span className="text-sm font-medium text-ink">
+                Verslagjaar {company.verslagjaar}
+              </span>
+            ) : null}
             <button
               type="button"
               onClick={() => onSelecteerBron(bron)}

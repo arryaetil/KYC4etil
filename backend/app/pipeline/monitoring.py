@@ -257,45 +257,29 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     if (
         beste_moderne_bron is not None
         and (
-            _documentjaar(status.laatste_bron_url) or 0
+            status.laatste_verslagjaar
+            or _documentjaar(status.laatste_bron_url)
+            or 0
         ) < (beste_moderne_bron.verslagjaar or 0)
     ):
         status.laatste_bron_url = beste_moderne_bron.url
+        status.laatste_verslagjaar = beste_moderne_bron.verslagjaar
 
     website_url = (company.enrichment.website_url if company.enrichment else None) or company.website_url
     if not website_url and lookup is not None:
         try:
-            locatiehint = company.gemeente or company.adres
+            locatiehint = company.gemeente or company.adres or "Nederland"
             place = await lookup.lookup(company.naam, locatiehint)
             website_url = place.website if place else None
+            if website_url:
+                company.website_url = website_url
         except Exception:
             website_url = None
 
-    baseline_ingetrokken = False
-    validator = getattr(type(jaarverslag_agent), "validate_source", None)
     te_valideren_url = (
         status.laatste_bron_url
         or _jaarverslagbron_van_candidate(db, company)
     )
-    if te_valideren_url and validator is not None:
-        bron_is_nog_geldig = await jaarverslag_agent.validate_source(
-            company.naam,
-            jaar,
-            te_valideren_url,
-            website_url=website_url,
-            strict_identity=True,
-        )
-        if not bron_is_nog_geldig:
-            status.laatste_bron_url = None
-            _trek_candidate_van_afgewezen_bron_in(
-                db,
-                company,
-                te_valideren_url,
-            )
-            baseline_ingetrokken = True
-        elif not status.laatste_bron_url:
-            status.laatste_bron_url = te_valideren_url
-
     source_finder = getattr(type(jaarverslag_agent), "find_latest_source", None)
     if source_finder is not None:
         finding = await jaarverslag_agent.find_latest_source(
@@ -312,6 +296,59 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
             strict_identity=True,
         )
     status.laatst_gecontroleerd_op = _now()
+
+    bestaand_jaar = (
+        status.laatste_verslagjaar
+        or _documentjaar(te_valideren_url)
+    )
+    gevonden_jaar = (
+        (finding.raw or {}).get("verslagjaar")
+        or _documentjaar(finding.bron_url)
+        if finding and finding.bron_url
+        else None
+    )
+    zelfde_gevalideerde_bron = bool(
+        finding
+        and finding.bron_url
+        and te_valideren_url
+        and canonicaliseer_url(finding.bron_url)
+        == canonicaliseer_url(te_valideren_url)
+    )
+    baseline_moet_worden_gevalideerd = bool(
+        te_valideren_url
+        and not zelfde_gevalideerde_bron
+        and (
+            finding is None
+            or not finding.bron_url
+            or gevonden_jaar is None
+            or bestaand_jaar is None
+            or gevonden_jaar < bestaand_jaar
+        )
+    )
+    baseline_ingetrokken = False
+    validator = getattr(type(jaarverslag_agent), "validate_source", None)
+    if baseline_moet_worden_gevalideerd and validator is not None:
+        bron_is_nog_geldig = await jaarverslag_agent.validate_source(
+            company.naam,
+            jaar,
+            te_valideren_url,
+            website_url=website_url,
+            strict_identity=True,
+        )
+        if not bron_is_nog_geldig:
+            status.laatste_bron_url = None
+            status.laatste_verslagjaar = None
+            bestaand_jaar = None
+            _trek_candidate_van_afgewezen_bron_in(
+                db,
+                company,
+                te_valideren_url,
+            )
+            baseline_ingetrokken = True
+        elif not status.laatste_bron_url:
+            status.laatste_bron_url = te_valideren_url
+    elif zelfde_gevalideerde_bron and not status.laatste_bron_url:
+        status.laatste_bron_url = te_valideren_url
 
     if finding is None or not finding.bron_url:
         if baseline_ingetrokken:
@@ -330,8 +367,6 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         db.commit()
         return False
 
-    bestaand_jaar = _documentjaar(status.laatste_bron_url)
-    gevonden_jaar = _documentjaar(finding.bron_url)
     if (
         bestaand_jaar is not None
         and gevonden_jaar is not None
@@ -355,7 +390,22 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         canonicaliseer_url(finding.bron_url)
         != canonicaliseer_url(status.laatste_bron_url or "")
     )
+    eerste_bron = not status.laatste_bron_url
+    verslag_is_nieuw = (
+        eerste_bron
+        or (
+            gevonden_jaar is not None
+            and bestaand_jaar is not None
+            and gevonden_jaar > bestaand_jaar
+        )
+        or (
+            gevonden_jaar is None
+            and bestaand_jaar is None
+            and url_gewijzigd
+        )
+    )
     status.laatste_bron_url = finding.bron_url
+    status.laatste_verslagjaar = gevonden_jaar
 
     wp_is_nieuw = _wp_is_nieuw_voor_bron(
         db,
@@ -369,7 +419,7 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         db.commit()
         return False
 
-    wijzigingsstatus = "new" if url_gewijzigd else "updated"
+    wijzigingsstatus = "new" if verslag_is_nieuw else "updated"
 
     _sla_moderne_bron_op(db, company, jaar, finding)
 

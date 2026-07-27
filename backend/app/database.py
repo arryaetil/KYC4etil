@@ -107,6 +107,19 @@ def ensure_lightweight_migrations() -> None:
         with engine.begin() as conn:
             _add_column_if_missing(conn, "candidates", existing_cand, "reviewer_signaal", "TEXT")
 
+    if "jaarverslag_monitoring" in tables:
+        existing_monitoring = {
+            col["name"] for col in inspector.get_columns("jaarverslag_monitoring")
+        }
+        with engine.begin() as conn:
+            _add_column_if_missing(
+                conn,
+                "jaarverslag_monitoring",
+                existing_monitoring,
+                "laatste_verslagjaar",
+                "INTEGER",
+            )
+
     if "chat_sessions" in tables:
         existing_cs = {col["name"] for col in inspector.get_columns("chat_sessions")}
         with engine.begin() as conn:

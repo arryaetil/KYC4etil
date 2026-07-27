@@ -510,7 +510,11 @@ async def test_monitoring_sourcezoeker_slaat_wp_extractie_over(monkeypatch):
         "_is_organisatiebreed_jaarverslag",
         AsyncMock(return_value=True),
     )
-    monkeypatch.setattr(live, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        live,
+        "_eerste_pdf_paginas",
+        AsyncMock(return_value="Bestuursverslag Organisatie 2024"),
+    )
     extract = AsyncMock()
     monkeypatch.setattr(live.LiveJaarverslagAgent, "run_with_pdf", extract)
 

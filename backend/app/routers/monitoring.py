@@ -58,6 +58,7 @@ def monitoring_status(db: Session = Depends(get_db)):
             "laatst_gecontroleerd_op": (status.laatst_gecontroleerd_op.isoformat() + "Z"
                                         if status and status.laatst_gecontroleerd_op else None),
             "laatste_bron_url": status.laatste_bron_url if status else None,
+            "verslagjaar": status.laatste_verslagjaar if status else None,
             "bron_status": "gevonden" if status and status.laatste_bron_url else "ontbreekt",
             "nieuwe_bevinding": comp.id in bevindingen,
             "fout": fouten_map.get(comp.id),

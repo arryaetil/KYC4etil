@@ -363,5 +363,6 @@ class JaarverslagMonitoring(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), unique=True, index=True)
     laatste_bron_url: Mapped[str | None] = mapped_column(Text)
+    laatste_verslagjaar: Mapped[int | None] = mapped_column(Integer)
     laatst_gecontroleerd_op: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)

@@ -130,7 +130,10 @@ Kies:
 - "unknown": de scope is niet betrouwbaar vast te stellen.
 
 Een officieel webdomein is geen bewijs voor "organization_wide". De titel en
-inhoud van het document zijn leidend.
+inhoud van het document zijn leidend. Als de titel een andere organisatorische
+entiteit noemt dan de gevraagde organisatie, kies "subentity_or_body", ook als
+beide dezelfde merknaam en hetzelfde domein gebruiken. Voorbeeld: gevraagd is een
+zorgconcern, maar de titel noemt alleen het medisch centrum; dat is een deelentiteit.
 
 Antwoord uitsluitend met JSON:
 {{"document_scope": "organization_wide|subentity_or_body|not_annual_report|unknown"}}
@@ -659,7 +662,9 @@ def _is_vacature_of_jobs_url(url: str | None) -> bool:
 
 
 async def _classificeer_jaarverslag_bron_identiteit(
-    naam: str, pdf_url: str | None,
+    naam: str,
+    pdf_url: str | None,
+    eerste_paginas: str | None = None,
 ) -> IdentityClass:
     """Classificeert of een gevonden jaarverslag-PDF waarschijnlijk bij het bedrijf hoort.
 
@@ -669,10 +674,11 @@ async def _classificeer_jaarverslag_bron_identiteit(
     """
     if not pdf_url:
         return IdentityClass.UNKNOWN
-    try:
-        eerste_paginas = await _eerste_pdf_paginas(pdf_url)
-    except Exception:
-        return IdentityClass.UNKNOWN
+    if eerste_paginas is None:
+        try:
+            eerste_paginas = await _eerste_pdf_paginas(pdf_url)
+        except Exception:
+            return IdentityClass.UNKNOWN
 
     tokens = _naam_tokens(naam)
     if not tokens:
@@ -701,12 +707,14 @@ async def _classificeer_jaarverslag_bron_identiteit(
 async def _is_organisatiebreed_jaarverslag(
     naam: str,
     pdf_url: str,
+    eerste_paginas: str | None = None,
 ) -> bool | None:
     """True voor het hoofdverslag, False voor deelorganen, None bij twijfel/falen."""
     from openai import AsyncOpenAI
 
     try:
-        eerste_paginas = await _eerste_pdf_paginas(pdf_url)
+        if eerste_paginas is None:
+            eerste_paginas = await _eerste_pdf_paginas(pdf_url)
         client = AsyncOpenAI(api_key=settings.openai_api_key)
         response = await _create_response(
             client,
@@ -767,6 +775,18 @@ async def _pdf_is_recent_jaarverslag(
         )
         for verslagjaar in (jaar - 1, jaar - 2, jaar - 3)
     )
+
+
+def _verslagjaar_uit_pdftekst(tekst: str, jaar: int) -> int | None:
+    return next((
+        verslagjaar
+        for verslagjaar in (jaar - 1, jaar - 2, jaar - 3)
+        if _lijkt_jaarverslag(
+            tekst,
+            verslagjaar,
+            weiger_deelrapporten=False,
+        )
+    ), None)
 
 
 async def _valideer_jaarverslag_bron(naam: str, pdf_url: str | None) -> bool:
@@ -1379,7 +1399,7 @@ def _build_jaarverslag_research_graph():
                 state["naam"],
                 pdf_url,
             )
-            if organisatiebreed is False:
+            if organisatiebreed is not True:
                 toegestaan = False
         if (
             toegestaan
@@ -1583,7 +1603,7 @@ class LiveJaarverslagAgent:
     ) -> AgentFinding | None:
         """Vind en valideer alleen de nieuwste bron; monitoring hoeft geen WP-extractie."""
         uitgesloten: set[str] = set()
-        for _ in range(settings.jaarverslag_max_pogingen):
+        for _ in range(min(settings.jaarverslag_max_pogingen, 2)):
             pdf_url = await _zoek_jaarverslag_pdf(
                 naam,
                 jaar,
@@ -1593,11 +1613,21 @@ class LiveJaarverslagAgent:
             if not pdf_url:
                 return None
 
+            try:
+                eerste_paginas = await _eerste_pdf_paginas(pdf_url)
+            except Exception:
+                uitgesloten.add(pdf_url)
+                continue
+
             domein_match = domain_matches_company(pdf_url, website_url)
             identity = (
                 IdentityClass.EXACT_ENTITY
                 if domein_match is True
-                else await _classificeer_jaarverslag_bron_identiteit(naam, pdf_url)
+                else await _classificeer_jaarverslag_bron_identiteit(
+                    naam,
+                    pdf_url,
+                    eerste_paginas,
+                )
             )
             toegestaan = identity == IdentityClass.EXACT_ENTITY or (
                 identity == IdentityClass.SAME_BRAND_OR_GROUP
@@ -1607,14 +1637,17 @@ class LiveJaarverslagAgent:
                 toegestaan = await _is_organisatiebreed_jaarverslag(
                     naam,
                     pdf_url,
-                ) is not False
+                    eerste_paginas,
+                ) is True
+            verslagjaar = _verslagjaar_uit_pdftekst(eerste_paginas, jaar)
             if toegestaan and strict_identity:
-                toegestaan = await _pdf_is_recent_jaarverslag(pdf_url, jaar)
+                toegestaan = verslagjaar is not None
             if toegestaan:
                 finding = _baseline_jaarverslag_finding(pdf_url)
                 finding.raw = {
                     **(finding.raw or {}),
                     "identity_class": identity.value,
+                    "verslagjaar": verslagjaar,
                 }
                 return finding
             uitgesloten.add(pdf_url)
@@ -1654,18 +1687,26 @@ class LiveJaarverslagAgent:
         strict_identity: bool = False,
     ) -> bool:
         """Herbeoordeel een legacy-baseline met de huidige strikte regels."""
-        if not await _pdf_is_recent_jaarverslag(bron_url, jaar):
+        try:
+            eerste_paginas = await _eerste_pdf_paginas(bron_url)
+        except Exception:
             return False
-        if strict_identity and await _is_organisatiebreed_jaarverslag(
-            naam,
-            bron_url,
-        ) is False:
+        if _verslagjaar_uit_pdftekst(eerste_paginas, jaar) is None:
             return False
+        if strict_identity:
+            organisatiebreed = await _is_organisatiebreed_jaarverslag(
+                naam,
+                bron_url,
+                eerste_paginas,
+            )
+            if organisatiebreed is not True:
+                return False
         if domain_matches_company(bron_url, website_url) is True:
             return True
         identity = await _classificeer_jaarverslag_bron_identiteit(
             naam,
             bron_url,
+            eerste_paginas,
         )
         return identity == IdentityClass.EXACT_ENTITY or (
             identity == IdentityClass.SAME_BRAND_OR_GROUP
