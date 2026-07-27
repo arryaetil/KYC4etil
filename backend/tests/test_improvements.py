@@ -565,6 +565,10 @@ async def test_nederlandse_organisatie_weigert_belgische_naamgenoot(monkeypatch)
 
     assert finding is None
     scope.assert_not_awaited()
+    assert live._heeft_landdomein_conflict(
+        belgisch,
+        "https://www.koraal.nl",
+    ) is True
 
 
 @pytest.mark.asyncio

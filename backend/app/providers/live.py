@@ -958,6 +958,15 @@ def _domein_van_url(website_url: str | None) -> str | None:
     return netloc.removeprefix("www.") or None
 
 
+def _heeft_landdomein_conflict(
+    bron_url: str | None,
+    website_url: str | None,
+) -> bool:
+    bron_host = (urlparse(bron_url or "").hostname or "").lower()
+    website_host = (urlparse(website_url or "").hostname or "").lower()
+    return website_host.endswith(".nl") and bron_host.endswith(".be")
+
+
 async def _scrape_pdf_van_pagina(pagina_url: str, jaar: int) -> str | None:
     """Haal HTML-pagina op en zoek naar <a href="...pdf..."> links voor het jaarverslag."""
     try:
@@ -1637,11 +1646,9 @@ class LiveJaarverslagAgent:
                 continue
 
             domein_match = domain_matches_company(pdf_url, website_url)
-            bron_host = (urlparse(pdf_url).hostname or "").lower()
-            website_host = (urlparse(website_url).hostname or "").lower()
-            landdomein_conflict = (
-                website_host.endswith(".nl")
-                and bron_host.endswith(".be")
+            landdomein_conflict = _heeft_landdomein_conflict(
+                pdf_url,
+                website_url,
             )
             identity = (
                 IdentityClass.MISMATCH
@@ -1676,6 +1683,8 @@ class LiveJaarverslagAgent:
                     "verslagjaar": verslagjaar,
                 }
                 return finding
+            if landdomein_conflict:
+                return None
             uitgesloten.add(pdf_url)
         return None
 
@@ -1716,6 +1725,8 @@ class LiveJaarverslagAgent:
         try:
             eerste_paginas = await _eerste_pdf_paginas(bron_url)
         except Exception:
+            return False
+        if _heeft_landdomein_conflict(bron_url, website_url):
             return False
         if _verslagjaar_uit_pdftekst(eerste_paginas, jaar) is None:
             return False
