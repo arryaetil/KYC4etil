@@ -60,6 +60,12 @@ def test_documentjaar_neemt_verslagjaar_en_niet_publicatiedatum():
     ) == 2024
 
 
+def test_documentjaar_herstelt_weggevallen_procentteken_voor_spatie():
+    assert monitoring_module._documentjaar(
+        "https://cdn.example/Jaarverslag202025-gecomprimeerd.pdf",
+    ) == 2025
+
+
 def test_check_company_jaarverslag_nieuw_gevonden():
     db = SessionLocal()
     try:
