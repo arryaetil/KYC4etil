@@ -296,12 +296,21 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         elif not status.laatste_bron_url:
             status.laatste_bron_url = te_valideren_url
 
-    finding = await jaarverslag_agent.run(
-        company.naam,
-        jaar,
-        website_url=website_url,
-        strict_identity=True,
-    )
+    source_finder = getattr(type(jaarverslag_agent), "find_latest_source", None)
+    if source_finder is not None:
+        finding = await jaarverslag_agent.find_latest_source(
+            company.naam,
+            jaar,
+            website_url=website_url,
+            strict_identity=True,
+        )
+    else:
+        finding = await jaarverslag_agent.run(
+            company.naam,
+            jaar,
+            website_url=website_url,
+            strict_identity=True,
+        )
     status.laatst_gecontroleerd_op = _now()
 
     if finding is None or not finding.bron_url:

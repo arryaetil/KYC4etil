@@ -1574,6 +1574,52 @@ async def _web_search_jaarverslag_wp(naam: str, jaar: int) -> AgentFinding | Non
 
 
 class LiveJaarverslagAgent:
+    async def find_latest_source(
+        self,
+        naam: str,
+        jaar: int,
+        website_url: str | None = None,
+        strict_identity: bool = False,
+    ) -> AgentFinding | None:
+        """Vind en valideer alleen de nieuwste bron; monitoring hoeft geen WP-extractie."""
+        uitgesloten: set[str] = set()
+        for _ in range(settings.jaarverslag_max_pogingen):
+            pdf_url = await _zoek_jaarverslag_pdf(
+                naam,
+                jaar,
+                website_url=website_url,
+                uitgesloten=uitgesloten,
+            )
+            if not pdf_url:
+                return None
+
+            domein_match = domain_matches_company(pdf_url, website_url)
+            identity = (
+                IdentityClass.EXACT_ENTITY
+                if domein_match is True
+                else await _classificeer_jaarverslag_bron_identiteit(naam, pdf_url)
+            )
+            toegestaan = identity == IdentityClass.EXACT_ENTITY or (
+                identity == IdentityClass.SAME_BRAND_OR_GROUP
+                and not strict_identity
+            )
+            if toegestaan and strict_identity:
+                toegestaan = await _is_organisatiebreed_jaarverslag(
+                    naam,
+                    pdf_url,
+                ) is not False
+            if toegestaan and strict_identity:
+                toegestaan = await _pdf_is_recent_jaarverslag(pdf_url, jaar)
+            if toegestaan:
+                finding = _baseline_jaarverslag_finding(pdf_url)
+                finding.raw = {
+                    **(finding.raw or {}),
+                    "identity_class": identity.value,
+                }
+                return finding
+            uitgesloten.add(pdf_url)
+        return None
+
     async def run(
         self,
         naam: str,

@@ -500,6 +500,34 @@ async def test_strikte_monitoring_weigert_jaarverslag_van_deelorganisatie(
 
 
 @pytest.mark.asyncio
+async def test_monitoring_sourcezoeker_slaat_wp_extractie_over(monkeypatch):
+    from app.providers import live
+
+    url = "https://organisatie.test/bestuursverslag-2024.pdf"
+    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", AsyncMock(return_value=url))
+    monkeypatch.setattr(
+        live,
+        "_is_organisatiebreed_jaarverslag",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(live, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
+    extract = AsyncMock()
+    monkeypatch.setattr(live.LiveJaarverslagAgent, "run_with_pdf", extract)
+
+    finding = await live.LiveJaarverslagAgent().find_latest_source(
+        "Organisatie",
+        2026,
+        website_url="https://organisatie.test",
+        strict_identity=True,
+    )
+
+    assert finding is not None
+    assert finding.bron_url == url
+    assert finding.wp_gevonden is None
+    extract.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_generieke_eenwoordnaam_is_zonder_domein_geen_exacte_identiteit(
     monkeypatch,
 ):
