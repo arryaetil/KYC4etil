@@ -125,13 +125,15 @@ Kies:
 - "organization_wide": het verslag of de jaarrekening gaat over {naam} als geheel.
 - "subentity_or_body": het gaat over een dochter, vriendenstichting, fonds, locatie,
   afdeling, programma, raad, commissie, toezichthouder of ander deelorgaan.
+- "not_annual_report": het document is geen jaarverslag/jaarrekening/bestuursverslag,
+  maar bijvoorbeeld een toezichtbrief, reactie, transcript of brochure.
 - "unknown": de scope is niet betrouwbaar vast te stellen.
 
 Een officieel webdomein is geen bewijs voor "organization_wide". De titel en
 inhoud van het document zijn leidend.
 
 Antwoord uitsluitend met JSON:
-{{"document_scope": "organization_wide|subentity_or_body|unknown"}}
+{{"document_scope": "organization_wide|subentity_or_body|not_annual_report|unknown"}}
 
 Bron-URL: {bron_url}
 Eerste documentpagina's:
@@ -727,7 +729,7 @@ async def _is_organisatiebreed_jaarverslag(
     scope = (data or {}).get("document_scope")
     if scope == "organization_wide":
         return True
-    if scope == "subentity_or_body":
+    if scope in {"subentity_or_body", "not_annual_report"}:
         return False
     return None
 
@@ -758,7 +760,11 @@ async def _pdf_is_recent_jaarverslag(
     except Exception:
         return False
     return any(
-        _lijkt_jaarverslag(eerste_paginas, verslagjaar)
+        _lijkt_jaarverslag(
+            eerste_paginas,
+            verslagjaar,
+            weiger_deelrapporten=False,
+        )
         for verslagjaar in (jaar - 1, jaar - 2, jaar - 3)
     )
 
@@ -851,7 +857,12 @@ def _unwrap_safelink(url: str) -> str:
     return target[0] if target else url
 
 
-def _lijkt_jaarverslag(tekst: str, zoekjaar: int) -> bool:
+def _lijkt_jaarverslag(
+    tekst: str,
+    zoekjaar: int,
+    *,
+    weiger_deelrapporten: bool = True,
+) -> bool:
     """Weiger andere PDF-soorten en aantoonbaar verkeerde verslagjaren."""
     lowered = tekst.lower()
     if any(marker in lowered for marker in (
@@ -860,14 +871,17 @@ def _lijkt_jaarverslag(tekst: str, zoekjaar: int) -> bool:
         "rechtmatigheidsbrief",
         "privacy statement",
         "privacyverklaring",
-        "cliëntenraad",
-        "clientenraad",
-        "commissie van toezicht",
         "bezwaarschrift",
-        "raad en griffie",
         "wederhoortabel",
         "investor day",
         "transcript",
+    )):
+        return False
+    if weiger_deelrapporten and any(marker in lowered for marker in (
+        "cliëntenraad",
+        "clientenraad",
+        "commissie van toezicht",
+        "raad en griffie",
         "gouverneur",
         "raad van toezicht",
         "raad van commissarissen",

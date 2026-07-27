@@ -376,6 +376,16 @@ def test_jaarverslagherkenning_weigert_deelrapporten(documenttype):
     assert live._lijkt_jaarverslag(documenttype, 2025) is False
 
 
+def test_hoofdverslag_mag_inhoudelijk_een_raad_van_toezicht_noemen():
+    from app.providers import live
+
+    assert live._lijkt_jaarverslag(
+        "Bestuursverslag 2024\nInhoud\nVerslag van de Raad van Toezicht",
+        2024,
+        weiger_deelrapporten=False,
+    ) is True
+
+
 @pytest.mark.asyncio
 async def test_officiele_jaarverslagpagina_verkiest_organisatiebreed_verslag(
     monkeypatch,
