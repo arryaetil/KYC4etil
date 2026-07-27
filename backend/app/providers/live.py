@@ -655,6 +655,18 @@ async def _classificeer_jaarverslag_bron_identiteit(
     tokens = _naam_tokens(naam)
     if not tokens:
         return IdentityClass.UNKNOWN
+    if len(tokens) == 1 and tokens[0] in {
+        "zorggroep",
+        "gemeente",
+        "provincie",
+        "universiteit",
+        "college",
+        "ziekenhuis",
+    }:
+        # Eén generiek organisatiewoord maakt een gelijknamige derde partij
+        # nog niet tot exact dezelfde entiteit. Een bevestigd officieel domein
+        # wordt al vóór deze inhoudsclassificatie geaccepteerd.
+        return IdentityClass.UNKNOWN
     haystack = unicodedata.normalize("NFKD", eerste_paginas).encode("ascii", "ignore").decode("ascii").lower()
     matches = sum(1 for token in tokens if re.search(rf"\b{re.escape(token)}\b", haystack))
     if matches >= min(2, len(tokens)):
@@ -799,6 +811,10 @@ def _lijkt_jaarverslag(tekst: str, zoekjaar: int) -> bool:
         "wederhoortabel",
         "investor day",
         "transcript",
+        "gouverneur",
+        "raad van toezicht",
+        "raad van commissarissen",
+        "professionele adviesraad",
     )):
         return False
     markers = (

@@ -364,11 +364,35 @@ async def test_strikte_monitoring_weigert_recente_toezichtbrief_die_jaarverslag_
     "Wederhoortabel jaarverslag 2025",
     "Investor Day transcript 2025 annual report",
     "Jaarverslag Raad en Griffie 2025",
+    "Jaarverslag 2025 van de gouverneur",
+    "Jaarverslag Raad van Toezicht 2025",
 ])
 def test_jaarverslagherkenning_weigert_deelrapporten(documenttype):
     from app.providers import live
 
     assert live._lijkt_jaarverslag(documenttype, 2025) is False
+
+
+@pytest.mark.asyncio
+async def test_generieke_eenwoordnaam_is_zonder_domein_geen_exacte_identiteit(
+    monkeypatch,
+):
+    from app.providers import live
+
+    monkeypatch.setattr(
+        live,
+        "_eerste_pdf_paginas",
+        AsyncMock(return_value=(
+            "Bestuursverslag 2025 van Zorggroep Sint Maarten"
+        )),
+    )
+
+    identity = await live._classificeer_jaarverslag_bron_identiteit(
+        "De Zorggroep",
+        "https://andere-zorggroep.example/bestuursverslag-2025.pdf",
+    )
+
+    assert identity == IdentityClass.UNKNOWN
 
 
 def test_safelink_wordt_teruggebracht_naar_echte_bron_url():
