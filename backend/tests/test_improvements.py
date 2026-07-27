@@ -531,6 +531,47 @@ async def test_monitoring_sourcezoeker_slaat_wp_extractie_over(monkeypatch):
     extract.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_monitoring_sourcezoeker_zoekt_nieuwer_jaar_als_combined_search_oud_resultaat_geeft(
+    monkeypatch,
+):
+    from app.providers import live
+
+    oud = "https://organisatie.test/bestuursverslag-2023.pdf"
+    nieuw = "https://organisatie.test/bestuursverslag-2025.pdf"
+
+    async def fake_zoek(*args, uitgesloten=None, zoekjaren=None, **kwargs):
+        if zoekjaren == (2025, 2024) and nieuw not in (uitgesloten or set()):
+            return nieuw
+        return None if oud in (uitgesloten or set()) else oud
+
+    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek)
+    monkeypatch.setattr(
+        live,
+        "_eerste_pdf_paginas",
+        AsyncMock(side_effect=[
+            "Jaarverslag Organisatie 2023",
+            "Jaarverslag Organisatie 2025",
+        ]),
+    )
+    monkeypatch.setattr(
+        live,
+        "_is_organisatiebreed_jaarverslag",
+        AsyncMock(return_value=True),
+    )
+
+    finding = await live.LiveJaarverslagAgent().find_latest_source(
+        "Organisatie",
+        2026,
+        website_url="https://organisatie.test",
+        strict_identity=True,
+    )
+
+    assert finding is not None
+    assert finding.bron_url == nieuw
+    assert finding.raw["verslagjaar"] == 2025
+
+
 @pytest.mark.parametrize(("tekst", "verwacht"), [
     ("4 February 2026\n2025 ANNUAL REPORT\nFY 2025", 2025),
     ("Inhoudelijk jaarverslag 2024\nVooruitblik 2025", 2024),

@@ -613,9 +613,10 @@ async def _web_search_wp(naam: str, gemeente: str | None) -> AgentFinding | None
 
 async def _zoek_jaarverslag_pdf(
     naam: str, jaar: int, website_url: str | None = None, uitgesloten: set[str] | None = None,
+    zoekjaren: tuple[int, ...] | None = None,
 ) -> str | None:
     """Zoek drie verslagjaren in één provider-ronde en selecteer nieuwste-eerst."""
-    jaren = (jaar - 1, jaar - 2, jaar - 3)
+    jaren = zoekjaren or (jaar - 1, jaar - 2, jaar - 3)
     jaren_query = " ".join(str(zoekjaar) for zoekjaar in jaren)
 
     async def nieuwste_uit(results: list[dict[str, str]]) -> str | None:
@@ -1664,15 +1665,19 @@ class LiveJaarverslagAgent:
     ) -> AgentFinding | None:
         """Vind en valideer alleen de nieuwste bron; monitoring hoeft geen WP-extractie."""
         uitgesloten: set[str] = set()
-        for _ in range(min(settings.jaarverslag_max_pogingen, 2)):
+        beste_oude_vinding: AgentFinding | None = None
+        beste_oude_jaar: int | None = None
+        zoekjaren: tuple[int, ...] | None = None
+        for _ in range(min(settings.jaarverslag_max_pogingen, 3)):
             pdf_url = await _zoek_jaarverslag_pdf(
                 naam,
                 jaar,
                 website_url=website_url,
                 uitgesloten=uitgesloten,
+                zoekjaren=zoekjaren,
             )
             if not pdf_url:
-                return None
+                return beste_oude_vinding
 
             try:
                 eerste_paginas = await _eerste_pdf_paginas(pdf_url)
@@ -1717,11 +1722,28 @@ class LiveJaarverslagAgent:
                     "identity_class": identity.value,
                     "verslagjaar": verslagjaar,
                 }
+                # Een gecombineerde zoekopdracht kan ondanks de jaarfilters een
+                # oud resultaat bovenaan zetten. Zoek dan gericht naar de
+                # tussenliggende jaren; behoud het oude document als veilige
+                # fallback wanneer geen nieuwer officieel document bestaat.
+                if (
+                    strict_identity
+                    and verslagjaar is not None
+                    and verslagjaar < jaar - 1
+                ):
+                    if beste_oude_jaar is None or verslagjaar > beste_oude_jaar:
+                        beste_oude_vinding = finding
+                        beste_oude_jaar = verslagjaar
+                    uitgesloten.add(pdf_url)
+                    zoekjaren = tuple(
+                        range(jaar - 1, verslagjaar, -1)
+                    )
+                    continue
                 return finding
             if landdomein_conflict:
                 return None
             uitgesloten.add(pdf_url)
-        return None
+        return beste_oude_vinding
 
     async def run(
         self,
