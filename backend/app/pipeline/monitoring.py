@@ -270,6 +270,32 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
             website_url = place.website if place else None
         except Exception:
             website_url = None
+
+    baseline_ingetrokken = False
+    validator = getattr(type(jaarverslag_agent), "validate_source", None)
+    te_valideren_url = (
+        status.laatste_bron_url
+        or _jaarverslagbron_van_candidate(db, company)
+    )
+    if te_valideren_url and validator is not None:
+        bron_is_nog_geldig = await jaarverslag_agent.validate_source(
+            company.naam,
+            jaar,
+            te_valideren_url,
+            website_url=website_url,
+            strict_identity=True,
+        )
+        if not bron_is_nog_geldig:
+            status.laatste_bron_url = None
+            _trek_candidate_van_afgewezen_bron_in(
+                db,
+                company,
+                te_valideren_url,
+            )
+            baseline_ingetrokken = True
+        elif not status.laatste_bron_url:
+            status.laatste_bron_url = te_valideren_url
+
     finding = await jaarverslag_agent.run(
         company.naam,
         jaar,
@@ -279,44 +305,18 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     status.laatst_gecontroleerd_op = _now()
 
     if finding is None or not finding.bron_url:
-        validator = getattr(
-            type(jaarverslag_agent),
-            "validate_source",
-            None,
-        )
-        te_valideren_url = (
-            status.laatste_bron_url
-            or _jaarverslagbron_van_candidate(db, company)
-        )
-        if te_valideren_url and validator is not None:
-            bron_is_nog_geldig = await jaarverslag_agent.validate_source(
-                company.naam,
-                jaar,
-                te_valideren_url,
-                website_url=website_url,
-                strict_identity=True,
+        if baseline_ingetrokken:
+            _log(
+                db,
+                company.batch_id,
+                company.id,
+                "jaarverslag_monitoring",
+                "updated",
+                t0,
+                error="legacy-baseline afgewezen door huidige validatie",
             )
-            if not bron_is_nog_geldig:
-                afgewezen_url = te_valideren_url
-                status.laatste_bron_url = None
-                _trek_candidate_van_afgewezen_bron_in(
-                    db,
-                    company,
-                    afgewezen_url,
-                )
-                _log(
-                    db,
-                    company.batch_id,
-                    company.id,
-                    "jaarverslag_monitoring",
-                    "ok",
-                    t0,
-                    error="legacy-baseline afgewezen door huidige validatie",
-                )
-                db.commit()
-                return True
-            if not status.laatste_bron_url:
-                status.laatste_bron_url = te_valideren_url
+            db.commit()
+            return True
         _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "skipped", t0)
         db.commit()
         return False

@@ -480,6 +480,57 @@ async def test_monitoring_ruimt_ongeldige_legacy_baseline_op(
 
 
 @pytest.mark.asyncio
+async def test_ongeldige_baseline_blokkeert_gevonden_oudere_bron_niet(
+    db_session, monkeypatch,
+):
+    company = _maak_company(db_session, naam="Organisatiebreed")
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id,
+        laatste_bron_url=(
+            "https://organisatie.test/jaarverslag-deelrapport-2025.pdf"
+        ),
+    ))
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=None,
+        context=None,
+        zekerheid="laag",
+        reden="meest recente geldige organisatiebrede bron",
+        bron_url="https://organisatie.test/jaarverslag-2024.pdf",
+        bron_type="jaarverslag",
+    )
+
+    class Agent:
+        async def run(self, *args, **kwargs):
+            return finding
+
+        async def validate_source(self, *args, **kwargs):
+            return False
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    assert await check_company_jaarverslag(
+        db_session,
+        company,
+        2026,
+    ) is True
+
+    status = db_session.query(JaarverslagMonitoring).filter_by(
+        company_id=company.id,
+    ).one()
+    assert status.laatste_bron_url.endswith("jaarverslag-2024.pdf")
+    run = db_session.query(PipelineRun).filter_by(
+        company_id=company.id,
+        stap="jaarverslag_monitoring",
+    ).order_by(PipelineRun.created_at.desc()).first()
+    assert run.status == "new"
+
+
+@pytest.mark.asyncio
 async def test_monitoring_herstelt_nieuwste_gevalideerde_moderne_bron(
     db_session, monkeypatch,
 ):
