@@ -413,6 +413,38 @@ async def test_officiele_jaarverslagpagina_verkiest_organisatiebreed_verslag(
 
 
 @pytest.mark.asyncio
+async def test_geldige_jaarverslagbron_blijft_behouden_zonder_wp_getal(
+    monkeypatch,
+):
+    from app.providers import live
+
+    url = "https://organisatie.test/bestuursverslag-2024.pdf"
+
+    async def fake_zoek(*args, uitgesloten=None, **kwargs):
+        return None if url in (uitgesloten or set()) else url
+
+    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek)
+    monkeypatch.setattr(
+        live.LiveJaarverslagAgent,
+        "run_with_pdf",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(live, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
+    monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
+
+    finding = await live._run_jaarverslag_research_graph(
+        "Organisatie",
+        2026,
+        website_url="https://organisatie.test",
+        strict_identity=True,
+    )
+
+    assert finding is not None
+    assert finding.bron_url == url
+    assert finding.wp_gevonden is None
+
+
+@pytest.mark.asyncio
 async def test_generieke_eenwoordnaam_is_zonder_domein_geen_exacte_identiteit(
     monkeypatch,
 ):

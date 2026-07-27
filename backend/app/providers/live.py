@@ -1117,6 +1117,7 @@ class JaarverslagResearchState(TypedDict, total=False):
     website_url: str | None
     pdf_url: str | None
     laatste_pdf_url: str | None
+    laatste_geldige_pdf_url: str | None
     afgewezen_urls: set[str]
     pogingen: int
     source_identity_class: str | None
@@ -1313,7 +1314,11 @@ def _build_jaarverslag_research_graph():
         ):
             toegestaan = False
         if pdf_url and toegestaan:
-            return {"pdf_url": pdf_url, "source_identity_class": identity.value}
+            return {
+                "pdf_url": pdf_url,
+                "laatste_geldige_pdf_url": pdf_url,
+                "source_identity_class": identity.value,
+            }
         # Afgewezen (verkeerd bedrijf): uitsluiten zodat een retry een ANDER
         # zoekresultaat probeert i.p.v. dezelfde foute bron opnieuw te vinden.
         afgewezen = set(state.get("afgewezen_urls") or set())
@@ -1342,7 +1347,7 @@ def _build_jaarverslag_research_graph():
         return {"finding": await _web_search_jaarverslag_wp(state["naam"], state["jaar"])}
 
     async def baseline_source(state: JaarverslagResearchState) -> dict:
-        pdf_url = state.get("laatste_pdf_url")
+        pdf_url = state.get("laatste_geldige_pdf_url")
         return {"finding": _baseline_jaarverslag_finding(pdf_url) if pdf_url else None}
 
     def mag_opnieuw(state: JaarverslagResearchState) -> bool:
@@ -1351,6 +1356,8 @@ def _build_jaarverslag_research_graph():
     def after_find_pdf(state: JaarverslagResearchState) -> str:
         if state.get("pdf_url"):
             return "valideer_bron"
+        if state.get("laatste_geldige_pdf_url"):
+            return "baseline_source"
         return "web_search_fallback" if settings.jaarverslag_web_fallback else END
 
     def after_valideer_bron(state: JaarverslagResearchState) -> str:
@@ -1360,6 +1367,8 @@ def _build_jaarverslag_research_graph():
         # (dit was letterlijk het Mondriaan/Salon Handmade-scenario).
         if mag_opnieuw(state):
             return "find_pdf"
+        if state.get("laatste_geldige_pdf_url"):
+            return "baseline_source"
         return "web_search_fallback" if settings.jaarverslag_web_fallback else END
 
     def after_extract_pdf(state: JaarverslagResearchState) -> str:
@@ -1402,6 +1411,7 @@ async def _run_jaarverslag_research_graph(
         "website_url": website_url,
         "pdf_url": None,
         "laatste_pdf_url": None,
+        "laatste_geldige_pdf_url": None,
         "afgewezen_urls": set(),
         "pogingen": 0,
         "source_identity_class": None,
