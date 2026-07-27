@@ -44,7 +44,7 @@ def monitoring_status(db: Session = Depends(get_db)):
                    .order_by(PipelineRun.created_at)):
             laatste_status[pr.company_id] = pr
         for pr in laatste_status.values():
-            if pr.status == "ok":
+            if pr.status == "new":
                 bevindingen.add(pr.company_id)
             elif pr.status == "error":
                 fouten_map[pr.company_id] = pr.error or "onbekende fout"

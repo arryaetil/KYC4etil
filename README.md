@@ -21,6 +21,10 @@ onderzoekt hij drie bronfamilies:
 
 De agent maakt meerdere zoekqueries, combineert resultaten van beschikbare
 zoekproviders, verwijdert dubbele URL's en inspecteert de gevonden pagina's.
+DuckDuckGo en Serper zijn de goedkope primaire zoeklaag. Als beide voor een
+onderzoekspad leeg blijven, gebruikt de agent OpenAI hosted web search als
+begrensde fallback: maximaal één call voor de officiële domeinresolutie en één
+call per bronfamilie (dus maximaal vier per organisatie).
 Vóór ranking beoordeelt een fail-closed bronreviewer iedere kandidaat op basis
 van de daadwerkelijke pagina- of documentinhoud. Zoekresultaatsnippets tellen
 niet als identiteitsbewijs. Evidente mismatches en sociale profielen worden
@@ -245,10 +249,12 @@ Na deploy:
 `PROVIDER_MODE=live` vereist minimaal `OPENAI_API_KEY`. `SERPER_API_KEY` is
 optioneel en geeft de research-agent een tweede zoekprovider naast DuckDuckGo.
 Beschikbare providers worden parallel bevraagd en op canonieke URL
-samengevoegd. Met `GOOGLE_PLACES_API_KEY` gebruikt de backend Places voor
-website, telefoon en fuzzy locatiecount. Zonder Google-key gebruikt de backend
-OpenAI web search als fallback; locatiecount blijft dan onbekend en records
-krijgen daardoor lagere confidence.
+samengevoegd. Als beide indexen leeg zijn, gebruikt de agent
+`OPENAI_WEB_SEARCH_MODEL` (standaard `gpt-4.1-mini`) als hosted zoekfallback.
+Met `GOOGLE_PLACES_API_KEY` gebruikt de backend Places voor website, telefoon en
+fuzzy locatiecount. Wanneer Places geen website oplevert, probeert de backend
+eerst klassieke websearch en daarna dezelfde OpenAI-fallback; locatiecount kan
+dan onbekend blijven en records krijgen daardoor lagere confidence.
 
 De huidige research-agent is een eerste productiegerichte verticale slice.
 Voor brede productie-uitrol moeten eerst 20–50 echte organisaties in shadow

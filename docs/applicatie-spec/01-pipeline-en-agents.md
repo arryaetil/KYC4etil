@@ -117,15 +117,16 @@ formule.
 
 | Dienst | Waarvoor | Wanneer aangeroepen | Kostentype |
 |---|---|---|---|
-| **OpenAI** (`gpt-4o-mini` via `settings.openai_model`) | Extractie (website-/jaarverslag-tool-use-lus), identity/scope-classificatie bij twijfel | Meerdere keren per bedrijf (tot ~5 website-calls, tot 3 jaarverslag-pogingen, 0–2 classificatie-calls) | Per-token, betaald |
+| **OpenAI** (`gpt-4o-mini` voor extractie; `gpt-4.1-mini` voor hosted search) | Extractie, identity/scope-classificatie en alleen bij lege klassieke zoekindexen hosted web search | Meerdere extractie-/reviewcalls; hosted search maximaal 1× domeinresolutie + 1× per website/document/media-pad | Per-token en per hosted tool-call, betaald |
 | **Serper** | Places-lookup (locatie) én algemene web-zoekopdrachten | 1× Places per bedrijf (als key ingesteld), plus fallback-zoekopdrachten | Per-zoekopdracht, betaald — bewust gekozen als **goedkoper alternatief voor OpenAI's ingebouwde web_search** (letterlijke config-comment: "kostenbeheersing") |
 | **Google Places (Text Search API)** | Locatie-lookup, fallback als Serper geen key heeft | 1× per bedrijf, alleen als Serper niet beschikbaar is | Per-call, betaald |
 | **crawl4ai + Playwright/Chromium** | JS-rendering fallback voor de website-agent | Alleen als de goedkope httpx+BeautifulSoup-route <500 tekens tekst oplevert | Geen externe factuur — zelf-gehost compute (CPU/geheugen op de Railway-container), dus latency-kosten, geen dollar-per-call |
 
 **Kostenindicatie** (uit `docs/PLATFORM_DOCUMENTATIE_v2.md`, §5): grofweg 1
 Places-call (±$0,02) + 2–6 LLM-calls (±$0,05–0,30 per bedrijf, afhankelijk van
-documentgrootte) per bedrijf. Voor een batch van 20 bedrijven komt dat neer op **circa
-$1,40 tot $6,40 totaal** — dit is de documentatie's eigen ruwe schatting; er bestaat nog
+documentgrootte) per bedrijf. Bij een zoekproviderstoring kunnen daar maximaal
+vier hosted web-searchcalls per bedrijf bijkomen. Voor een batch van 20 bedrijven
+blijft **circa $1,40 tot $6,40 totaal** daarom alleen een basisindicatie; er bestaat nog
 geen daadwerkelijk gemeten kostendata (het `kosten_cents`-veld op `PipelineRun` is wel
 gedefinieerd in het datamodel, maar wordt nergens in de pipelinecode daadwerkelijk
 gevuld).

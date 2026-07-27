@@ -272,6 +272,35 @@ async def test_jaarverslagzoeker_negeert_andere_pdf_op_officieel_domein(
 
 
 @pytest.mark.asyncio
+async def test_jaarverslagzoeker_gebruikt_hosted_fallback_bij_lege_indexen(
+    monkeypatch,
+):
+    from app.providers import live
+
+    monkeypatch.setattr(
+        live,
+        "_web_search",
+        AsyncMock(return_value=[]),
+    )
+    hosted = AsyncMock(return_value=[{
+        "title": "Testbedrijf jaarverslag 2025",
+        "url": "https://testbedrijf.example/jaarverslag-2025.pdf",
+        "snippet": "",
+        "bron": "openai_web_search",
+    }])
+    monkeypatch.setattr(live, "_openai_web_search", hosted)
+
+    result = await live._zoek_jaarverslag_pdf_voor_jaar(
+        "Testbedrijf",
+        2025,
+        website_url="https://testbedrijf.example",
+    )
+
+    assert result == "https://testbedrijf.example/jaarverslag-2025.pdf"
+    hosted.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_strikte_monitoring_weigert_oud_pdf_na_inhoudscontrole(
     monkeypatch,
 ):
@@ -305,6 +334,41 @@ async def test_strikte_monitoring_accepteert_recent_pdf_na_inhoudscontrole(
         "https://example.test/opaque.pdf",
         2026,
     ) is True
+
+
+@pytest.mark.asyncio
+async def test_strikte_monitoring_weigert_recente_toezichtbrief_die_jaarverslag_noemt(
+    monkeypatch,
+):
+    """Een toezichtbrief over een jaarverslag is zelf geen jaarverslag."""
+    from app.providers import live
+
+    monkeypatch.setattr(
+        live,
+        "_eerste_pdf_paginas",
+        AsyncMock(return_value=(
+            "Toezichtbrief Autoriteit woningcorporaties 2024. "
+            "Wij beoordeelden uw jaarverslag 2024."
+        )),
+    )
+
+    assert await live._pdf_is_recent_jaarverslag(
+        "https://ilent.test/L0269-Stichting-ZOwonen.pdf",
+        2026,
+    ) is False
+
+
+@pytest.mark.parametrize("documenttype", [
+    "Jaarverslag cliëntenraad 2025",
+    "Jaarverslag Commissie van Toezicht 2025",
+    "Wederhoortabel jaarverslag 2025",
+    "Investor Day transcript 2025 annual report",
+    "Jaarverslag Raad en Griffie 2025",
+])
+def test_jaarverslagherkenning_weigert_deelrapporten(documenttype):
+    from app.providers import live
+
+    assert live._lijkt_jaarverslag(documenttype, 2025) is False
 
 
 def test_safelink_wordt_teruggebracht_naar_echte_bron_url():

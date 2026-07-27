@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"         # hoofd-model; overschrijfbaar via OPENAI_MODEL
     openai_model_extraction: str = ""          # leeg = fallback naar openai_model
+    openai_web_search_model: str = "gpt-4.1-mini"
     jaarverslag_web_fallback: bool = False     # Fase C fallback: extra OpenAI-call als PDF mislukt
     jaarverslag_max_pogingen: int = 3          # retries met een ANDER zoekresultaat bij afgewezen/lege bron
     max_website_pages: int = 3                 # max pagina's per bedrijf voor website-agent (kostenbeheersing)

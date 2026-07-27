@@ -30,6 +30,44 @@ async def test_opgeloste_officiele_website_wordt_altijd_seed(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_lege_zoekindex_gebruikt_maximaal_een_fallback_per_pad(
+    monkeypatch,
+):
+    calls = []
+
+    async def fake_web_search(query, max_results=8):
+        return []
+
+    async def fake_openai_search(query, max_results=8):
+        calls.append(query)
+        return [{
+            "title": "Officiële website",
+            "url": "https://example.test",
+            "snippet": "Example",
+            "bron": "openai_web_search",
+        }]
+
+    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(live, "_openai_web_search", fake_openai_search)
+    tools = LiveResearchTools()
+
+    first, second = await __import__("asyncio").gather(
+        tools.search(
+            PlannedQuery("website", "query één", "reden"),
+            max_results=8,
+        ),
+        tools.search(
+            PlannedQuery("website", "query twee", "reden"),
+            max_results=8,
+        ),
+    )
+
+    assert len(calls) == 1
+    assert first[0].url == "https://example.test"
+    assert second[0].url == "https://example.test"
+
+
+@pytest.mark.asyncio
 async def test_nieuwste_officiele_document_krijgt_eigen_site_search(
     monkeypatch,
 ):

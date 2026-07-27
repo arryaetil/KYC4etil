@@ -1,5 +1,6 @@
 import pytest
 import httpx
+from unittest.mock import AsyncMock
 
 from app.providers import live
 
@@ -65,6 +66,91 @@ async def test_llm_extract_registreert_tokenverbruik(monkeypatch):
     await live._llm_extract("Voorbeeld Zorg", "Adres 1", "47 medewerkers.")
 
     assert usage.get_usage_totals() == (120, 30)
+
+
+@pytest.mark.asyncio
+async def test_openai_web_search_parseert_bronnen_en_citaties(monkeypatch):
+    class SearchResponse:
+        output_text = "De officiële website en het jaarverslag zijn gevonden."
+
+        def model_dump(self):
+            return {
+                "output": [
+                    {
+                        "type": "web_search_call",
+                        "action": {
+                            "sources": [{
+                                "url": "https://example.test",
+                                "title": "Officiële website",
+                            }],
+                        },
+                    },
+                    {
+                        "type": "message",
+                        "content": [{
+                            "annotations": [{
+                                "type": "url_citation",
+                                "url": "https://example.test/jaarverslag.pdf",
+                                "title": "Jaarverslag 2025",
+                            }],
+                        }],
+                    },
+                ],
+            }
+
+    class SearchResponses:
+        async def create(self, **kwargs):
+            assert kwargs["tools"][0]["type"] == "web_search"
+            assert kwargs["tool_choice"] == "required"
+            return SearchResponse()
+
+    class SearchOpenAI:
+        def __init__(self, api_key):
+            self.responses = SearchResponses()
+
+    import openai
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "openai_web_search_model", "gpt-test")
+    monkeypatch.setattr(openai, "AsyncOpenAI", SearchOpenAI)
+
+    results = await live._openai_web_search("Example jaarverslag", 5)
+
+    assert [item["url"] for item in results] == [
+        "https://example.test",
+        "https://example.test/jaarverslag.pdf",
+    ]
+    assert all(item["bron"] == "openai_web_search" for item in results)
+
+
+@pytest.mark.asyncio
+async def test_openai_contact_fallback_negeert_bedrijvengids(monkeypatch):
+    async def fake_search(query, max_results=6):
+        return [
+            {
+                "title": "Okechamp jaarverslag",
+                "url": "https://cdn.example.test/okechamp-jaarverslag.pdf",
+                "snippet": "Okechamp",
+            },
+            {
+                "title": "Okechamp bedrijvengids",
+                "url": "https://drimble.nl/bedrijf/okechamp",
+                "snippet": "Okechamp",
+            },
+            {
+                "title": "OKECHAMP B.V.",
+                "url": "https://www.okechamp.eu/",
+                "snippet": "Official OKECHAMP website",
+            },
+        ]
+
+    monkeypatch.setattr(live, "_openai_web_search", fake_search)
+
+    result = await live._openai_contact_fallback(
+        "Okechamp B.V.", "Horst aan de Maas",
+    )
+
+    assert result.website == "https://www.okechamp.eu/"
+    assert result.raw["bron"] == "openai_web_search"
 
 
 @pytest.mark.asyncio
@@ -572,6 +658,11 @@ async def test_run_geeft_bron_url_door_als_pdf_gevonden_maar_geen_wp_geextraheer
         return None
 
     monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek_pdf)
+    monkeypatch.setattr(
+        live,
+        "_classificeer_jaarverslag_bron_identiteit",
+        AsyncMock(return_value=live.IdentityClass.EXACT_ENTITY),
+    )
     monkeypatch.setattr(live.LiveJaarverslagAgent, "run_with_pdf", fake_run_with_pdf)
     monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
 

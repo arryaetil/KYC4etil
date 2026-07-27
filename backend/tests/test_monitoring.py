@@ -78,6 +78,10 @@ def test_check_company_jaarverslag_nieuw_gevonden():
         status = db.query(JaarverslagMonitoring).filter_by(company_id=company.id).one()
         assert status.laatste_bron_url == "https://www.okechamp.nl/jaarverslag-2025.pdf"
         assert status.laatst_gecontroleerd_op is not None
+        run = db.query(PipelineRun).filter_by(company_id=company.id).order_by(
+            PipelineRun.created_at.desc(),
+        ).first()
+        assert run.status == "new"
     finally:
         db.query(Candidate).delete()
         db.query(AgentResult).delete()
@@ -272,6 +276,11 @@ async def test_monitoring_verwerkt_nieuw_wp_bij_dezelfde_bron_url(
     ).one()
     assert candidate.wp_kandidaat == 11000
     assert bron.wp_gevonden == 11000
+    run = db_session.query(PipelineRun).filter_by(
+        company_id=company.id,
+        stap="jaarverslag_monitoring",
+    ).order_by(PipelineRun.created_at.desc()).first()
+    assert run.status == "updated"
 
 
 @pytest.mark.asyncio

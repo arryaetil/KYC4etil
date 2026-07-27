@@ -18,8 +18,10 @@ voor hoe dit later met echte cijfers te onderbouwen is.
   en is ruim voldoende voor deze taak (getal + citaat uit tekst halen, JSON
   teruggeven) — een zwaarder model voegt hier weinig toe.
 - **Zoeken (website/jaarverslag/contact vinden):** DuckDuckGo (gratis, eerste
-  poging) → Serper (~$0,001/query) als DuckDuckGo niets oplevert. Vervangt de
-  voorheen gebruikte OpenAI `web_search`-tool ($10/1.000 calls + tokens).
+  poging) + Serper (~$0,001/query). Als beide indexen leeg blijven, gebruikt de
+  autonome researchworkflow OpenAI hosted `web_search` als beschikbaarheids-
+  fallback. Die is gecachet op maximaal één call per bronpad, plus hoogstens één
+  call voor officiële domeinresolutie: maximaal vier calls per organisatie.
 - **Contact/locatie (website, telefoon):** Serper Places (~$0,001/query) als
   primaire bron; Google Places ($32-35/1.000 calls) alleen nog als noodgreep
   voor de landelijke locatie-telling (zie [Waarom Google Places nog gedeeltelijk blijft](#waarom-google-places-nog-gedeeltelijk-blijft)).
@@ -33,6 +35,7 @@ voor hoe dit later met echte cijfers te onderbouwen is.
 | Jaarverslag-agent | PDF vinden + WP eruit halen | Draaide alleen als website geen hoog-zekerheid vond; PDF-zoeken via OpenAI `web_search`: ~$0,011-0,022/call (1-2 pogingen) | **Draait nu altijd** (zie hieronder); PDF-zoeken via Serper: ~$0,001-0,002/call |
 | PDF-extractie | WP-getal + paginanummer uit PDF | ~$0,001-0,003/call | Ongewijzigd qua kosten; extraheert nu ook het paginanummer voor directe navigatie |
 | Extra bronnen (nieuw) | 2 aanvullende publieke bronnen (LinkedIn, KvK, nieuws) | Bestond niet | Zoeken ~$0,001/call + tot 2× extractie ~$0,001-0,003/stuk ≈ **~$0,005/bedrijf** |
+| Hosted zoekfallback | Alleen als DuckDuckGo én Serper geen resultaten geven | OpenAI `web_search` kon onbeperkt per zoekquery terugkomen | Maximaal 1× domeinresolutie + 1× per website/document/media-pad |
 
 **Waarom "altijd jaarverslag-agent" geen doorslaggevende meerkosten geeft:**
 de zoekstap is nu bijna gratis (Serper i.p.v. OpenAI `web_search`), dus het
@@ -108,5 +111,6 @@ Deze cijfers zijn berekend op basis van:
    na een paar weken draaien de echte verbruikscijfers — die kunnen dit
    document vervangen door gemeten waarden.
 
-_Laatst bijgewerkt: 9 juli 2026, na de Serper-migratie en de introductie van
+_Laatst bijgewerkt: 24 juli 2026, na de Serper-migratie, de begrensde hosted
+web-searchfallback en de introductie van
 extra publieke bronnen voor human-in-the-loop-review._

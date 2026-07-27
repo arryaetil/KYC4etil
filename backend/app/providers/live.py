@@ -207,7 +207,7 @@ class LivePlacesProvider:
                 raw={"bron": "serper_places", **place},
             )
         if not settings.google_places_api_key:
-            return await _web_search_contact(naam, gemeente)
+            return await _contact_fallback(naam, gemeente)
         record_provider_call("google_places_text_search", kosten_micro_usd=32_000)
         try:
             async with httpx.AsyncClient(timeout=20) as client:
@@ -222,12 +222,12 @@ class LivePlacesProvider:
                 r.raise_for_status()
                 places = r.json().get("places") or []
         except httpx.HTTPError:
-            return await _web_search_contact(naam, gemeente)
+            return await _contact_fallback(naam, gemeente)
         if not places:
-            return await _web_search_contact(naam, gemeente)
+            return await _contact_fallback(naam, gemeente)
         p = places[0]
         if not p.get("websiteUri"):
-            return await _web_search_contact(naam, gemeente)
+            return await _contact_fallback(naam, gemeente)
         return PlacesResult(website=p.get("websiteUri"), phone=p.get("nationalPhoneNumber"),
                             adres=p.get("formattedAddress"), raw=p)
 
@@ -412,6 +412,56 @@ async def _web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
     return list(combined.values())[:max_results]
 
 
+async def _openai_web_search(
+    query: str,
+    max_results: int = 5,
+) -> list[dict[str, str]]:
+    """Begrensde hosted-searchfallback wanneer beide klassieke indexen leeg zijn."""
+    if not settings.openai_api_key:
+        return []
+    from openai import AsyncOpenAI
+
+    record_provider_call("openai_web_search", kosten_micro_usd=10_000)
+    try:
+        response = await _create_response(
+            AsyncOpenAI(api_key=settings.openai_api_key),
+            model=settings.openai_web_search_model,
+            input=(
+                "Zoek de meest relevante primaire en officiële bronnen voor "
+                f"deze zoekopdracht. Geef directe bron-URL's: {query}"
+            ),
+            tools=[{"type": "web_search"}],
+            tool_choice="required",
+            max_output_tokens=800,
+        )
+    except Exception:
+        return []
+
+    data = response.model_dump()
+    gevonden: list[dict[str, str]] = []
+    gezien: set[str] = set()
+
+    def voeg_toe(url: str | None, title: str | None) -> None:
+        if not url or url in gezien or len(gevonden) >= max_results:
+            return
+        gezien.add(url)
+        gevonden.append({
+            "title": title or "",
+            "url": url,
+            "snippet": "",
+            "bron": "openai_web_search",
+        })
+
+    for item in data.get("output", []):
+        for source in (item.get("action") or {}).get("sources", []):
+            voeg_toe(source.get("url"), source.get("title"))
+        for content in item.get("content", []):
+            for annotation in content.get("annotations", []):
+                if annotation.get("type") == "url_citation":
+                    voeg_toe(annotation.get("url"), annotation.get("title"))
+    return gevonden
+
+
 def _is_directory_result(url: str) -> bool:
     from urllib.parse import urlparse
 
@@ -488,6 +538,44 @@ async def _web_search_contact(naam: str, gemeente: str | None) -> PlacesResult |
                 },
             )
     return None
+
+
+async def _openai_contact_fallback(
+    naam: str,
+    gemeente: str | None,
+) -> PlacesResult | None:
+    results = await _openai_web_search(
+        f'"{naam}" {gemeente or ""} officiële website contact'.strip(),
+        max_results=6,
+    )
+    for result in results:
+        url = result["url"]
+        if _is_directory_result(url) or ".pdf" in urlparse(url).path.lower():
+            continue
+        context = " ".join(filter(None, [
+            result.get("title"),
+            result.get("snippet"),
+            url,
+        ]))
+        if not _tekst_lijkt_bij_bedrijf_te_horen(naam, context):
+            continue
+        return PlacesResult(
+            website=url,
+            phone=None,
+            adres=None,
+            raw={"bron": "openai_web_search", "query_result": result},
+        )
+    return None
+
+
+async def _contact_fallback(
+    naam: str,
+    gemeente: str | None,
+) -> PlacesResult | None:
+    return (
+        await _web_search_contact(naam, gemeente)
+        or await _openai_contact_fallback(naam, gemeente)
+    )
 
 
 async def _web_search_wp(naam: str, gemeente: str | None) -> AgentFinding | None:
@@ -641,7 +729,26 @@ async def _zoek_jaarverslag_pdf_voor_jaar(
         f"{naam} jaarverslag {zoekjaar} bestuursverslag annual report download pdf",
         max_results=8,
     )
-    return await _eerste_pdf_uit_resultaten(results, zoekjaar, uitgesloten)
+    gevonden = await _eerste_pdf_uit_resultaten(
+        results,
+        zoekjaar,
+        uitgesloten,
+    )
+    if gevonden:
+        return gevonden
+
+    hosted_results = await _openai_web_search(
+        (
+            f'"{naam}" meest recente officiële jaarverslag {zoekjaar} '
+            "jaarrekening bestuursverslag direct pdf"
+        ),
+        max_results=8,
+    )
+    return await _eerste_pdf_uit_resultaten(
+        hosted_results,
+        zoekjaar,
+        uitgesloten,
+    )
 
 
 async def _eerste_pdf_uit_resultaten(
@@ -678,6 +785,22 @@ def _unwrap_safelink(url: str) -> str:
 def _lijkt_jaarverslag(tekst: str, zoekjaar: int) -> bool:
     """Weiger andere PDF-soorten en aantoonbaar verkeerde verslagjaren."""
     lowered = tekst.lower()
+    if any(marker in lowered for marker in (
+        "toezichtbrief",
+        "rechtmatigheidbrief",
+        "rechtmatigheidsbrief",
+        "privacy statement",
+        "privacyverklaring",
+        "cliëntenraad",
+        "clientenraad",
+        "commissie van toezicht",
+        "bezwaarschrift",
+        "raad en griffie",
+        "wederhoortabel",
+        "investor day",
+        "transcript",
+    )):
+        return False
     markers = (
         "jaarverslag",
         "jaarrekening",

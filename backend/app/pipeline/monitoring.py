@@ -351,10 +351,19 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         db.commit()
         return False
 
+    wijzigingsstatus = "new" if url_gewijzigd else "updated"
+
     _sla_moderne_bron_op(db, company, jaar, finding)
 
     if not finding.wp_gevonden:
-        _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "ok", t0)
+        _log(
+            db,
+            company.batch_id,
+            company.id,
+            "jaarverslag_monitoring",
+            wijzigingsstatus,
+            t0,
+        )
         db.commit()
         return True
 
@@ -380,7 +389,7 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         # niet-Limburg-specifiek zonder vestigingscount) — dan is er wel een nieuwe
         # bron_url gedetecteerd, maar geen bruikbare WP-kandidaat. Bestaande candidate
         # blijft ongemoeid, net als bij "url gewijzigd maar geen wp_gevonden" hierboven.
-        _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "skipped", t0,
+        _log(db, company.batch_id, company.id, "jaarverslag_monitoring", wijzigingsstatus, t0,
              error=f"bron afgewezen door reconciliatie: {rec.reden}"[:1000])
         db.commit()
         return True
@@ -412,7 +421,14 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
             score_breakdown=score.breakdown, strategie="auto",
         ))
 
-    _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "ok", t0)
+    _log(
+        db,
+        company.batch_id,
+        company.id,
+        "jaarverslag_monitoring",
+        wijzigingsstatus,
+        t0,
+    )
     db.commit()
     return True
 

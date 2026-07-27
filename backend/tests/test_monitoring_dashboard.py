@@ -46,7 +46,7 @@ def test_monitoring_status_met_actieve_watchlist(client, db_session):
         laatst_gecontroleerd_op=nu,
     ))
     db_session.add(PipelineRun(batch_id=batch_id, company_id=gecontroleerd.id,
-                               stap="jaarverslag_monitoring", status="ok", duur_ms=100))
+                               stap="jaarverslag_monitoring", status="new", duur_ms=100))
     db_session.add(Candidate(company_id=gecontroleerd.id, batch_id=batch_id,
                              wp_kandidaat=50, is_schatting=False,
                              confidence_score=0.9, confidence_label="hoog", strategie="auto"))
@@ -104,6 +104,31 @@ def test_monitoring_dashboard_toont_alleen_laatste_controleuitkomst(
             created_at=datetime(2026, 7, 8),
         ),
     ])
+    db_session.commit()
+
+    data = client.get("/monitoring").json()
+
+    assert data["nieuwe_bevindingen"] == 0
+    assert data["companies"][0]["nieuwe_bevinding"] is False
+
+
+def test_monitoring_dashboard_noemt_betere_extractie_geen_nieuw_jaarverslag(
+    client, db_session,
+):
+    _zorg_voor_test_user(db_session)
+    upload = client.post(
+        "/batches/upload?naam=watchlist-update&jaar=2026&monitoringlijst=true",
+        files={"file": ("orgs.csv", BytesIO(b"naam\nOrganisatie X\n"), "text/csv")},
+    )
+    batch_id = upload.json()["batch_id"]
+    company = db_session.query(Company).filter_by(batch_id=batch_id).one()
+    db_session.add(PipelineRun(
+        batch_id=batch_id,
+        company_id=company.id,
+        stap="jaarverslag_monitoring",
+        status="updated",
+        duur_ms=100,
+    ))
     db_session.commit()
 
     data = client.get("/monitoring").json()

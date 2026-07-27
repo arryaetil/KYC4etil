@@ -1,4 +1,5 @@
 """Adapter van bestaande live providers naar het researchcontract."""
+import asyncio
 import re
 from urllib.parse import unquote, urljoin, urlsplit
 
@@ -10,6 +11,10 @@ from .validation import SourceDocument
 
 
 class LiveResearchTools:
+    def __init__(self):
+        self._fallback_searches: dict[str, list[CombinedSearchResult]] = {}
+        self._fallback_lock = asyncio.Lock()
+
     async def find_officiele_website(
         self,
         context: QueryContext,
@@ -304,6 +309,32 @@ class LiveResearchTools:
         from ..providers import live
 
         results = await live._web_search(query.query, max_results=max_results)
+        if not results:
+            # De planner start meerdere queries per pad parallel. Door per pad
+            # één fallback te cachen blijven kosten begrensd op maximaal drie
+            # hosted searches per organisatie.
+            async with self._fallback_lock:
+                if query.pad not in self._fallback_searches:
+                    fallback = await live._openai_web_search(
+                        query.query,
+                        max_results=max_results,
+                    )
+                    self._fallback_searches[query.pad] = [
+                        CombinedSearchResult(
+                            title=result.get("title", ""),
+                            url=result["url"],
+                            canonical_url=canonicaliseer_url(result["url"]),
+                            snippets=result.get("snippets") or (
+                                [result["snippet"]]
+                                if result.get("snippet") else []
+                            ),
+                            providers=["openai_web_search"],
+                            queries=[query.query],
+                        )
+                        for result in fallback
+                        if result.get("url")
+                    ]
+                return self._fallback_searches[query.pad]
         return [
             CombinedSearchResult(
                 title=result.get("title", ""),
