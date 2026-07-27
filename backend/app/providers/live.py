@@ -752,7 +752,8 @@ async def _zoek_jaarverslag_pdf_voor_jaar(
     hosted_results = await _openai_web_search(
         (
             f'"{naam}" meest recente officiële jaarverslag {zoekjaar} '
-            "jaarrekening bestuursverslag direct pdf"
+            "organisatiebreed jaarrekening bestuursverslag direct pdf; "
+            "geen deelverslag van raad, commissie, afdeling, toezichthouder of gouverneur"
         ),
         max_results=8,
     )
@@ -815,6 +816,12 @@ def _lijkt_jaarverslag(tekst: str, zoekjaar: int) -> bool:
         "raad van toezicht",
         "raad van commissarissen",
         "professionele adviesraad",
+        "jaarverslag vth",
+        "vth jaarverslag",
+        "jaarverslag-vth",
+        "jaarverslag_vth",
+        "jaarverslagccr",
+        "jaarverslagrvt",
     )):
         return False
     markers = (
@@ -870,6 +877,8 @@ async def _scrape_pdf_van_pagina(pagina_url: str, jaar: int) -> str | None:
         if ".pdf" not in href.lower():
             continue
         link_text = a.get_text(strip=True).lower()
+        if not _lijkt_jaarverslag(f"{link_text} {href}", jaar):
+            continue
         score = sum(1 for kw in keywords if kw in href.lower() or kw in link_text)
         if score > 0:
             candidates.append((score, urljoin(pagina_url, href)))

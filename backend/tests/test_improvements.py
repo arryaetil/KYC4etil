@@ -366,11 +366,50 @@ async def test_strikte_monitoring_weigert_recente_toezichtbrief_die_jaarverslag_
     "Jaarverslag Raad en Griffie 2025",
     "Jaarverslag 2025 van de gouverneur",
     "Jaarverslag Raad van Toezicht 2025",
+    "Jaarverslag VTH 2025",
+    "https://example.test/dzjaarverslagccr2025.pdf",
+    "https://example.test/dzjaarverslagrvt2025.pdf",
 ])
 def test_jaarverslagherkenning_weigert_deelrapporten(documenttype):
     from app.providers import live
 
     assert live._lijkt_jaarverslag(documenttype, 2025) is False
+
+
+@pytest.mark.asyncio
+async def test_officiele_jaarverslagpagina_verkiest_organisatiebreed_verslag(
+    monkeypatch,
+):
+    from app.providers import live
+
+    class Response:
+        text = """
+            <a href="/bestuursverslag-2024.pdf">Bestuursverslag 2024</a>
+            <a href="/jaarverslag-rvt-2024.pdf">Jaarverslag Raad van Toezicht 2024</a>
+            <a href="/jaarverslag-ccr-2024.pdf">Jaarverslag cliëntenraad 2024</a>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url):
+            return Response()
+
+    monkeypatch.setattr(live.httpx, "AsyncClient", lambda **kwargs: Client())
+
+    result = await live._scrape_pdf_van_pagina(
+        "https://organisatie.test/jaarverslagen",
+        2024,
+    )
+
+    assert result == "https://organisatie.test/bestuursverslag-2024.pdf"
 
 
 @pytest.mark.asyncio
