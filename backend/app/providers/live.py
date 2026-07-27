@@ -614,13 +614,48 @@ async def _web_search_wp(naam: str, gemeente: str | None) -> AgentFinding | None
 async def _zoek_jaarverslag_pdf(
     naam: str, jaar: int, website_url: str | None = None, uitgesloten: set[str] | None = None,
 ) -> str | None:
-    """Zoek van recent naar ouder, met maximaal drie jaar context."""
-    for zoekjaar in (jaar - 1, jaar - 2, jaar - 3):
-        result = await _zoek_jaarverslag_pdf_voor_jaar(
-            naam, zoekjaar, website_url=website_url, uitgesloten=uitgesloten)
-        if result:
-            return result
-    return None
+    """Zoek drie verslagjaren in één provider-ronde en selecteer nieuwste-eerst."""
+    jaren = (jaar - 1, jaar - 2, jaar - 3)
+    jaren_query = " ".join(str(zoekjaar) for zoekjaar in jaren)
+
+    async def nieuwste_uit(results: list[dict[str, str]]) -> str | None:
+        for zoekjaar in jaren:
+            gevonden = await _eerste_pdf_uit_resultaten(
+                results,
+                zoekjaar,
+                uitgesloten,
+            )
+            if gevonden:
+                return gevonden
+        return None
+
+    domein = _domein_van_url(website_url)
+    if domein:
+        site_results = await _web_search(
+            f"site:{domein} jaarverslag bestuursverslag jaarverantwoording {jaren_query}",
+            max_results=8,
+        )
+        gevonden = await nieuwste_uit(site_results)
+        if gevonden:
+            return gevonden
+
+    results = await _web_search(
+        f'"{naam}" jaarverslag bestuursverslag annual report pdf {jaren_query}',
+        max_results=10,
+    )
+    gevonden = await nieuwste_uit(results)
+    if gevonden:
+        return gevonden
+
+    hosted_results = await _openai_web_search(
+        (
+            f'"{naam}" meest recente officiële organisatiebrede jaarverslag '
+            f"of bestuursverslag uit {jaren_query}, direct pdf; geen deelverslag "
+            "van raad, commissie, afdeling, toezichthouder of gouverneur"
+        ),
+        max_results=8,
+    )
+    return await nieuwste_uit(hosted_results)
 
 
 def _naam_tokens(naam: str) -> list[str]:

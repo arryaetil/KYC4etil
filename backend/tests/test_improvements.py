@@ -572,6 +572,29 @@ async def test_nederlandse_organisatie_weigert_belgische_naamgenoot(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_jaarverslagzoeker_zoekt_drie_jaren_in_een_provider_ronde(
+    monkeypatch,
+):
+    from app.providers import live
+
+    web_search = AsyncMock(return_value=[{
+        "title": "Annual Report 2025",
+        "url": "https://organisatie.test/annual-report-2025.pdf",
+    }])
+    hosted = AsyncMock(return_value=[])
+    monkeypatch.setattr(live, "_web_search", web_search)
+    monkeypatch.setattr(live, "_openai_web_search", hosted)
+
+    result = await live._zoek_jaarverslag_pdf("Organisatie", 2026)
+
+    assert result == "https://organisatie.test/annual-report-2025.pdf"
+    web_search.assert_awaited_once()
+    query = web_search.await_args.args[0]
+    assert all(str(jaar) in query for jaar in (2025, 2024, 2023))
+    hosted.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_generieke_eenwoordnaam_is_zonder_domein_geen_exacte_identiteit(
     monkeypatch,
 ):
