@@ -453,10 +453,10 @@ async def _openai_web_search(
         })
 
     for item in data.get("output", []):
-        for source in (item.get("action") or {}).get("sources", []):
+        for source in (item.get("action") or {}).get("sources") or []:
             voeg_toe(source.get("url"), source.get("title"))
-        for content in item.get("content", []):
-            for annotation in content.get("annotations", []):
+        for content in item.get("content") or []:
+            for annotation in content.get("annotations") or []:
                 if annotation.get("type") == "url_citation":
                     voeg_toe(annotation.get("url"), annotation.get("title"))
     return gevonden

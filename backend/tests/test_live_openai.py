@@ -79,10 +79,7 @@ async def test_openai_web_search_parseert_bronnen_en_citaties(monkeypatch):
                     {
                         "type": "web_search_call",
                         "action": {
-                            "sources": [{
-                                "url": "https://example.test",
-                                "title": "Officiële website",
-                            }],
+                            "sources": None,
                         },
                     },
                     {
@@ -116,7 +113,6 @@ async def test_openai_web_search_parseert_bronnen_en_citaties(monkeypatch):
     results = await live._openai_web_search("Example jaarverslag", 5)
 
     assert [item["url"] for item in results] == [
-        "https://example.test",
         "https://example.test/jaarverslag.pdf",
     ]
     assert all(item["bron"] == "openai_web_search" for item in results)
