@@ -968,7 +968,12 @@ def test_run_monitoring_watchlist_background_respecteert_offset(monkeypatch):
         db.commit()
         alle_ids = [
             company.id
-            for company in db.query(Company).filter_by(batch_id=batch.id).all()
+            for company in (
+                db.query(Company)
+                .filter_by(batch_id=batch.id)
+                .order_by(Company.created_at, Company.id)
+                .all()
+            )
         ]
         doorgegeven_ids = []
 

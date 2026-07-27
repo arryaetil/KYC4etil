@@ -347,6 +347,8 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
             baseline_ingetrokken = True
         elif not status.laatste_bron_url:
             status.laatste_bron_url = te_valideren_url
+        if bron_is_nog_geldig and bestaand_jaar is not None:
+            status.laatste_verslagjaar = bestaand_jaar
     elif zelfde_gevalideerde_bron and not status.laatste_bron_url:
         status.laatste_bron_url = te_valideren_url
 
@@ -575,7 +577,15 @@ def run_monitoring_watchlist_background(
         if batch is None:
             return
         batch_id, jaar = batch.id, batch.jaar
-        company_ids = [c.id for c in batch.companies]
+        company_ids = [
+            company_id
+            for (company_id,) in (
+                db.query(Company.id)
+                .filter_by(batch_id=batch.id)
+                .order_by(Company.created_at, Company.id)
+                .all()
+            )
+        ]
     finally:
         db.close()
 

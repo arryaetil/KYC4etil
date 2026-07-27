@@ -531,6 +531,42 @@ async def test_monitoring_sourcezoeker_slaat_wp_extractie_over(monkeypatch):
     extract.assert_not_awaited()
 
 
+@pytest.mark.parametrize(("tekst", "verwacht"), [
+    ("4 February 2026\n2025 ANNUAL REPORT\nFY 2025", 2025),
+    ("Inhoudelijk jaarverslag 2024\nVooruitblik 2025", 2024),
+    ("Bestuursverslag\n2024\nVastgesteld in 2025", 2024),
+])
+def test_verslagjaar_komt_uit_documenttitel_niet_publicatiejaar(tekst, verwacht):
+    from app.providers import live
+
+    assert live._verslagjaar_uit_pdftekst(tekst, 2026) == verwacht
+
+
+@pytest.mark.asyncio
+async def test_nederlandse_organisatie_weigert_belgische_naamgenoot(monkeypatch):
+    from app.providers import live
+
+    belgisch = "https://koraal.be/jaarverslag-2024.pdf"
+    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", AsyncMock(return_value=belgisch))
+    monkeypatch.setattr(
+        live,
+        "_eerste_pdf_paginas",
+        AsyncMock(return_value="Koraal jaarverslag 2024"),
+    )
+    scope = AsyncMock(return_value=True)
+    monkeypatch.setattr(live, "_is_organisatiebreed_jaarverslag", scope)
+
+    finding = await live.LiveJaarverslagAgent().find_latest_source(
+        "Koraal Groep",
+        2026,
+        website_url="https://www.koraal.nl",
+        strict_identity=True,
+    )
+
+    assert finding is None
+    scope.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_generieke_eenwoordnaam_is_zonder_domein_geen_exacte_identiteit(
     monkeypatch,

@@ -778,6 +778,23 @@ async def _pdf_is_recent_jaarverslag(
 
 
 def _verslagjaar_uit_pdftekst(tekst: str, jaar: int) -> int | None:
+    voorblad = re.sub(r"\s+", " ", tekst[:5000].lower())
+    documentlabels = (
+        "jaarverslag|jaarrekening|bestuursverslag|jaardocument|"
+        "jaarverantwoording|annual report|integrated report"
+    )
+    nabije_jaren = [
+        int(match)
+        for pattern in (
+            rf"(?:{documentlabels})[^0-9]{{0,40}}(20\d{{2}})",
+            rf"(20\d{{2}})[^a-z0-9]{{0,20}}(?:{documentlabels})",
+        )
+        for match in re.findall(pattern, voorblad)
+    ]
+    toegestane_jaren = {jaar - 1, jaar - 2, jaar - 3}
+    for verslagjaar in nabije_jaren:
+        if verslagjaar in toegestane_jaren:
+            return verslagjaar
     return next((
         verslagjaar
         for verslagjaar in (jaar - 1, jaar - 2, jaar - 3)
@@ -1620,7 +1637,16 @@ class LiveJaarverslagAgent:
                 continue
 
             domein_match = domain_matches_company(pdf_url, website_url)
+            bron_host = (urlparse(pdf_url).hostname or "").lower()
+            website_host = (urlparse(website_url).hostname or "").lower()
+            landdomein_conflict = (
+                website_host.endswith(".nl")
+                and bron_host.endswith(".be")
+            )
             identity = (
+                IdentityClass.MISMATCH
+                if landdomein_conflict
+                else
                 IdentityClass.EXACT_ENTITY
                 if domein_match is True
                 else await _classificeer_jaarverslag_bron_identiteit(
