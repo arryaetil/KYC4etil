@@ -17,6 +17,10 @@ class LocationInfo:
     count_nl: int | None
     count_lb: int | None
     bron: str  # 'kvk' | 'places' | 'mock'
+    # True als de bron zijn paginalimiet raakte: count_nl is dan een ondergrens
+    # ("minstens zoveel") en geen telling. Zonder dit onderscheid is een concern
+    # met 400 vestigingen niet te onderscheiden van één met precies de limiet.
+    count_nl_is_ondergrens: bool = False
 
 
 @dataclass
