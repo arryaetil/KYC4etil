@@ -810,3 +810,92 @@ def test_oordeelsprompts_vragen_eerst_om_redenering():
             if veld in prompt
         )
         assert prompt.index('"redenering"') < conclusie
+
+
+# --- stille degradatie van Serper zichtbaar maken ---
+
+def _http_error(status: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://google.serper.dev/search")
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError("fout", request=request, response=response)
+
+
+class _FailingClient:
+    def __init__(self, status):
+        self._status = status
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def post(self, *args, **kwargs):
+        raise _http_error(self._status)
+
+
+@pytest.mark.asyncio
+async def test_serper_zonder_quota_registreert_geen_kosten(monkeypatch):
+    """De kosten werden vóór de request geregistreerd, dus een mislukte call
+    telde mee als betaalde call. Daardoor bleef de kostenrapportage Serper-calls
+    tonen die nooit gelukt zijn."""
+    from app.research import usage
+
+    monkeypatch.setattr(live.settings, "serper_api_key", "test-key")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _FailingClient(403))
+    usage.start_usage_tracking()
+
+    resultaten = await live._serper_search("Testbedrijf jaarverslag")
+
+    assert resultaten == []
+    assert "serper_search" not in usage.get_cost_summary()["providers"]
+
+
+@pytest.mark.asyncio
+async def test_serper_succes_registreert_wel_kosten(monkeypatch):
+    from app.research import usage
+
+    class _OkClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, *args, **kwargs):
+            return httpx.Response(
+                200, json={"organic": [{"title": "T", "link": "https://x.test", "snippet": "s"}]},
+                request=httpx.Request("POST", "https://google.serper.dev/search"),
+            )
+
+    monkeypatch.setattr(live.settings, "serper_api_key", "test-key")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _OkClient())
+    usage.start_usage_tracking()
+
+    resultaten = await live._serper_search("Testbedrijf")
+
+    assert len(resultaten) == 1
+    assert usage.get_cost_summary()["providers"]["serper_search"]["calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_serper_quotafout_wordt_gelogd_als_waarschuwing(monkeypatch, caplog):
+    """Een uitgeputte quota geeft 403 en was niet te onderscheiden van 'niets
+    gevonden'. Zonder signaal draait het systeem stilletjes door op een veel
+    zwakkere zoekindex."""
+    monkeypatch.setattr(live.settings, "serper_api_key", "test-key")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _FailingClient(403))
+
+    with caplog.at_level("WARNING"):
+        await live._serper_search("Testbedrijf")
+
+    assert any("serper" in r.message.lower() for r in caplog.records)
+    assert any("403" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_serper_places_quotafout_wordt_ook_gelogd(monkeypatch, caplog):
+    monkeypatch.setattr(live.settings, "serper_api_key", "test-key")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _FailingClient(429))
+
+    with caplog.at_level("WARNING"):
+        resultaat = await live._serper_places("Testbedrijf Weert")
+
+    assert resultaat is None
+    assert any("serper" in r.message.lower() for r in caplog.records)

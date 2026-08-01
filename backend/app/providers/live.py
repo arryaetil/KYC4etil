@@ -5,6 +5,7 @@ NB: web scraping respecteert robots.txt, gebruikt een identificerende
 user-agent en max 1 request/sec per domein (doc §7)."""
 import asyncio
 import json
+import logging
 import re
 import unicodedata
 from typing import Any, TypedDict
@@ -17,6 +18,25 @@ from ..config import get_settings
 from ..pipeline.evidence import IdentityClass, ScopeClass
 from ..pipeline.identity_scope import domain_matches_company
 from ..research.usage import record_provider_call, record_response_usage
+
+logger = logging.getLogger(__name__)
+
+# Statuscodes waarbij de sleutel of het tegoed het probleem is, niet de zoekopdracht.
+# Die moeten luid zijn: zonder Serper valt de zoekketen terug op DuckDuckGo-scraping
+# (zwakkere index, meer gemiste jaarverslagen) en Google Places (32x duurder).
+_SLEUTEL_OF_TEGOED_STATUS = {401, 402, 403, 429}
+
+
+def _log_zoekprovider_fout(provider: str, fout: Exception) -> None:
+    status = getattr(getattr(fout, "response", None), "status_code", None)
+    if status in _SLEUTEL_OF_TEGOED_STATUS:
+        logger.warning(
+            "%s onbruikbaar (HTTP %s): sleutel ongeldig of tegoed op. De zoekketen "
+            "valt nu terug op DuckDuckGo en Google Places — zwakkere resultaten en "
+            "hogere kosten. Vul het tegoed aan.", provider, status,
+        )
+    else:
+        logger.info("%s gaf geen resultaat (%s)", provider, fout)
 from .base import AgentFinding, LocationInfo, PlacesResult
 
 _JSON_PARSER = JsonOutputParser()
@@ -236,7 +256,6 @@ async def _serper_places(query: str) -> dict | None:
     totdat de KvK-koppeling er is."""
     if not settings.serper_api_key:
         return None
-    record_provider_call("serper_places", kosten_micro_usd=1_000)
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(
@@ -246,8 +265,10 @@ async def _serper_places(query: str) -> dict | None:
             )
             r.raise_for_status()
             places = r.json().get("places") or []
-    except httpx.HTTPError:
+    except httpx.HTTPError as fout:
+        _log_zoekprovider_fout("serper_places", fout)
         return None
+    record_provider_call("serper_places", kosten_micro_usd=1_000)
     return places[0] if places else None
 
 
@@ -408,7 +429,6 @@ async def _serper_search(query: str, max_results: int = 5) -> list[dict[str, str
     goedkoper dan OpenAI's ingebouwde web_search-tool."""
     if not settings.serper_api_key:
         return []
-    record_provider_call("serper_search", kosten_micro_usd=1_000)
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(
@@ -418,8 +438,12 @@ async def _serper_search(query: str, max_results: int = 5) -> list[dict[str, str
             )
             r.raise_for_status()
             data = r.json()
-    except httpx.HTTPError:
+    except httpx.HTTPError as fout:
+        # Pas registreren na een geslaagde call: een mislukte call kost niets en
+        # mag de kostenrapportage niet vullen met calls die nooit gelukt zijn.
+        _log_zoekprovider_fout("serper_search", fout)
         return []
+    record_provider_call("serper_search", kosten_micro_usd=1_000)
     results: list[dict[str, str]] = []
     for item in (data.get("organic") or [])[:max_results]:
         url = item.get("link")
