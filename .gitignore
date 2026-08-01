@@ -26,3 +26,7 @@ backend/evals/*.jsonl
 # Frontend
 frontend/node_modules/
 frontend/dist/
+
+# Analyse-artefacten (lokaal)
+graphify-out/
+skill-observations/
