@@ -19,10 +19,18 @@ _huidige_totalen: ContextVar["_UsageTotalen | None"] = ContextVar(
     "_huidige_totalen", default=None,
 )
 
+# Markering voor deltametingen per pipeline-stap: de tokenstand bij de vorige
+# delta-aanroep. Ook een ContextVar, zodat gelijktijdig verwerkte organisaties
+# elkaars meting niet vervuilen.
+_vorige_tokenmarkering: ContextVar[tuple[int, int]] = ContextVar(
+    "_vorige_tokenmarkering", default=(0, 0),
+)
+
 
 def start_usage_tracking() -> None:
     """Start (of reset) de teller voor de huidige asyncio-context."""
     _huidige_totalen.set(_UsageTotalen())
+    _vorige_tokenmarkering.set((0, 0))
 
 
 def record_response_usage(response) -> None:
@@ -70,17 +78,31 @@ def get_usage_totals() -> tuple[int, int]:
     return (totalen.tokens_in, totalen.tokens_out)
 
 
-def get_cost_summary() -> dict:
-    totalen = _huidige_totalen.get() or _UsageTotalen()
+def _provider_kosten_micro_usd(totalen: "_UsageTotalen") -> dict[str, int]:
     settings = get_settings()
     openai_micro_usd = round((
         totalen.tokens_in / 1000 * settings.openai_prijs_in_cent_per_1k
         + totalen.tokens_out / 1000 * settings.openai_prijs_out_cent_per_1k
     ) / 100 * 1_000_000)
-    provider_kosten = {
-        **totalen.provider_kosten_micro_usd,
-        "openai_tokens": openai_micro_usd,
-    }
+    return {**totalen.provider_kosten_micro_usd, "openai_tokens": openai_micro_usd}
+
+
+def neem_token_delta() -> tuple[int, int]:
+    """Tokens sinds de vorige aanroep, en verzet meteen de markering.
+
+    Per pipeline-stap loggen we tokens en niet kosten: kosten_cents is in hele
+    centen en een losse stap kost doorgaans een fractie daarvan, dus zou elke
+    stap naar 0 afronden. Tokens zijn exact en wijzen even goed aan welke stap
+    duur is; het bedrag staat op de afsluitende totaalregel."""
+    tokens_in, tokens_out = get_usage_totals()
+    vorige_in, vorige_uit = _vorige_tokenmarkering.get()
+    _vorige_tokenmarkering.set((tokens_in, tokens_out))
+    return (tokens_in - vorige_in, tokens_out - vorige_uit)
+
+
+def get_cost_summary() -> dict:
+    totalen = _huidige_totalen.get() or _UsageTotalen()
+    provider_kosten = _provider_kosten_micro_usd(totalen)
     totaal_micro_usd = sum(provider_kosten.values())
     providers = {
         naam: {
@@ -97,12 +119,3 @@ def get_cost_summary() -> dict:
         "totaal_usd": round(totaal_micro_usd / 1_000_000, 6),
         "totaal_cents": round(totaal_micro_usd / 10_000),
     }
-
-
-def bereken_kosten_cents(tokens_in: int, tokens_out: int) -> int:
-    settings = get_settings()
-    cents = (
-        tokens_in / 1000 * settings.openai_prijs_in_cent_per_1k
-        + tokens_out / 1000 * settings.openai_prijs_out_cent_per_1k
-    )
-    return round(cents)

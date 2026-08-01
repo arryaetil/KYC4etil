@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from ..models import (AgentResult, Batch, CallListItem, Candidate, Company,
                       Enrichment, PipelineRun)
 from ..providers import get_providers
+from ..research.usage import (get_cost_summary, get_usage_totals,
+                              neem_token_delta, start_usage_tracking)
 from .confidence import bereken_confidence
 from .evidence import IdentityClass, ScopeClass
 from .reconcile import (Strategie, bepaal_strategie, reconcilieer,
@@ -20,13 +22,19 @@ def _now():
 
 def _log(db: Session, batch_id: str, company_id: str | None, stap: str,
          status: str, t0: float, error: str | None = None) -> None:
+    """Logt één pipeline-stap, inclusief de tokens die deze stap zelf verbruikte."""
+    tokens_in, tokens_out = neem_token_delta()
     db.add(PipelineRun(batch_id=batch_id, company_id=company_id, stap=stap,
                        status=status, duur_ms=int((time.monotonic() - t0) * 1000),
+                       tokens_in=tokens_in, tokens_out=tokens_out,
                        error=error))
 
 
 async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candidate:
     lookup, website_agent, jaarverslag_agent, identity_scope_classifier = get_providers()
+    # Per organisatie tellen, zodat kosten niet doorlekken naar de volgende.
+    start_usage_tracking()
+    t_company = time.monotonic()
 
     # STAP 1 — verrijking
     t0 = time.monotonic()
@@ -49,7 +57,8 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
     db.add(enrichment)
     _log(db, batch.id, company.id, "verrijking", "ok" if place else "skipped", t0)
 
-    strategie = bepaal_strategie(enrichment.lookup_failed, loc.count_nl, loc.count_lb)
+    strategie = bepaal_strategie(enrichment.lookup_failed, loc.count_nl, loc.count_lb,
+                                 loc.count_nl_is_ondergrens)
 
     # STAP 2 — agents (altijd draaien; website_agent valt intern terug op web search als
     # er geen URL is — zie live.py Fase C. Zo werkt ook lookup_failed niet als blokkade.)
@@ -120,14 +129,14 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
     _log(db, batch.id, company.id, "identity_scope_classificatie", classificatie_status, t0)
 
     # STAP 3 — reconciliatie
-    rec = reconcilieer(w_finding, j_finding, loc.count_nl, loc.count_lb)
+    rec = reconcilieer(w_finding, j_finding, loc.count_nl, loc.count_lb,
+                       loc.count_nl_is_ondergrens)
     reviewer_signaal = signaleer_afwijkende_extra_bronnen(rec.wp_kandidaat, extra_findings)
 
     # STAP 4 — confidence
     if rec.finding is not None:
         score = bereken_confidence(
-            rec.finding, loc.count_nl, loc.count_lb, enrichment.adres_validated,
-            rec.n_bronnen, rec.bronnen_consistent, peiljaar=batch.jaar,
+            rec.finding, rec.n_bronnen, rec.bronnen_consistent, peiljaar=batch.jaar,
             is_schatting=rec.is_schatting, schatting_penalty=rec.schatting_penalty,
             locatie_bron=loc.bron,
         )
@@ -166,6 +175,16 @@ async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candid
         else:
             db.add(CallListItem(company_id=company.id, telefoonnummer=enrichment.telefoonnummer,
                                 reden=candidate.reconciliatie_reden or "lage confidence"))
+
+    # Afsluitende totaalregel: het bedrag staat hier en niet per stap, omdat
+    # kosten_cents in hele centen is en een losse stap daaronder blijft.
+    tokens_in, tokens_out = get_usage_totals()
+    db.add(PipelineRun(
+        batch_id=batch.id, company_id=company.id, stap="totaal", status="ok",
+        duur_ms=int((time.monotonic() - t_company) * 1000),
+        tokens_in=tokens_in, tokens_out=tokens_out,
+        kosten_cents=get_cost_summary()["totaal_cents"],
+    ))
     return candidate
 
 
