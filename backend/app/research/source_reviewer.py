@@ -44,8 +44,16 @@ Bewijsfragment: {bewijs}
 Inhoud uit de bron zelf:
 {tekst}
 
+Beoordeel in "redenering" eerst de identiteit en pas daarna de bruikbaarheid —
+in die volgorde, want een bron van een andere organisatie wordt afgewezen
+ongeacht hoe bruikbaar het getal lijkt:
+1. Welke organisatie noemt de bron concreet, en is dat {naam}?
+2. Alleen als dat klopt: voor welke reikwijdte geldt het getal?
+3. Alleen dan: is er concreet bruikbaar bewijs voor vestiging of Limburg?
+
 Antwoord uitsluitend met JSON:
 {{
+  "redenering": "<je afweging in max 3 zinnen>",
   "beslissing": "tonen_aan_reviewer|context_only|afwijzen",
   "identity_class": "exact_entity|same_brand_or_group|possible_match|mismatch|unknown",
   "scope_class": "vestiging|limburg|nederland|concern|unknown",
@@ -355,7 +363,7 @@ class IntelligentSourceReviewer:
                 bewijs=document.bewijsfragment or "geen",
                 tekst=(document.tekst or "")[:12000],
             ),
-            max_output_tokens=500,
+            max_output_tokens=800,
             text={"format": {"type": "json_object"}},
         )
         record_response_usage(response)

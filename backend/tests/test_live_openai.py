@@ -1,6 +1,8 @@
-import pytest
-import httpx
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
+import httpx
+import pytest
 
 from app.providers import live
 
@@ -525,18 +527,18 @@ async def test_zoek_jaarverslag_pdf_probeert_eerst_site_scoped_zoekopdracht(monk
     async def fake_web_search(query, max_results=8):
         gedane_queries.append(query)
         if query.startswith("site:mondriaan.eu"):
-            return [{"title": "Jaarverantwoording", "url": "https://mondriaan.eu/jaarverantwoording-2026.pdf",
+            return [{"title": "Jaarverantwoording", "url": "https://mondriaan.eu/jaarverantwoording-2025.pdf",
                       "snippet": "", "bron": "serper"}]
         return [{"title": "Kwaliteitsverslag (fout document)", "url": "https://mondriaan.eu/kwaliteitsverslag.pdf",
                   "snippet": "", "bron": "serper"}]
 
     monkeypatch.setattr(live, "_web_search", fake_web_search)
 
-    resultaat = await live._zoek_jaarverslag_pdf_voor_jaar(
+    resultaat = await live._zoek_jaarverslag_pdf(
         "Mondriaan", 2026, website_url="https://www.mondriaan.eu/",
     )
 
-    assert resultaat == "https://mondriaan.eu/jaarverantwoording-2026.pdf"
+    assert resultaat == "https://mondriaan.eu/jaarverantwoording-2025.pdf"
     assert gedane_queries[0].startswith("site:mondriaan.eu")
 
 
@@ -550,7 +552,7 @@ async def test_zoek_jaarverslag_pdf_valt_terug_op_open_zoekopdracht_zonder_domei
 
     monkeypatch.setattr(live, "_web_search", fake_web_search)
 
-    resultaat = await live._zoek_jaarverslag_pdf_voor_jaar(
+    resultaat = await live._zoek_jaarverslag_pdf(
         "Testbedrijf", 2026, website_url="https://www.example.test/",
     )
 
@@ -567,7 +569,9 @@ async def test_zoek_jaarverslag_pdf_zonder_bekend_domein_zoekt_alleen_open(monke
 
     monkeypatch.setattr(live, "_web_search", fake_web_search)
 
-    await live._zoek_jaarverslag_pdf_voor_jaar("Testbedrijf", 2026, website_url=None)
+    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+
+    await live._zoek_jaarverslag_pdf("Testbedrijf", 2026, website_url=None)
 
     assert len(gedane_queries) == 1
     assert not gedane_queries[0].startswith("site:")
@@ -745,3 +749,64 @@ async def test_parse_json_met_herstel_geeft_none_als_herstel_ook_faalt():
     resultaat = await live._parse_json_met_herstel(client, "gpt-test", "helemaal geen json")
 
     assert resultaat is None
+
+
+# --- determinisme en chain-of-thought in de classificatieprompts ---
+
+@pytest.mark.asyncio
+async def test_create_response_zet_temperatuur_op_de_configwaarde():
+    """Zonder expliciete temperature draait elke call op de OpenAI-default 1.0;
+    voor extractie en classificatie is dat onnodige niet-determinisme."""
+    from app.providers import live
+
+    gezien = {}
+
+    class _Client:
+        class responses:
+            @staticmethod
+            async def create(**kwargs):
+                gezien.update(kwargs)
+                return SimpleNamespace(output_text="{}", usage=None)
+
+    await live._create_response(_Client(), model="gpt-4o-mini", input="x")
+
+    assert gezien["temperature"] == live.settings.openai_temperature
+    assert live.settings.openai_temperature == 0.0
+
+
+@pytest.mark.asyncio
+async def test_create_response_laat_expliciete_temperatuur_staan():
+    from app.providers import live
+
+    gezien = {}
+
+    class _Client:
+        class responses:
+            @staticmethod
+            async def create(**kwargs):
+                gezien.update(kwargs)
+                return SimpleNamespace(output_text="{}", usage=None)
+
+    await live._create_response(_Client(), model="gpt-4o-mini", input="x", temperature=0.7)
+
+    assert gezien["temperature"] == 0.7
+
+
+def test_oordeelsprompts_vragen_eerst_om_redenering():
+    """Chain-of-thought werkt alleen als het redeneerveld vóór de conclusie in
+    de JSON staat — het model genereert op volgorde, dus daarna is het een
+    rechtvaardiging achteraf in plaats van een afweging vooraf."""
+    from app.providers.live import (EXTRACT_PROMPT, IDENTITY_EN_SCOPE_PROMPT,
+                                    JAARVERSLAG_SCOPE_PROMPT, SCOPE_PROMPT)
+    from app.research.source_reviewer import REVIEW_PROMPT
+
+    for prompt in (EXTRACT_PROMPT, IDENTITY_EN_SCOPE_PROMPT,
+                   JAARVERSLAG_SCOPE_PROMPT, SCOPE_PROMPT, REVIEW_PROMPT):
+        assert '"redenering"' in prompt
+        conclusie = min(
+            prompt.index(veld) for veld in
+            ('"identity_class"', '"scope_class"', '"document_scope"',
+             '"wp_gevonden"', '"beslissing"')
+            if veld in prompt
+        )
+        assert prompt.index('"redenering"') < conclusie

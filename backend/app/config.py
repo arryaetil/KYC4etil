@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"         # hoofd-model; overschrijfbaar via OPENAI_MODEL
     openai_model_extraction: str = ""          # leeg = fallback naar openai_model
     openai_web_search_model: str = "gpt-4.1-mini"
+    # Extractie en classificatie zijn oordeelstaken met één juist antwoord, geen
+    # creatieve taken. De OpenAI-default van 1.0 levert daar alleen ruis op:
+    # dezelfde bron kan tussen twee runs een ander oordeel krijgen.
+    openai_temperature: float = 0.0
     jaarverslag_web_fallback: bool = False     # Fase C fallback: extra OpenAI-call als PDF mislukt
     jaarverslag_max_pogingen: int = 3          # retries met een ANDER zoekresultaat bij afgewezen/lege bron
     max_website_pages: int = 3                 # max pagina's per bedrijf voor website-agent (kostenbeheersing)
@@ -41,6 +45,9 @@ class Settings(BaseSettings):
     demo_vaessens_password: str = ""
     demo_paffen_password: str = ""
     google_places_api_key: str = ""
+    # Google Places Text Search pagineert hier niet: bij precies dit aantal
+    # resultaten is de landelijke vestigingstelling een ondergrens.
+    places_max_resultaten: int = 20
     serper_api_key: str = ""     # betrouwbare zoek-fallback i.p.v. OpenAI web_search (kostenbeheersing)
     kvk_api_key: str = ""
     jwt_secret: str = "change-me"
@@ -53,6 +60,10 @@ class Settings(BaseSettings):
     # Penalties
     penalty_places_fuzzy: float = 0.05
     penalty_fte_only: float = 0.10
+    # Actualiteit: een jaarverslag over jaar X verschijnt pas in X+1, dus één
+    # jaar verschil is normaal. Pas daarboven telt het cijfer als verouderd.
+    peilmoment_max_leeftijd_jaren: int = 1
+    penalty_verouderd_peilmoment: float = 0.15
     # Bronranking staat los van WP-confidence (som = 1.0)
     rank_w_identiteit: float = 0.30
     rank_w_autoriteit: float = 0.25
