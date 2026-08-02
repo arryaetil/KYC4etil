@@ -24,16 +24,32 @@ logger = logging.getLogger(__name__)
 # Statuscodes waarbij de sleutel of het tegoed het probleem is, niet de zoekopdracht.
 # Die moeten luid zijn: zonder Serper valt de zoekketen terug op DuckDuckGo-scraping
 # (zwakkere index, meer gemiste jaarverslagen) en Google Places (32x duurder).
-_SLEUTEL_OF_TEGOED_STATUS = {401, 402, 403, 429}
+#
+# 400 hoort er nadrukkelijk bij: Serper meldt een leeg tegoed met
+# {"message":"Not enough credits","statusCode":400} en niet met 401/402/403.
+# Een guard op statuscodes alléén mist daarom precies het geval waarvoor hij bedoeld
+# is; de body is hier de betrouwbaardere bron.
+_SLEUTEL_OF_TEGOED_STATUS = {400, 401, 402, 403, 429}
+_TEGOED_MARKERS = ("credit", "quota", "insufficient", "limit exceeded")
 
 
 def _log_zoekprovider_fout(provider: str, fout: Exception) -> None:
-    status = getattr(getattr(fout, "response", None), "status_code", None)
-    if status in _SLEUTEL_OF_TEGOED_STATUS:
+    respons = getattr(fout, "response", None)
+    status = getattr(respons, "status_code", None)
+    body = ""
+    if respons is not None:
+        try:
+            body = respons.text[:200]
+        except Exception:
+            body = ""
+    tegoed_op = any(m in body.lower() for m in _TEGOED_MARKERS)
+    if tegoed_op or status in _SLEUTEL_OF_TEGOED_STATUS:
         logger.warning(
-            "%s onbruikbaar (HTTP %s): sleutel ongeldig of tegoed op. De zoekketen "
-            "valt nu terug op DuckDuckGo en Google Places — zwakkere resultaten en "
-            "hogere kosten. Vul het tegoed aan.", provider, status,
+            "%s onbruikbaar (HTTP %s): %s. De zoekketen valt nu terug op DuckDuckGo "
+            "en de duurdere OpenAI-websearch — zwakkere resultaten en hogere kosten. "
+            "Antwoord: %s", provider, status,
+            "tegoed op" if tegoed_op else "sleutel ongeldig of tegoed op",
+            body or "(geen body)",
         )
     else:
         logger.info("%s gaf geen resultaat (%s)", provider, fout)
@@ -980,13 +996,24 @@ def _lijkt_jaarverslag(
         "annual-report",
         "integrated report",
     )
-    jaren = {
-        int(match)
-        for match in re.findall(r"(?<!\d)(20\d{2})(?!\d)", tekst)
-    }
+    jaren = _verslagjaren_uit(tekst)
     if jaren and zoekjaar not in jaren:
         return False
     return any(marker in lowered for marker in markers)
+
+
+# /2024/01/ of /2024/ midden in een pad is vrijwel altijd de uploaddatum van het
+# CMS, niet het verslagjaar. Dat leidde in beide richtingen tot fouten: een geldig
+# jaarverslag werd afgewezen omdat alleen het uploadjaar zichtbaar was, en een
+# verslag uit 2017 werd geaccepteerd omdat het pad "2024" bevatte.
+_UPLOADPAD = re.compile(r"/(?:19|20)\d{2}(?:/\d{1,2})?(?=/)")
+_JAAR = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
+
+
+def _verslagjaren_uit(tekst: str) -> set[int]:
+    """Jaartallen die iets over het verslagjaar zeggen: uit de titel en de
+    bestandsnaam, niet uit tussenliggende padsegmenten."""
+    return {int(m) for m in _JAAR.findall(_UPLOADPAD.sub("/", tekst))}
 
 
 def _domein_van_url(website_url: str | None) -> str | None:

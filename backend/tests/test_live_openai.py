@@ -899,3 +899,61 @@ async def test_serper_places_quotafout_wordt_ook_gelogd(monkeypatch, caplog):
 
     assert resultaat is None
     assert any("serper" in r.message.lower() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_serper_zonder_tegoed_geeft_400_en_wordt_herkend(monkeypatch, caplog):
+    """Serper meldt een leeg tegoed met HTTP 400 en de body
+    {"message":"Not enough credits"} — niet met 401/402/403. Een guard op
+    statuscodes alleen mist daardoor precies het scenario waarvoor hij bedoeld is."""
+    class _GeenTegoed:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, *args, **kwargs):
+            request = httpx.Request("POST", "https://google.serper.dev/search")
+            return httpx.Response(
+                400, json={"message": "Not enough credits", "statusCode": 400},
+                request=request,
+            )
+
+    monkeypatch.setattr(live.settings, "serper_api_key", "test-key")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _GeenTegoed())
+
+    with caplog.at_level("WARNING"):
+        resultaten = await live._serper_search("Testbedrijf jaarverslag")
+
+    assert resultaten == []
+    meldingen = " ".join(r.message.lower() for r in caplog.records)
+    assert "serper" in meldingen
+    assert "tegoed" in meldingen or "credit" in meldingen
+
+
+# --- verslagjaar bepalen: uploadpad is geen verslagjaar ---
+
+def test_verslagjaar_negeert_uploadpad_bij_afwijzen():
+    """servatius.nl/media/2026/jaarverslag.pdf werd afgewezen omdat het enige
+    jaar in de tekst het uploadjaar 2026 was. Het pad zegt niets over het
+    verslagjaar; zonder jaar in titel of bestandsnaam mag het niet vetoën."""
+    tekst = "Jaarverslag https://www.servatius.nl/media/2026/jaarverslag.pdf"
+    assert live._lijkt_jaarverslag(tekst, 2025)
+
+
+def test_verslagjaar_accepteert_geen_verouderd_verslag_via_uploadpad():
+    """Andersom net zo fout: 'Jaarverslag 2017' met /uploads/2024/01/ in de URL
+    werd als verslagjaar 2024 geaccepteerd. Titel en bestandsnaam zijn leidend."""
+    tekst = ("Jaarverslag 2017 "
+             "https://heemwonen.nl/wp-content/uploads/2024/01/jaarverslag-hm-2017.pdf")
+    assert not live._lijkt_jaarverslag(tekst, 2024)
+
+
+def test_verslagjaar_uit_bestandsnaam_blijft_leidend():
+    tekst = ("JAARVERANTWOORDING 2022 "
+             "https://www.zorgboog.nl/wp-content/uploads/2025/11/Jaarverantwoording-2022.pdf")
+    assert not live._lijkt_jaarverslag(tekst, 2025)
+    assert live._lijkt_jaarverslag(tekst, 2022)
+
+
+def test_verslagjaar_in_bestandsnaam_wordt_wel_gebruikt():
+    tekst = "Jaarverslag https://example.nl/uploads/2026/03/jaarverslag-2025.pdf"
+    assert live._lijkt_jaarverslag(tekst, 2025)
+    assert not live._lijkt_jaarverslag(tekst, 2023)
