@@ -995,3 +995,40 @@ def test_run_monitoring_watchlist_background_respecteert_offset(monkeypatch):
         db.query(Batch).delete()
         db.commit()
         db.close()
+
+
+# --- onderscheid tussen de drie skip-uitkomsten ---
+
+def test_monitoringstatussen_zijn_onderscheidend():
+    """"skipped" dekte drie verschillende uitkomsten: niets gevonden, een ouder
+    verslag genegeerd, en de bron stond al goed. In pipeline_runs was daardoor
+    niet te zien of een ontbrekende bron echt niet bestaat of dat het zoeken
+    faalt — precies de vraag bij een watchlist met 123 lege bronnen."""
+    from app.pipeline.monitoring import (STATUS_GEEN_BRON_GEVONDEN,
+                                         STATUS_ONGEWIJZIGD,
+                                         STATUS_OUDER_VERSLAG)
+
+    statussen = {STATUS_GEEN_BRON_GEVONDEN, STATUS_ONGEWIJZIGD, STATUS_OUDER_VERSLAG}
+    assert len(statussen) == 3
+    # 'new' en 'error' hebben een eigen betekenis in de dashboard-aggregatie
+    # (routers/monitoring.py) en mogen niet worden hergebruikt.
+    assert not statussen & {"new", "error", "updated"}
+
+
+def test_monitoringcontrole_legt_kosten_vast():
+    """Monitoring riep start_usage_tracking() nooit aan, waardoor tokens en
+    kosten in pipeline_runs leeg bleven en een ronde niet te beprijzen was."""
+    from unittest.mock import MagicMock
+    from app.models import PipelineRun
+    from app.pipeline import monitoring
+    from app.research.usage import record_provider_call, start_usage_tracking
+
+    db = MagicMock()
+    start_usage_tracking()
+    record_provider_call("google_places_text_search", kosten_micro_usd=32_000)
+
+    run = monitoring._log(db, "b", "c", "jaarverslag_monitoring",
+                          monitoring.STATUS_ONGEWIJZIGD, 0.0)
+
+    assert isinstance(run, PipelineRun)
+    assert run.kosten_cents == 3

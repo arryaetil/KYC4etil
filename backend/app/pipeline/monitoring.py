@@ -20,9 +20,29 @@ from ..providers import get_providers
 from ..research.ranking import rank_bronnen
 from ..research.urls import canonicaliseer_url
 from ..research.validation import SourceDocument, valideer_bron
+from ..research.usage import get_cost_summary, start_usage_tracking
 from .confidence import bereken_confidence
 from .reconcile import reconcilieer
-from .runner import _log, _now
+from .runner import _log as _log_stap
+from .runner import _now
+
+
+def _log(db, batch_id, company_id, stap, status, t0, error=None):
+    """Als _log uit runner.py, maar legt ook de kosten van deze controle vast.
+    Monitoring verwerkt één organisatie per aanroep, dus het totaal van de
+    lopende tracking is precies de kostprijs van deze controle."""
+    run = _log_stap(db, batch_id, company_id, stap, status, t0, error)
+    run.kosten_cents = get_cost_summary()["totaal_cents"]
+    return run
+
+# Uitkomsten van een monitoringcontrole. Eerder viel alles hieronder onder
+# "skipped", waardoor "gezocht en niets gevonden" niet te onderscheiden was van
+# "bron stond al goed" — en je dus niet kon zien of het zoeken faalde.
+# 'new', 'updated' en 'error' houden hun bestaande betekenis in de
+# dashboard-aggregatie (routers/monitoring.py) en blijven ongemoeid.
+STATUS_GEEN_BRON_GEVONDEN = "geen_bron_gevonden"
+STATUS_OUDER_VERSLAG = "ouder_verslag"
+STATUS_ONGEWIJZIGD = "ongewijzigd"
 
 
 def _sla_moderne_bron_op(
@@ -242,6 +262,9 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     Retourneert True als er een wijziging is vastgesteld (nieuwe URL, met of zonder
     WP-getal)."""
     lookup, _, jaarverslag_agent, _ = get_providers()
+    # Zonder dit blijft de tokenteller leeg en logt _log() alleen nullen, waardoor
+    # een monitoringronde geen meetbare kosten heeft.
+    start_usage_tracking()
     t0 = time.monotonic()
 
     status = db.query(JaarverslagMonitoring).filter_by(company_id=company.id).one_or_none()
@@ -365,7 +388,8 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
             )
             db.commit()
             return True
-        _log(db, company.batch_id, company.id, "jaarverslag_monitoring", "skipped", t0)
+        _log(db, company.batch_id, company.id, "jaarverslag_monitoring",
+             STATUS_GEEN_BRON_GEVONDEN, t0)
         db.commit()
         return False
 
@@ -379,7 +403,7 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
             company.batch_id,
             company.id,
             "jaarverslag_monitoring",
-            "skipped",
+            STATUS_OUDER_VERSLAG,
             t0,
             error=(
                 f"ouder verslag genegeerd: {gevonden_jaar} < {bestaand_jaar}"
@@ -417,7 +441,7 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     )
     if not url_gewijzigd and not wp_is_nieuw:
         _log(db, company.batch_id, company.id, "jaarverslag_monitoring",
-             "skipped", t0)
+             STATUS_ONGEWIJZIGD, t0)
         db.commit()
         return False
 

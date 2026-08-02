@@ -21,13 +21,16 @@ def _now():
 
 
 def _log(db: Session, batch_id: str, company_id: str | None, stap: str,
-         status: str, t0: float, error: str | None = None) -> None:
-    """Logt één pipeline-stap, inclusief de tokens die deze stap zelf verbruikte."""
+         status: str, t0: float, error: str | None = None) -> PipelineRun:
+    """Logt één pipeline-stap, inclusief de tokens die deze stap zelf verbruikte.
+    Geeft de regel terug zodat een aanroeper er nog velden op kan zetten."""
     tokens_in, tokens_out = neem_token_delta()
-    db.add(PipelineRun(batch_id=batch_id, company_id=company_id, stap=stap,
-                       status=status, duur_ms=int((time.monotonic() - t0) * 1000),
-                       tokens_in=tokens_in, tokens_out=tokens_out,
-                       error=error))
+    run = PipelineRun(batch_id=batch_id, company_id=company_id, stap=stap,
+                      status=status, duur_ms=int((time.monotonic() - t0) * 1000),
+                      tokens_in=tokens_in, tokens_out=tokens_out,
+                      error=error)
+    db.add(run)
+    return run
 
 
 async def verwerk_company(db: Session, company: Company, batch: Batch) -> Candidate:
