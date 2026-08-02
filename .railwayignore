@@ -11,3 +11,6 @@ docs/~$*
 backend/evals/*.jsonl
 frontend/node_modules
 frontend/dist
+backend/.venv
+graphify-out
+skill-observations
