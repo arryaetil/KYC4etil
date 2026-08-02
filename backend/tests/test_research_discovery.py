@@ -46,15 +46,14 @@ def test_administratieve_subwoning_krijgt_zoekalias_op_eigennaam():
         gevraagd_jaar=2025,
     ))
 
+    # Eén gerichte aliasquery op de eigennaam; de eerdere variant met
+    # aanhalingstekens is vervallen omdat exacte-frasezoeken de trefkans juist
+    # verlaagt (gemeten 2/10 tegenover 8/10).
     assert any(
         query.pad == "website"
-        and '"Piushof"' in query.query
+        and query.query.startswith("Piushof ")
+        and '"' not in query.query
         and query.doel.startswith("openbare bronnen")
-        for query in queries
-    )
-    assert any(
-        query.query.startswith("Piushof ")
-        and query.doel.startswith("spellingtolerante")
         for query in queries
     )
 
@@ -92,3 +91,59 @@ def test_parallelle_paden_worden_voor_opslag_canoniek_gededupliceerd():
     ]
 
 
+
+
+# --- zoekopdrachten mogen niet verwateren ---
+
+def test_geplande_queries_stapelen_geen_synoniemen():
+    """Gemeten op de jaarverslagzoeker: een query met de naam tussen
+    aanhalingstekens plus een stapel synoniemen scoorde 2/10, een beknopte
+    variant 8/10. De index matcht dan op de trefwoorden in plaats van op de
+    organisatie. query_planner bouwde queries met hetzelfde patroon."""
+    from app.research.query_planner import QueryContext, plan_queries
+
+    queries = plan_queries(QueryContext(
+        naam="Stichting Pergamijn", gevraagd_jaar=2025,
+        website_url="https://www.pergamijn.org/", gemeente="Sittard",
+    ))
+
+    synoniemgroepen = (
+        {"medewerkers", "personeel", "werknemers"},
+        {"jaarverslag", "jaarrekening", "bestuursverslag", "jaarverantwoording"},
+        {"reorganisatie", "overname", "ontslag", "uitbreiding"},
+    )
+    for q in queries:
+        woorden = set(q.query.lower().replace('"', " ").split())
+        for groep in synoniemgroepen:
+            overlap = woorden & groep
+            assert len(overlap) <= 2, f"{q.query!r} stapelt {sorted(overlap)}"
+
+
+def test_geplande_queries_zetten_de_naam_niet_tussen_aanhalingstekens():
+    from app.research.query_planner import QueryContext, plan_queries
+
+    queries = plan_queries(QueryContext(
+        naam="Stichting Pergamijn", gevraagd_jaar=2025, gemeente="Sittard",
+    ))
+    for q in queries:
+        assert '"' not in q.query, f"exacte-frasezoekopdracht: {q.query!r}"
+
+
+def test_geplande_queries_herhalen_het_jaartal_niet():
+    from app.research.query_planner import QueryContext, plan_queries
+
+    queries = plan_queries(QueryContext(
+        naam="Gemeente Maastricht", gevraagd_jaar=2025,
+        website_url="https://www.gemeentemaastricht.nl/",
+    ))
+    for q in queries:
+        assert q.query.count("2025") <= 1, f"jaartal herhaald: {q.query!r}"
+
+
+def test_documentqueries_kennen_ook_jaarstukken():
+    """Gemeenten en provincies publiceren jaarstukken, geen jaarverslag."""
+    from app.research.query_planner import QueryContext, plan_queries
+
+    queries = plan_queries(QueryContext(naam="Gemeente Venlo", gevraagd_jaar=2025))
+    documenten = " ".join(q.query.lower() for q in queries if q.pad == "document")
+    assert "jaarstukken" in documenten

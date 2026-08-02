@@ -1089,3 +1089,31 @@ async def test_geen_tweede_poging_als_eerste_al_raak_is(monkeypatch):
     await live._zoek_jaarverslag_pdf("Bedrijf", 2026, website_url=None)
 
     assert not any("jaarstukken" in q for q in queries)
+
+
+@pytest.mark.asyncio
+async def test_wp_zoekopdrachten_stapelen_geen_synoniemen(monkeypatch):
+    """Zelfde patroon als de jaarverslagquery die van 2/10 naar 8/10 ging:
+    'medewerkers werknemers personeel headcount' achter elkaar laat de index op
+    de trefwoorden matchen in plaats van op de organisatie."""
+    queries = []
+
+    async def vang(query, max_results=5):
+        queries.append(query)
+        return []
+
+    monkeypatch.setattr(live, "_web_search", vang)
+    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+    monkeypatch.setattr(live.settings, "extra_bronnen_aantal", 2)
+
+    await live._web_search_wp("Testbedrijf", "Weert")
+    await live._web_search_jaarverslag_wp("Testbedrijf", 2025)
+    await live.verzamel_extra_media_bronnen("Testbedrijf", "Weert", set())
+
+    assert queries, "geen zoekopdrachten uitgevoerd"
+    synoniemen = {"medewerkers", "werknemers", "personeel", "headcount",
+                  "jaarverslag", "bestuursverslag"}
+    for q in queries:
+        overlap = set(q.lower().split()) & synoniemen
+        assert len(overlap) <= 2, f"{q!r} stapelt {sorted(overlap)}"
+        assert "Testbedrijf" in q

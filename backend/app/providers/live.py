@@ -681,7 +681,7 @@ async def _contact_fallback(
 
 async def _web_search_wp(naam: str, gemeente: str | None) -> AgentFinding | None:
     results = await _web_search(
-        f"{naam} {gemeente or ''} medewerkers werknemers personeel headcount".strip(),
+        f"{naam} {gemeente or ''} medewerkers".strip(),
         max_results=5,
     )
     return await _extract_wp_from_search_results(naam, gemeente, results)
@@ -1459,7 +1459,7 @@ async def verzamel_extra_media_bronnen(
     if settings.extra_bronnen_aantal <= 0:
         return []
     results = await _web_search(
-        f"{naam} {gemeente or ''} medewerkers werknemers personeel headcount".strip(),
+        f"{naam} {gemeente or ''} medewerkers".strip(),
         max_results=settings.extra_bronnen_aantal + 3,
     )
     uitsluiten = uitsluiten or set()
@@ -1737,7 +1737,7 @@ class LiveWebsiteAgent:
 async def _web_search_jaarverslag_wp(naam: str, jaar: int) -> AgentFinding | None:
     """Directe WP-zoekopdracht op jaarverslagdata: fallback als PDF-pad mislukt."""
     results = await _web_search(
-        f"{naam} jaarverslag {jaar} bestuursverslag medewerkers werknemers personeel headcount",
+        f"{naam} jaarverslag {jaar} medewerkers",
         max_results=5,
     )
     return await _extract_wp_from_search_results(naam, None, results, bron_type="jaarverslag")
