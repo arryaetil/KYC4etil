@@ -573,8 +573,8 @@ async def test_zoek_jaarverslag_pdf_zonder_bekend_domein_zoekt_alleen_open(monke
 
     await live._zoek_jaarverslag_pdf("Testbedrijf", 2026, website_url=None)
 
-    assert len(gedane_queries) == 1
-    assert not gedane_queries[0].startswith("site:")
+    # Zonder bekend domein mag er geen site:-scoped zoekopdracht worden gedaan.
+    assert not any(q.startswith("site:") for q in gedane_queries)
 
 
 def test_vind_paginanummer_vindt_juiste_pagina():
@@ -979,7 +979,8 @@ async def test_jaarverslagquery_is_beknopt_en_bevat_de_naam(monkeypatch):
 
     await live._zoek_jaarverslag_pdf("Stichting Pergamijn", 2026, website_url=None)
 
-    assert len(queries) == 1
+    # De eerste zoekopdracht is de bepalende; daarna volgt hooguit nog de
+    # jaarstukken-ronde voor overheden.
     q = queries[0]
     assert "Stichting Pergamijn" in q
     assert '"' not in q
@@ -1032,3 +1033,59 @@ def test_gidsdomein_geeft_geen_domein_voor_site_scoping():
                  "https://eur-lex.europa.eu/legal-content/NL/TXT/",
                  "https://www.belastingadviseur-info.nl/newtone"):
         assert live._domein_van_url(gids) is None, gids
+
+
+# --- documenttypen van overheden ---
+
+def test_jaarstukken_telt_als_jaarverslag():
+    """Gemeenten en provincies publiceren geen 'jaarverslag' maar jaarstukken en
+    een programmarekening. Die stonden niet in de markers, dus werd de correcte
+    'Jaarstukken 2024' van Gemeente Maastricht afgewezen."""
+    assert live._lijkt_jaarverslag("Jaarstukken 2024 Gemeente Maastricht", 2024)
+    assert live._lijkt_jaarverslag("Programmarekening 2024", 2024)
+    assert live._lijkt_jaarverslag("Programmaverantwoording 2024", 2024)
+
+
+def test_vth_jaarverslag_blijft_geweerd_ongeacht_schrijfwijze():
+    """De blocklist kende 'jaarverslag-vth' maar niet 'VTH-jaarverslag', waardoor
+    een deelrapport over vergunningen als jaarverslag van de gemeente doorging."""
+    for schrijfwijze in ("VTH-jaarverslag 2024", "jaarverslag VTH 2024",
+                         "VTH jaarverslag 2024", "jaarverslag_vth 2024"):
+        assert not live._lijkt_jaarverslag(schrijfwijze, 2024), schrijfwijze
+
+
+@pytest.mark.asyncio
+async def test_tweede_poging_met_jaarstukken_alleen_als_eerste_niets_geeft(monkeypatch):
+    """Gemeenten zijn met 'jaarverslag' niet te vinden. Een tweede zoekopdracht
+    op 'jaarstukken' kost 0,1 ct en wordt alleen gedaan als de eerste faalt."""
+    queries = []
+
+    async def vang(query, max_results=5):
+        queries.append(query)
+        if "jaarstukken" in query:
+            return [{"title": "Jaarstukken 2025", "url": "https://maastricht.nl/jaarstukken-2025.pdf"}]
+        return []
+
+    monkeypatch.setattr(live, "_web_search", vang)
+    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+
+    result = await live._zoek_jaarverslag_pdf("Gemeente Maastricht", 2026, website_url=None)
+
+    assert result == "https://maastricht.nl/jaarstukken-2025.pdf"
+    assert any("jaarstukken" in q for q in queries)
+
+
+@pytest.mark.asyncio
+async def test_geen_tweede_poging_als_eerste_al_raak_is(monkeypatch):
+    queries = []
+
+    async def vang(query, max_results=5):
+        queries.append(query)
+        return [{"title": "Jaarverslag 2025", "url": "https://x.test/jaarverslag-2025.pdf"}]
+
+    monkeypatch.setattr(live, "_web_search", vang)
+    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+
+    await live._zoek_jaarverslag_pdf("Bedrijf", 2026, website_url=None)
+
+    assert not any("jaarstukken" in q for q in queries)

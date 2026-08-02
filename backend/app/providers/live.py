@@ -732,6 +732,16 @@ async def _zoek_jaarverslag_pdf(
     if gevonden:
         return gevonden
 
+    # Overheden publiceren geen "jaarverslag" maar jaarstukken. Deze extra ronde
+    # kost 0,1 ct en wordt alleen gedaan als de gewone zoekopdracht niets oplevert.
+    jaarstukken_results = await _web_search(
+        f"{naam} jaarstukken filetype:pdf",
+        max_results=10,
+    )
+    gevonden = await nieuwste_uit(jaarstukken_results)
+    if gevonden:
+        return gevonden
+
     hosted_results = await _openai_web_search(
         (
             f'"{naam}" meest recente officiële organisatiebrede jaarverslag '
@@ -977,7 +987,11 @@ def _lijkt_jaarverslag(
         "transcript",
     )):
         return False
-    if weiger_deelrapporten and any(marker in lowered for marker in (
+    # Normaliseer scheidingstekens: 'VTH-jaarverslag', 'jaarverslag_vth' en
+    # 'jaarverslag vth' zijn hetzelfde deelrapport, maar alleen de laatste stond
+    # in de lijst.
+    genormaliseerd = re.sub(r"[-_]+", " ", lowered)
+    if weiger_deelrapporten and any(marker in genormaliseerd for marker in (
         "cliëntenraad",
         "clientenraad",
         "commissie van toezicht",
@@ -988,8 +1002,6 @@ def _lijkt_jaarverslag(
         "professionele adviesraad",
         "jaarverslag vth",
         "vth jaarverslag",
-        "jaarverslag-vth",
-        "jaarverslag_vth",
         "jaarverslagccr",
         "jaarverslagrvt",
     )):
@@ -1000,6 +1012,10 @@ def _lijkt_jaarverslag(
         "bestuursverslag",
         "jaardocument",
         "jaarverantwoording",
+        # Gemeenten en provincies publiceren geen "jaarverslag" maar deze:
+        "jaarstukken",
+        "programmarekening",
+        "programmaverantwoording",
         "annual report",
         "annual-report",
         "integrated report",
