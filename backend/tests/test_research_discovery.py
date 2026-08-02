@@ -8,7 +8,6 @@ from app.research.query_planner import (
     plan_queries,
     vereenvoudigde_zoeknaam,
 )
-from app.research.search import combineer_zoekresultaten
 from app.research.service import _dedupliceer_kandidaten
 from app.research.types import SearchResult
 from app.research.urls import canonicaliseer_url
@@ -93,49 +92,3 @@ def test_parallelle_paden_worden_voor_opslag_canoniek_gededupliceerd():
     ]
 
 
-@pytest.mark.asyncio
-async def test_combineer_zoekresultaten_voert_alle_providers_uit_en_dedupliceert():
-    calls: list[str] = []
-
-    async def duckduckgo(query: str, max_results: int):
-        calls.append("duckduckgo")
-        return [
-            SearchResult(
-                title="Team",
-                url="https://www.example.nl/team?utm_source=ddg",
-                snippet="47 medewerkers",
-                provider="duckduckgo",
-                query=query,
-            ),
-        ]
-
-    async def serper(query: str, max_results: int):
-        calls.append("serper")
-        return [
-            SearchResult(
-                title="Team van Example",
-                url="https://example.nl/team",
-                snippet="Ons team telt 47 medewerkers",
-                provider="serper",
-                query=query,
-            ),
-            SearchResult(
-                title="Nieuws",
-                url="https://nieuws.example/example-groeit",
-                snippet="recente groei",
-                provider="serper",
-                query=query,
-            ),
-        ]
-
-    results = await combineer_zoekresultaten(
-        "Example medewerkers",
-        providers=[duckduckgo, serper],
-        max_results_per_provider=5,
-    )
-
-    assert calls == ["duckduckgo", "serper"]
-    assert len(results) == 2
-    team = next(result for result in results if "example.nl/team" in result.url)
-    assert team.providers == ["duckduckgo", "serper"]
-    assert "47 medewerkers" in team.snippets

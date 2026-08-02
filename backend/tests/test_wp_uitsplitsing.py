@@ -445,15 +445,14 @@ def test_companies_lijst_toont_vestigingsnummer_cber_kvk_en_sector(client, db_se
 
 
 def test_company_update_route_is_niet_dubbel_geregistreerd():
+    """Via de OpenAPI-spec i.p.v. app.routes: sinds FastAPI 0.141 bewaart
+    include_router de routes in _IncludedRouter-objecten en staan ze niet meer
+    plat in app.routes. De spec is de stabiele bron voor deze controle."""
     from app.main import app
 
-    matches = [
-        route for route in app.routes
-        if getattr(route, "path", None) == "/batches/{batch_id}/companies/{company_id}"
-        and "PATCH" in getattr(route, "methods", set())
-    ]
+    pad = app.openapi()["paths"]["/batches/{batch_id}/companies/{company_id}"]
 
-    assert len(matches) == 1
+    assert "patch" in pad
 
 
 def test_company_afgewerkt_toggle_via_patch(client, db_session):

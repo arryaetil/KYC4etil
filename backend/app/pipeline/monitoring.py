@@ -465,7 +465,7 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         return True
 
     score = bereken_confidence(
-        rec.finding, None, None, adres_validated=False,
+        rec.finding,
         n_bronnen=rec.n_bronnen, bronnen_consistent=rec.bronnen_consistent,
         peiljaar=jaar, is_schatting=rec.is_schatting,
         schatting_penalty=rec.schatting_penalty, locatie_bron="mock",

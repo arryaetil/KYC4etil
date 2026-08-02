@@ -1,4 +1,5 @@
 """Unit tests voor de kernlogica: strategie, schatting, reconciliatie, confidence."""
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -182,8 +183,7 @@ def test_reconciliatie_accepteert_context_met_aantoonbare_optelsom():
 # --- confidence ---
 
 def kwargs(**over):
-    base = dict(count_nl=1, count_lb=1, adres_validated=True, n_bronnen=1,
-                bronnen_consistent=False, peiljaar=2026)
+    base = dict(n_bronnen=1, bronnen_consistent=False, peiljaar=2026)
     base.update(over)
     return base
 
@@ -197,8 +197,8 @@ def test_confidence_media_bron_wordt_niet_groen():
     assert s.score < 0.80
 
 def test_confidence_schatting_nooit_groen():
-    s = bereken_confidence(finding(bron="jaarverslag", limburg=False), **kwargs(
-        count_nl=400, count_lb=15), is_schatting=True, schatting_penalty=0.30)
+    s = bereken_confidence(finding(bron="jaarverslag", limburg=False), **kwargs(),
+                           is_schatting=True, schatting_penalty=0.30)
     assert s.label != "hoog" and s.score < 0.50
 
 def test_confidence_llm_laag_is_rood():
@@ -424,3 +424,180 @@ async def test_verwerk_company_classificatie_fout_valt_terug_op_unknown_en_faalt
     ]
     assert len(classificatie_runs) == 1
     assert classificatie_runs[0].status == "error"
+
+
+# --- kosten- en tokenregistratie in pipeline_runs ---
+
+@pytest.mark.asyncio
+async def test_verwerk_company_logt_kosten_en_tokens_op_een_totaalregel():
+    """pipeline_runs.kosten_cents/tokens_* bestonden al als kolom maar werden
+    nooit gevuld; alleen research_runs hield kosten bij."""
+    from app.models import PipelineRun
+    from app.pipeline.runner import verwerk_company
+    from app.research.usage import record_provider_call, record_response_usage
+
+    db = MagicMock()
+    batch = MagicMock(); batch.id = "batch-kosten"; batch.jaar = 2026
+    company = MagicMock()
+    company.id = "comp-kosten"; company.naam = "Testbedrijf"
+    company.adres = "Straat 1"; company.gemeente = "Weert"
+
+    async def _website_run(*args, **kwargs):
+        # Simuleer een agent die een OpenAI-call doet tijdens zijn stap.
+        record_response_usage(SimpleNamespace(usage=SimpleNamespace(
+            input_tokens=200_000, output_tokens=50_000)))
+        return finding()
+
+    mock_lookup = MagicMock()
+    mock_lookup.lookup = AsyncMock(return_value=None)
+    mock_lookup.locations = AsyncMock(return_value=MagicMock(count_nl=1, count_lb=1, bron="mock"))
+    mock_lookup.scrape_email = AsyncMock(return_value=None)
+    mock_website = MagicMock()
+    mock_website.run = AsyncMock(side_effect=_website_run)
+    mock_website.extra_bronnen = AsyncMock(return_value=[])
+    mock_jaarverslag = MagicMock(); mock_jaarverslag.run = AsyncMock(return_value=None)
+    mock_classifier = MagicMock()
+    mock_classifier.classify = AsyncMock(return_value=("exact_entity", "vestiging"))
+
+    with patch(
+        "app.pipeline.runner.get_providers",
+        return_value=(mock_lookup, mock_website, mock_jaarverslag, mock_classifier),
+    ):
+        await verwerk_company(db, company, batch)
+
+    runs = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], PipelineRun)]
+    totaal = next(r for r in runs if r.stap == "totaal")
+
+    # 200k in * 0,015 + 50k uit * 0,06 = 6 cent (prijzen uit config.py)
+    assert totaal.kosten_cents == 6
+    assert (totaal.tokens_in, totaal.tokens_out) == (200_000, 50_000)
+
+    # De website-stap krijgt zijn eigen tokens toegewezen, de verrijkingsstap niet.
+    website_stap = next(r for r in runs if r.stap == "website_agent")
+    verrijking = next(r for r in runs if r.stap == "verrijking")
+    assert (website_stap.tokens_in, website_stap.tokens_out) == (200_000, 50_000)
+    assert (verrijking.tokens_in, verrijking.tokens_out) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_verwerk_company_telt_kosten_niet_door_van_vorige_organisatie():
+    from app.models import PipelineRun
+    from app.pipeline.runner import verwerk_company
+    from app.research.usage import record_response_usage
+
+    def _mocks():
+        lookup = MagicMock()
+        lookup.lookup = AsyncMock(return_value=None)
+        lookup.locations = AsyncMock(return_value=MagicMock(count_nl=1, count_lb=1, bron="mock"))
+        lookup.scrape_email = AsyncMock(return_value=None)
+        website = MagicMock()
+        website.extra_bronnen = AsyncMock(return_value=[])
+        jaarverslag = MagicMock(); jaarverslag.run = AsyncMock(return_value=None)
+        classifier = MagicMock()
+        classifier.classify = AsyncMock(return_value=("exact_entity", "vestiging"))
+        return lookup, website, jaarverslag, classifier
+
+    async def _run_met_verbruik(tokens):
+        async def _run(*args, **kwargs):
+            record_response_usage(SimpleNamespace(usage=SimpleNamespace(
+                input_tokens=tokens, output_tokens=0)))
+            return finding()
+        return _run
+
+    totalen = []
+    for tokens in (200_000, 400_000):
+        db = MagicMock()
+        batch = MagicMock(); batch.id = "b"; batch.jaar = 2026
+        company = MagicMock()
+        company.id = f"c-{tokens}"; company.naam = "Testbedrijf"
+        company.adres = "Straat 1"; company.gemeente = "Weert"
+        lookup, website, jaarverslag, classifier = _mocks()
+        website.run = AsyncMock(side_effect=await _run_met_verbruik(tokens))
+        with patch("app.pipeline.runner.get_providers",
+                   return_value=(lookup, website, jaarverslag, classifier)):
+            await verwerk_company(db, company, batch)
+        runs = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], PipelineRun)]
+        totalen.append(next(r for r in runs if r.stap == "totaal").tokens_in)
+
+    assert totalen == [200_000, 400_000]
+
+
+# --- actualiteit: peiljaar telt mee in de confidence ---
+
+def test_confidence_recent_peilmoment_krijgt_geen_actualiteitspenalty():
+    s = bereken_confidence(finding(peilmoment="2026"), **kwargs(peiljaar=2026))
+    assert "verouderd_peilmoment" not in s.breakdown["penalties"]
+
+
+def test_confidence_jaarverslag_van_vorig_jaar_wordt_niet_gestraft():
+    """Een jaarverslag over jaar X verschijnt pas in X+1; één jaar verschil is
+    normaal en mag de score niet drukken."""
+    s = bereken_confidence(finding(peilmoment="2025"), **kwargs(peiljaar=2026))
+    assert "verouderd_peilmoment" not in s.breakdown["penalties"]
+
+
+def test_confidence_verouderd_peilmoment_verlaagt_de_score():
+    recent = bereken_confidence(finding(peilmoment="2025"), **kwargs(peiljaar=2026))
+    oud = bereken_confidence(finding(peilmoment="2019"), **kwargs(peiljaar=2026))
+
+    assert oud.score < recent.score
+    assert oud.breakdown["penalties"]["verouderd_peilmoment"] > 0
+
+
+def test_confidence_onbekend_peilmoment_krijgt_geen_penalty():
+    """Onbekend is niet hetzelfde als oud; daar straffen we niet op."""
+    s = bereken_confidence(finding(peilmoment=None), **kwargs(peiljaar=2026))
+    assert "verouderd_peilmoment" not in s.breakdown["penalties"]
+
+
+def test_confidence_breakdown_toont_peilmoment_en_peiljaar():
+    s = bereken_confidence(finding(peilmoment="2019"), **kwargs(peiljaar=2026))
+    assert s.breakdown["peilmoment"] == "2019"
+    assert s.breakdown["peiljaar"] == 2026
+
+
+# --- afgekapte locatiecount van Google Places ---
+
+def test_places_locatiecount_op_de_paginalimiet_is_een_ondergrens():
+    """Google Places Text Search geeft maximaal pageSize resultaten terug. Bij
+    precies dat aantal is de telling een ondergrens, geen telling — een concern
+    met 400 vestigingen is niet te onderscheiden van één met 20."""
+    from app.providers.base import LocationInfo
+
+    afgekapt = LocationInfo(count_nl=20, count_lb=20, bron="places",
+                            count_nl_is_ondergrens=True)
+    assert afgekapt.count_nl_is_ondergrens is True
+    assert LocationInfo(count_nl=3, count_lb=1, bron="places").count_nl_is_ondergrens is False
+
+
+def test_strategie_nooit_direct_verwerken_bij_afgekapte_count():
+    """count_lb == count_nl betekent normaal 'alles in Limburg' en dus
+    auto-verwerken. Bij een afgekapte telling kan dat toeval zijn: de eerste 20
+    resultaten van een landelijk concern kunnen allemaal Limburgs zijn. Dat mag
+    nooit tot een groen label leiden."""
+    assert bepaal_strategie(False, 20, 20) == Strategie.DIRECT_VERWERKEN
+    assert bepaal_strategie(False, 20, 20, count_is_ondergrens=True) != Strategie.DIRECT_VERWERKEN
+
+
+def test_strategie_afgekapte_count_gaat_naar_volledige_route():
+    assert bepaal_strategie(False, 20, 3, count_is_ondergrens=True) == \
+        Strategie.VOLLEDIGE_CHAT_OF_BELLIJST
+
+
+def test_schatting_bij_afgekapte_count_krijgt_maximale_penalty():
+    """De verhouding n_lb/n_nl is bij afkapping systematisch te hoog: de noemer
+    is begrensd, de teller niet. De schatting blijft, maar met de zwaarste
+    penalty zodat hij nooit als betrouwbaar leest."""
+    _, gewoon = proportionele_schatting(17000, 400, 15)
+    schatting, afgekapt = proportionele_schatting(17000, 20, 15, count_is_ondergrens=True)
+
+    assert afgekapt >= gewoon
+    assert afgekapt == 0.30
+    assert schatting is not None
+
+
+def test_reden_toont_dat_de_vestigingscount_een_ondergrens_is():
+    r = reconcilieer(None, finding(wp=17000, bron="jaarverslag", limburg=False),
+                     20, 15, count_is_ondergrens=True)
+    assert "minstens 20 vestigingen" in r.reden
+    assert r.schatting_penalty == 0.30

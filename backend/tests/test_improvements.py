@@ -240,9 +240,10 @@ async def test_jaarverslagzoeker_slaat_aantoonbaar_verouderde_hit_over(
 
     monkeypatch.setattr(live, "_web_search", fake_web_search)
 
-    result = await live._zoek_jaarverslag_pdf_voor_jaar(
+    result = await live._zoek_jaarverslag_pdf(
         "Testbedrijf",
         2025,
+        zoekjaren=(2025,),
     )
 
     assert result == "https://example.test/jaarverslag-2025.pdf"
@@ -262,10 +263,11 @@ async def test_jaarverslagzoeker_negeert_andere_pdf_op_officieel_domein(
 
     monkeypatch.setattr(live, "_web_search", fake_web_search)
 
-    result = await live._zoek_jaarverslag_pdf_voor_jaar(
+    result = await live._zoek_jaarverslag_pdf(
         "Testbedrijf",
         2025,
         website_url="https://example.test",
+        zoekjaren=(2025,),
     )
 
     assert result is None
@@ -290,10 +292,11 @@ async def test_jaarverslagzoeker_gebruikt_hosted_fallback_bij_lege_indexen(
     }])
     monkeypatch.setattr(live, "_openai_web_search", hosted)
 
-    result = await live._zoek_jaarverslag_pdf_voor_jaar(
+    result = await live._zoek_jaarverslag_pdf(
         "Testbedrijf",
         2025,
         website_url="https://testbedrijf.example",
+        zoekjaren=(2025,),
     )
 
     assert result == "https://testbedrijf.example/jaarverslag-2025.pdf"

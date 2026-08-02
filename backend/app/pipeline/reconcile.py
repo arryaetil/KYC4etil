@@ -6,6 +6,9 @@ from urllib.parse import urlparse
 
 from ..providers.base import AgentFinding
 
+# Bovengrens voor de schattingspenalty; de schatting mag daarmee nooit 🟢 halen.
+MAX_SCHATTING_PENALTY = 0.30
+
 
 class Strategie(str, Enum):
     DIRECT_VERWERKEN = "auto"
@@ -13,9 +16,15 @@ class Strategie(str, Enum):
     VOLLEDIGE_CHAT_OF_BELLIJST = "volledige_chat_of_bellijst"
 
 
-def bepaal_strategie(lookup_failed: bool, count_nl: int | None, count_lb: int | None) -> Strategie:
+def bepaal_strategie(lookup_failed: bool, count_nl: int | None, count_lb: int | None,
+                     count_is_ondergrens: bool = False) -> Strategie:
     """Strategie o.b.v. locatiecount — vóór de agents draaien."""
     if lookup_failed or count_nl is None:
+        return Strategie.VOLLEDIGE_CHAT_OF_BELLIJST
+    if count_is_ondergrens:
+        # count_lb == count_nl leest normaal als "alles in Limburg", maar bij een
+        # afgekapte telling kan dat toeval zijn: de opgehaalde vestigingen van een
+        # landelijk concern kunnen allemaal Limburgs zijn. Nooit auto-verwerken.
         return Strategie.VOLLEDIGE_CHAT_OF_BELLIJST
     if count_nl == 1 or count_lb == count_nl:  # alles in Limburg = eenduidig
         return Strategie.DIRECT_VERWERKEN
@@ -24,14 +33,21 @@ def bepaal_strategie(lookup_failed: bool, count_nl: int | None, count_lb: int | 
     return Strategie.VOLLEDIGE_CHAT_OF_BELLIJST
 
 
-def proportionele_schatting(wp_totaal: int | None, n_nl: int | None, n_lb: int | None) -> tuple[int | None, float]:
+def proportionele_schatting(wp_totaal: int | None, n_nl: int | None, n_lb: int | None,
+                            count_is_ondergrens: bool = False) -> tuple[int | None, float]:
     """Alleen aanroepen als wp_totaal bekend is (na agents).
     Retourneert (schatting, confidence_penalty). Bekende beperking:
-    veronderstelt gelijke vestigingsgrootte — daarom nooit 🟢."""
+    veronderstelt gelijke vestigingsgrootte — daarom nooit 🟢.
+
+    Bij een afgekapte landelijke telling is de breuk n_lb/n_nl systematisch te
+    hoog: de noemer is begrensd, de teller niet. De schatting blijft staan als
+    grove indicatie voor de reviewer, maar krijgt de zwaarste penalty."""
     if not wp_totaal or not n_nl or n_lb is None:
         return None, 0.0
     schatting = round(wp_totaal * (n_lb / n_nl))
-    penalty = min(0.30, 0.10 + max(0, n_nl - 2) * 0.05)
+    if count_is_ondergrens:
+        return schatting, MAX_SCHATTING_PENALTY
+    penalty = min(MAX_SCHATTING_PENALTY, 0.10 + max(0, n_nl - 2) * 0.05)
     return schatting, penalty
 
 
@@ -168,11 +184,18 @@ def _candidate_hard_gate(finding: AgentFinding) -> str | None:
     return None
 
 
+def _vestigingen_tekst(count_lb: int | None, count_nl: int | None,
+                       count_is_ondergrens: bool) -> str:
+    noemer = f"minstens {count_nl}" if count_is_ondergrens else str(count_nl)
+    return f"{count_lb}/{noemer} vestigingen"
+
+
 def reconcilieer(
     website: AgentFinding | None,
     jaarverslag: AgentFinding | None,
     count_nl: int | None,
     count_lb: int | None,
+    count_is_ondergrens: bool = False,
 ) -> ReconciliatieResultaat:
     """Beslisregels doc §7 stap 3."""
     w = website if website and website.wp_gevonden else None
@@ -206,20 +229,23 @@ def reconcilieer(
                                           f"bronnen wijken {verschil:.0%} af; website wint bij single-locatie "
                                           f"(jaarverslag mogelijk groepscijfer: {j.wp_gevonden})")
         # multi-locatie: jaarverslag-totaal -> proportionele schatting
-        schatting, penalty = proportionele_schatting(j.wp_gevonden, count_nl, count_lb)
+        schatting, penalty = proportionele_schatting(j.wp_gevonden, count_nl, count_lb,
+                                                 count_is_ondergrens)
         return ReconciliatieResultaat(j, schatting, True, penalty, 2, False,
                                       f"multi-locatie: jaarverslagtotaal {j.wp_gevonden} proportioneel verdeeld "
-                                      f"({count_lb}/{count_nl} vestigingen); website-hint: {w.wp_gevonden}")
+                                      f"({_vestigingen_tekst(count_lb, count_nl, count_is_ondergrens)}); "
+                                      f"website-hint: {w.wp_gevonden}")
 
     bron = w or j
     # Eén bron met een niet-Limburg-specifiek getal (bv. landelijk concerntotaal) mag NOOIT
     # zomaar als kandidaat voor déze vestiging gelden — dat getal is per definitie te hoog.
     if bron.is_limburg_specifiek is False:
         if count_nl:
-            schatting, penalty = proportionele_schatting(bron.wp_gevonden, count_nl, count_lb)
+            schatting, penalty = proportionele_schatting(bron.wp_gevonden, count_nl, count_lb,
+                                                     count_is_ondergrens)
             return ReconciliatieResultaat(bron, schatting, True, penalty, 1, False,
                                           f"nationaal totaal {bron.wp_gevonden} proportioneel verdeeld "
-                                          f"({count_lb}/{count_nl} vestigingen)")
+                                          f"({_vestigingen_tekst(count_lb, count_nl, count_is_ondergrens)})")
         # Geen vestigingscount bekend -> geen enkele manier om het landelijke getal te
         # herleiden naar déze locatie (doc §7); dan liever geen kandidaat dan een vals-
         # betrouwbaar landelijk getal (kan anders zelfs 🟢 hoog worden, zoals bij een

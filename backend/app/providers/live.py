@@ -5,6 +5,7 @@ NB: web scraping respecteert robots.txt, gebruikt een identificerende
 user-agent en max 1 request/sec per domein (doc §7)."""
 import asyncio
 import json
+import logging
 import re
 import unicodedata
 from typing import Any, TypedDict
@@ -17,6 +18,25 @@ from ..config import get_settings
 from ..pipeline.evidence import IdentityClass, ScopeClass
 from ..pipeline.identity_scope import domain_matches_company
 from ..research.usage import record_provider_call, record_response_usage
+
+logger = logging.getLogger(__name__)
+
+# Statuscodes waarbij de sleutel of het tegoed het probleem is, niet de zoekopdracht.
+# Die moeten luid zijn: zonder Serper valt de zoekketen terug op DuckDuckGo-scraping
+# (zwakkere index, meer gemiste jaarverslagen) en Google Places (32x duurder).
+_SLEUTEL_OF_TEGOED_STATUS = {401, 402, 403, 429}
+
+
+def _log_zoekprovider_fout(provider: str, fout: Exception) -> None:
+    status = getattr(getattr(fout, "response", None), "status_code", None)
+    if status in _SLEUTEL_OF_TEGOED_STATUS:
+        logger.warning(
+            "%s onbruikbaar (HTTP %s): sleutel ongeldig of tegoed op. De zoekketen "
+            "valt nu terug op DuckDuckGo en Google Places — zwakkere resultaten en "
+            "hogere kosten. Vul het tegoed aan.", provider, status,
+        )
+    else:
+        logger.info("%s gaf geen resultaat (%s)", provider, fout)
 from .base import AgentFinding, LocationInfo, PlacesResult
 
 _JSON_PARSER = JsonOutputParser()
@@ -38,7 +58,11 @@ PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 async def _create_response(client, **kwargs):
     """Wrapper om elke OpenAI Responses-call zodat tokenverbruik van élke
     aanroep in dit bestand altijd wordt geteld, zonder elke call-site apart
-    te hoeven aanpassen als de trackinglogica zelf verandert."""
+    te hoeven aanpassen als de trackinglogica zelf verandert.
+
+    Zet ook de temperatuur, want zonder expliciete waarde draait elke call op
+    de OpenAI-default 1.0 — ongewenst voor extractie en classificatie."""
+    kwargs.setdefault("temperature", settings.openai_temperature)
     response = await client.responses.create(**kwargs)
     record_response_usage(response)
     return response
@@ -65,8 +89,15 @@ nooit en leid niets af.
 - voltijd (≥12 uur/week), deeltijd (<12 uur/week): aantal medewerkers per dienstverbandomvang
 - pct_op_locatie: percentage (0-100) van de medewerkers werkzaam op déze locatie
 
+Werk in deze volgorde en schrijf je afweging in "redenering" (max 3 zinnen):
+1. Welk getal in de tekst gaat over medewerkers, en welke zin noemt het letterlijk?
+2. Is dat een headcount of een FTE-getal? Bij twijfel: is_fte=false en zekerheid lager.
+3. Geldt het voor déze vestiging ({adres}) of voor een groter geheel?
+Vul de overige velden pas in nadat je die drie vragen hebt beantwoord.
+
 Antwoord uitsluitend met JSON:
-{{"wp_gevonden": <int|null>, "context": "<letterlijke zin(nen)>",
+{{"redenering": "<je afweging in max 3 zinnen>",
+  "wp_gevonden": <int|null>, "context": "<letterlijke zin(nen)>",
   "zekerheid": "hoog" (getal staat letterlijk vermeld voor déze vestiging) | "middel" (aannemelijk maar afgeleid of niet 100% zeker) | "laag" (getal ontbreekt of is onzeker), "reden": "<uitleg>",
   "is_totaal_meerdere_vestigingen": <bool>, "is_limburg_specifiek": <bool>,
   "is_fte": <bool>, "peilmoment": "<jaar of null>",
@@ -87,7 +118,13 @@ voor: déze ene vestiging ("vestiging"), Limburg-breed ("limburg"), heel Nederla
 als de tekst expliciet deze locatie/gemeente noemt of het bedrijf overduidelijk maar
 één vestiging heeft.
 
-Antwoord uitsluitend met JSON: {{"scope_class": "vestiging|limburg|nederland|concern"}}
+Noem in "redenering" eerst welke woorden in het citaat de reikwijdte bepalen
+(een plaatsnaam, "totaal", "concern", "landelijk", een aantal vestigingen), en
+kies pas daarna de klasse.
+
+Antwoord uitsluitend met JSON:
+{{"redenering": "<max 2 zinnen>",
+  "scope_class": "vestiging|limburg|nederland|concern"}}
 
 Citaat:
 {context}"""
@@ -109,8 +146,16 @@ identity_class:
 scope_class: "vestiging" | "limburg" | "nederland" | "concern" — alleen relevant als
 identity_class niet "mismatch" is; gebruik anders "unknown".
 
+Beantwoord in "redenering" eerst deze twee vragen, in deze volgorde:
+1. Welke organisatie noemt de bron-URL en het citaat concreet? Vergelijk die met
+   {naam} — bij een andere naam, een ander domein of een andere plaats is het een
+   mismatch, ook bij een gelijkende naam.
+2. Pas als de identiteit klopt: waarvoor geldt het getal?
+Bepaal identity_class en scope_class op basis van dat antwoord.
+
 Antwoord uitsluitend met JSON:
-{{"identity_class": "exact_entity|same_brand_or_group|possible_match|mismatch",
+{{"redenering": "<max 3 zinnen>",
+  "identity_class": "exact_entity|same_brand_or_group|possible_match|mismatch",
   "scope_class": "vestiging|limburg|nederland|concern|unknown"}}
 
 Bron-URL: {bron_url}
@@ -135,8 +180,13 @@ entiteit noemt dan de gevraagde organisatie, kies "subentity_or_body", ook als
 beide dezelfde merknaam en hetzelfde domein gebruiken. Voorbeeld: gevraagd is een
 zorgconcern, maar de titel noemt alleen het medisch centrum; dat is een deelentiteit.
 
+Beantwoord in "redenering" eerst: welke organisatorische entiteit noemt de titel
+letterlijk, en is dat {naam} zelf of een onderdeel daarvan? Beoordeel daarna pas
+of het überhaupt een jaarverslag is. Baseer je niet op het domein.
+
 Antwoord uitsluitend met JSON:
-{{"document_scope": "organization_wide|subentity_or_body|not_annual_report|unknown"}}
+{{"redenering": "<max 2 zinnen>",
+  "document_scope": "organization_wide|subentity_or_body|not_annual_report|unknown"}}
 
 Bron-URL: {bron_url}
 Eerste documentpagina's:
@@ -151,7 +201,7 @@ async def _llm_classify_scope(naam: str, adres: str | None, gemeente: str | None
         model=_extraction_model(),
         input=SCOPE_PROMPT.format(naam=naam, adres=adres or "onbekend", gemeente=gemeente or "onbekend",
                                   context=(context or "")[:2000]),
-        max_output_tokens=200,
+        max_output_tokens=350,
         text={"format": {"type": "json_object"}},
     )
     data = await _parse_json_met_herstel(client, _extraction_model(), response.output_text)
@@ -170,7 +220,7 @@ async def _llm_classify_identity_and_scope(
             naam=naam, adres=adres or "onbekend", gemeente=gemeente or "onbekend",
             bron_url=bron_url or "onbekend", context=(context or "")[:2000],
         ),
-        max_output_tokens=200,
+        max_output_tokens=400,
         text={"format": {"type": "json_object"}},
     )
     data = await _parse_json_met_herstel(client, _extraction_model(), response.output_text)
@@ -206,7 +256,6 @@ async def _serper_places(query: str) -> dict | None:
     totdat de KvK-koppeling er is."""
     if not settings.serper_api_key:
         return None
-    record_provider_call("serper_places", kosten_micro_usd=1_000)
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(
@@ -216,8 +265,10 @@ async def _serper_places(query: str) -> dict | None:
             )
             r.raise_for_status()
             places = r.json().get("places") or []
-    except httpx.HTTPError:
+    except httpx.HTTPError as fout:
+        _log_zoekprovider_fout("serper_places", fout)
         return None
+    record_provider_call("serper_places", kosten_micro_usd=1_000)
     return places[0] if places else None
 
 
@@ -276,14 +327,20 @@ class LivePlacesProvider:
                         "X-Goog-Api-Key": settings.google_places_api_key,
                         "X-Goog-FieldMask": "places.formattedAddress",
                     },
-                    json={"textQuery": f"{naam} Nederland", "languageCode": "nl", "pageSize": 20},
+                    json={"textQuery": f"{naam} Nederland", "languageCode": "nl",
+                          "pageSize": settings.places_max_resultaten},
                 )
                 r.raise_for_status()
                 places = r.json().get("places") or []
         except httpx.HTTPError:
             return LocationInfo(count_nl=None, count_lb=None, bron="web_search")
         lb = sum(1 for p in places if "Limburg" in (p.get("formattedAddress") or ""))
-        return LocationInfo(count_nl=len(places) or None, count_lb=lb, bron="places")
+        return LocationInfo(
+            count_nl=len(places) or None, count_lb=lb, bron="places",
+            # Places pagineert hier niet: precies de limiet betekent "minstens
+            # zoveel", niet "exact zoveel".
+            count_nl_is_ondergrens=len(places) >= settings.places_max_resultaten,
+        )
 
 
 async def _scrape_email(website_url: str) -> str | None:
@@ -372,7 +429,6 @@ async def _serper_search(query: str, max_results: int = 5) -> list[dict[str, str
     goedkoper dan OpenAI's ingebouwde web_search-tool."""
     if not settings.serper_api_key:
         return []
-    record_provider_call("serper_search", kosten_micro_usd=1_000)
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(
@@ -382,8 +438,12 @@ async def _serper_search(query: str, max_results: int = 5) -> list[dict[str, str
             )
             r.raise_for_status()
             data = r.json()
-    except httpx.HTTPError:
+    except httpx.HTTPError as fout:
+        # Pas registreren na een geslaagde call: een mislukte call kost niets en
+        # mag de kostenrapportage niet vullen met calls die nooit gelukt zijn.
+        _log_zoekprovider_fout("serper_search", fout)
         return []
+    record_provider_call("serper_search", kosten_micro_usd=1_000)
     results: list[dict[str, str]] = []
     for item in (data.get("organic") or [])[:max_results]:
         url = item.get("link")
@@ -760,7 +820,7 @@ async def _is_organisatiebreed_jaarverslag(
                 bron_url=pdf_url,
                 context=eerste_paginas[:12000],
             ),
-            max_output_tokens=100,
+            max_output_tokens=300,
             text={"format": {"type": "json_object"}},
         )
         data = await _parse_json_met_herstel(
@@ -840,63 +900,6 @@ def _verslagjaar_uit_pdftekst(tekst: str, jaar: int) -> int | None:
             weiger_deelrapporten=False,
         )
     ), None)
-
-
-async def _valideer_jaarverslag_bron(naam: str, pdf_url: str | None) -> bool:
-    identity = await _classificeer_jaarverslag_bron_identiteit(naam, pdf_url)
-    return identity != IdentityClass.MISMATCH
-
-
-async def _zoek_jaarverslag_pdf_voor_jaar(
-    naam: str, zoekjaar: int, website_url: str | None = None,
-    uitgesloten: set[str] | None = None,
-) -> str | None:
-    """Tweestaps: zoek eerst jaarverslag-pagina (HTML) via web search, scrape daarna PDF-link.
-    Web search geeft HTML-pagina's veel betrouwbaarder terug dan directe .pdf URLs.
-
-    Zoekt eerst site:-scoped binnen het eigen domein (indien bekend) — dat is veel
-    minder gevoelig voor niet-determinisme dan een open zoekopdracht: het echte
-    jaarverslag staat vrijwel altijd op de eigen website, en site:-scoping voorkomt
-    dat een open zoekopdracht toevallig een ander (vaak fout) document oppikt.
-
-    uitgesloten bevat PDF-URL's die al geprobeerd/afgewezen zijn (bv. door de
-    identiteitscheck) — die worden overgeslagen zodat een retry een ANDER
-    resultaat kan proberen in plaats van dezelfde foute bron opnieuw te vinden."""
-    domein = _domein_van_url(website_url)
-    if domein:
-        site_results = await _web_search(
-            f"site:{domein} jaarverslag {zoekjaar} bestuursverslag jaarverantwoording",
-            max_results=5,
-        )
-        gevonden = await _eerste_pdf_uit_resultaten(site_results, zoekjaar, uitgesloten)
-        if gevonden:
-            return gevonden
-
-    results = await _web_search(
-        f"{naam} jaarverslag {zoekjaar} bestuursverslag annual report download pdf",
-        max_results=8,
-    )
-    gevonden = await _eerste_pdf_uit_resultaten(
-        results,
-        zoekjaar,
-        uitgesloten,
-    )
-    if gevonden:
-        return gevonden
-
-    hosted_results = await _openai_web_search(
-        (
-            f'"{naam}" meest recente officiële jaarverslag {zoekjaar} '
-            "organisatiebreed jaarrekening bestuursverslag direct pdf; "
-            "geen deelverslag van raad, commissie, afdeling, toezichthouder of gouverneur"
-        ),
-        max_results=8,
-    )
-    return await _eerste_pdf_uit_resultaten(
-        hosted_results,
-        zoekjaar,
-        uitgesloten,
-    )
 
 
 async def _eerste_pdf_uit_resultaten(

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from ..config import get_settings
 from ..providers.base import AgentFinding
+from .evidence import _parse_year
 
 ZEKERHEID_BASE = {"hoog": 0.90, "middel": 0.65, "laag": 0.35}
 
@@ -18,9 +19,6 @@ class ScoreResult:
 
 def bereken_confidence(
     finding: AgentFinding,
-    count_nl: int | None,
-    count_lb: int | None,
-    adres_validated: bool,
     n_bronnen: int,
     bronnen_consistent: bool,
     peiljaar: int,
@@ -56,6 +54,15 @@ def bereken_confidence(
     if finding.bron_type == "media":
         penalties["media_source_cap"] = 0.25
 
+    # Actualiteit: een WP-cijfer over een ver verleden jaar zegt weinig over het
+    # peiljaar van het register. Onbekend peilmoment is niet hetzelfde als oud —
+    # daar straffen we niet op, dat blijft een reviewersignaal.
+    peilmoment_jaar = _parse_year(finding.peilmoment)
+    if peilmoment_jaar is not None:
+        leeftijd = peiljaar - peilmoment_jaar
+        if leeftijd > s.peilmoment_max_leeftijd_jaren:
+            penalties["verouderd_peilmoment"] = s.penalty_verouderd_peilmoment
+
     score = score + sum(bonuses.values()) - sum(penalties.values())
     score = max(0.0, min(1.0, round(score, 4)))
 
@@ -74,6 +81,8 @@ def bereken_confidence(
         "penalties": penalties,
         "bron_type": finding.bron_type or "onbekend",
         "n_bronnen": n_bronnen,
+        "peilmoment": finding.peilmoment,
+        "peiljaar": peiljaar,
     }
 
     return ScoreResult(score=score, label=label, breakdown=breakdown)

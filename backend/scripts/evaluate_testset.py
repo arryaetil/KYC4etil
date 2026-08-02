@@ -134,9 +134,6 @@ async def evaluate_row(row: dict[str, str], provider_mode: str, jaar: int) -> di
     if rec.finding is not None:
         score = bereken_confidence(
             rec.finding,
-            loc.count_nl if loc else None,
-            loc.count_lb if loc else None,
-            adres_validated=bool(place and place.raw.get("adres_match", place.adres is not None)),
             n_bronnen=rec.n_bronnen,
             bronnen_consistent=rec.bronnen_consistent,
             peiljaar=jaar,

@@ -4,10 +4,9 @@ AI-pipeline en human-in-the-loop researchomgeving voor het verzamelen en
 controleren van Werkzame Personen-data (WP) voor het Vestigingsregister van
 Provincie Limburg.
 
-- Documentatie: [docs/PLATFORM_DOCUMENTATIE_v2.md](docs/PLATFORM_DOCUMENTATIE_v2.md) (bron van waarheid voor requirements/bouwredenen)
-- Volledige applicatie-spec (huidige werking): [docs/applicatie-spec/](docs/applicatie-spec/00-overzicht.md) — architectuur, pipeline + LangGraph-agents, externe diensten & kosten, datamodel, confidence-/reconciliatieregels, bronnen-first review-UI, authenticatie & deployment.
-- Autonome bronnenresearch: [ontwerp](docs/superpowers/specs/2026-07-24-autonome-bronnenresearch-agent-design.md)
-  en [implementatieplan](docs/superpowers/plans/2026-07-24-autonome-bronnenresearch-agent.md).
+- Huidige werking (bron van waarheid): [docs/applicatie-spec/](docs/applicatie-spec/00-overzicht.md) — architectuur, pipeline + LangGraph-agents, externe diensten & kosten, datamodel, confidence-/reconciliatieregels, bronnen-first review-UI, authenticatie & deployment.
+- Autonome bronnenresearch: [ontwerp](docs/archief/superpowers/specs/2026-07-24-autonome-bronnenresearch-agent-design.md)
+  en [implementatieplan](docs/archief/superpowers/plans/2026-07-24-autonome-bronnenresearch-agent.md).
 - Status: backend pipeline, autonome bronontdekking, auth en React review-interface.
 
 ## Autonome bronnenresearch

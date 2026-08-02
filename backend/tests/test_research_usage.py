@@ -7,7 +7,6 @@ import pytest
 
 from app.research import usage
 from app.research.usage import (
-    bereken_kosten_cents,
     get_cost_summary,
     get_usage_totals,
     record_provider_call,
@@ -81,14 +80,14 @@ async def test_gelijktijdige_taken_tellen_op_bij_de_ouder():
     assert get_usage_totals() == (600, 3)
 
 
-def test_bereken_kosten_cents():
+def test_tokenkosten_volgen_de_prijzen_uit_config():
     # 200.000 input- + 50.000 output-tokens tegen de standaardprijzen in
     # config.py (gpt-4o-mini: 0,015 cent per 1k in, 0,06 cent per 1k uit).
     # 200 * 0,015 = 3,0 cent + 50 * 0,06 = 3,0 cent = 6 cent.
-    cents = bereken_kosten_cents(200_000, 50_000)
-    assert cents > 0
-    assert cents == round(200_000 / 1000 * 0.015 + 50_000 / 1000 * 0.06)
-    assert cents == 6
+    start_usage_tracking()
+    record_response_usage(_response(200_000, 50_000))
+
+    assert get_cost_summary()["totaal_cents"] == 6
 
 
 def test_kostenoverzicht_telt_tokens_en_alle_providercalls():
@@ -129,3 +128,34 @@ def test_openai_web_search_toolcall_wordt_apart_geregistreerd():
     assert kosten["providers"]["openai_web_search"] == {
         "calls": 1, "kosten_usd": 0.01,
     }
+
+
+# --- tokenregistratie per pipeline-stap (pipeline_runs) ---
+
+def test_token_delta_meet_alleen_verbruik_sinds_vorige_aanroep():
+    start_usage_tracking()
+    record_response_usage(_response(100, 20))
+
+    eerste = usage.neem_token_delta()
+    record_response_usage(_response(40, 5))
+    tweede = usage.neem_token_delta()
+
+    assert eerste == (100, 20)
+    assert tweede == (40, 5)
+
+
+def test_token_delta_zonder_nieuw_verbruik_is_nul():
+    start_usage_tracking()
+    record_response_usage(_response(100, 20))
+    usage.neem_token_delta()
+
+    assert usage.neem_token_delta() == (0, 0)
+
+
+def test_start_usage_tracking_reset_ook_de_tokenmarkering():
+    start_usage_tracking()
+    record_response_usage(_response(100, 20))
+
+    start_usage_tracking()
+
+    assert usage.neem_token_delta() == (0, 0)
