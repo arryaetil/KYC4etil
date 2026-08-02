@@ -1024,12 +1024,46 @@ def _verslagjaren_uit(tekst: str) -> set[int]:
     return {int(m) for m in _JAAR.findall(_UPLOADPAD.sub("/", tekst))}
 
 
+# Domeinen die nooit de website van de organisatie zelf zijn: bedrijvengidsen,
+# vergelijkers en registers. Ze belanden in website_url doordat een zoekresultaat
+# als "officiële website" is overgenomen. site:-scoping daarop levert gegarandeerd
+# niets op, terwijl de open zoekopdracht dat wél doet.
+_GIDS_DOMEINEN = (
+    "allebiz.", "companyinfo.", "zorgkiezer.", "belastingadviseur-info.",
+    "drimble.", "oozo.", "bedrijvenpagina.", "openingstijden.", "telefoonboek.",
+    "eur-lex.europa.eu", "kvk.nl", "opencompanies.", "bedrijvengids.",
+)
+
+# Subdomeinen met een eigen functie; een jaarverslag staat op de hoofdsite.
+_HULPSUBDOMEINEN = {
+    "support", "help", "helpdesk", "werkenbij", "werken-bij", "jobs", "careers",
+    "vacatures", "shop", "webshop", "store", "my", "mijn", "portal", "login",
+    "nu", "nieuws", "news", "blog", "docs", "api", "cdn", "media", "static",
+}
+
+# Meerdelige publieke achtervoegsels waar het registreerbare domein drie labels
+# telt in plaats van twee.
+_SAMENGESTELDE_TLDS = {"co.uk", "org.uk", "com.au", "co.nz", "com.br"}
+
+
 def _domein_van_url(website_url: str | None) -> str | None:
+    """Het domein voor site:-scoping, of None als scopen zinloos is.
+
+    Valt terug op het registreerbare hoofddomein: een jaarverslag staat op de
+    hoofdsite en niet op support./werkenbij./shop.-subdomeinen."""
     if not website_url:
         return None
     from urllib.parse import urlparse
-    netloc = urlparse(website_url).netloc
-    return netloc.removeprefix("www.") or None
+    host = urlparse(website_url).netloc.lower().split(":")[0].removeprefix("www.")
+    if not host:
+        return None
+    if any(gids in host for gids in _GIDS_DOMEINEN):
+        return None
+    labels = host.split(".")
+    kern = 3 if ".".join(labels[-2:]) in _SAMENGESTELDE_TLDS else 2
+    while len(labels) > kern and labels[0] in _HULPSUBDOMEINEN:
+        labels = labels[1:]
+    return ".".join(labels) or None
 
 
 def _heeft_landdomein_conflict(

@@ -1003,3 +1003,32 @@ async def test_site_scoped_query_blijft_ook_beknopt(monkeypatch):
     assert queries[0].startswith("site:servatius.nl")
     for verwaterend in ("bestuursverslag", "jaarverantwoording", "2025", "2024"):
         assert verwaterend not in queries[0]
+
+
+# --- domein voor site:-scoping ---
+
+def test_domein_valt_terug_op_hoofddomein_bij_subdomein():
+    """Een jaarverslag staat op de hoofdsite, niet op de helpdesk of de
+    vacaturesite. site:support.hollandcasino.nl levert per definitie niets op."""
+    assert live._domein_van_url("https://support.hollandcasino.nl/hc/nl/artikel") == "hollandcasino.nl"
+    assert live._domein_van_url("https://werkenbij.arriva.nl/vacatures") == "arriva.nl"
+    assert live._domein_van_url("https://shop.mitsubishi-motors.nl/") == "mitsubishi-motors.nl"
+    assert live._domein_van_url("https://nu.venlo.nl/nieuws") == "venlo.nl"
+
+
+def test_domein_blijft_ongemoeid_zonder_subdomein():
+    assert live._domein_van_url("https://www.servatius.nl/") == "servatius.nl"
+    assert live._domein_van_url("https://ou.nl/onderwijs") == "ou.nl"
+    assert live._domein_van_url("https://www.sif-group.com/nl") == "sif-group.com"
+
+
+def test_gidsdomein_geeft_geen_domein_voor_site_scoping():
+    """allebiz.nl, companyinfo.nl en eur-lex stonden als 'website' van
+    organisaties in de watchlist. site:-scoping daarop is gegarandeerd zinloos;
+    beter meteen de open zoekopdracht, die 8/10 scoort."""
+    for gids in ("https://www.allebiz.nl/team-verkeer-politie-limburg",
+                 "https://companyinfo.nl/bedrijf/okechamp",
+                 "https://www.zorgkiezer.nl/zorginstelling/x",
+                 "https://eur-lex.europa.eu/legal-content/NL/TXT/",
+                 "https://www.belastingadviseur-info.nl/newtone"):
+        assert live._domein_van_url(gids) is None, gids
