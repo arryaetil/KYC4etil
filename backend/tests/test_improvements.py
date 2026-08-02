@@ -632,9 +632,13 @@ async def test_jaarverslagzoeker_zoekt_drie_jaren_in_een_provider_ronde(
     result = await live._zoek_jaarverslag_pdf("Organisatie", 2026)
 
     assert result == "https://organisatie.test/annual-report-2025.pdf"
+    # Eén provider-ronde voor drie verslagjaren: de jaarselectie gebeurt op de
+    # resultaten (nieuwste-eerst), niet door de jaartallen in de zoekstring te
+    # zetten — die verwateren de zoekopdracht juist.
     web_search.assert_awaited_once()
     query = web_search.await_args.args[0]
-    assert all(str(jaar) in query for jaar in (2025, 2024, 2023))
+    assert "Organisatie" in query
+    assert not any(str(jaar) in query for jaar in (2025, 2024, 2023))
     hosted.assert_not_awaited()
 
 

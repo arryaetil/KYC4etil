@@ -691,8 +691,16 @@ async def _zoek_jaarverslag_pdf(
     naam: str, jaar: int, website_url: str | None = None, uitgesloten: set[str] | None = None,
     zoekjaren: tuple[int, ...] | None = None,
 ) -> str | None:
-    """Zoek drie verslagjaren in één provider-ronde en selecteer nieuwste-eerst."""
+    """Zoek drie verslagjaren in één provider-ronde en selecteer nieuwste-eerst.
+
+    De zoekopdracht blijft bewust kort. Gemeten op 10 organisaties die
+    aantoonbaar publiceren vond de oude, uitgebreide query er 2 en deze er 8:
+    een opsomming van synoniemen en jaartallen verwatert de zoekopdracht zodat
+    de index vooral op "jaarverslag pdf" matcht in plaats van op de organisatie.
+    De jaarselectie gebeurt daarna alsnog, in nieuwste_uit()."""
     jaren = zoekjaren or (jaar - 1, jaar - 2, jaar - 3)
+    # Alleen nog voor de hosted fallback, die een beschrijvende opdracht krijgt
+    # in plaats van zoekwoorden.
     jaren_query = " ".join(str(zoekjaar) for zoekjaar in jaren)
 
     async def nieuwste_uit(results: list[dict[str, str]]) -> str | None:
@@ -709,7 +717,7 @@ async def _zoek_jaarverslag_pdf(
     domein = _domein_van_url(website_url)
     if domein:
         site_results = await _web_search(
-            f"site:{domein} jaarverslag bestuursverslag jaarverantwoording {jaren_query}",
+            f"site:{domein} jaarverslag",
             max_results=8,
         )
         gevonden = await nieuwste_uit(site_results)
@@ -717,7 +725,7 @@ async def _zoek_jaarverslag_pdf(
             return gevonden
 
     results = await _web_search(
-        f'"{naam}" jaarverslag bestuursverslag annual report pdf {jaren_query}',
+        f"{naam} jaarverslag pdf",
         max_results=10,
     )
     gevonden = await nieuwste_uit(results)

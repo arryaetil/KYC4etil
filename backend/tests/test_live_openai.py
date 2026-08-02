@@ -957,3 +957,49 @@ def test_verslagjaar_in_bestandsnaam_wordt_wel_gebruikt():
     tekst = "Jaarverslag https://example.nl/uploads/2026/03/jaarverslag-2025.pdf"
     assert live._lijkt_jaarverslag(tekst, 2025)
     assert not live._lijkt_jaarverslag(tekst, 2023)
+
+
+# --- zoekopdracht mag niet verwateren ---
+
+@pytest.mark.asyncio
+async def test_jaarverslagquery_is_beknopt_en_bevat_de_naam(monkeypatch):
+    """Gemeten op 10 organisaties die aantoonbaar publiceren: de oude query
+    ('"naam" jaarverslag bestuursverslag annual report pdf 2025 2024 2023')
+    vond er 2, een beknopte query ('naam jaarverslag pdf') vond er 8. De
+    opsomming van synoniemen en jaartallen verwatert de zoekopdracht zo dat de
+    index vooral op 'jaarverslag pdf' matcht in plaats van op de organisatie."""
+    queries = []
+
+    async def vang(query, max_results=5):
+        queries.append(query)
+        return []
+
+    monkeypatch.setattr(live, "_web_search", vang)
+    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+
+    await live._zoek_jaarverslag_pdf("Stichting Pergamijn", 2026, website_url=None)
+
+    assert len(queries) == 1
+    q = queries[0]
+    assert "Stichting Pergamijn" in q
+    assert '"' not in q
+    for verwaterend in ("bestuursverslag", "annual report", "2025", "2024", "2023"):
+        assert verwaterend not in q, f"{verwaterend!r} verwatert de zoekopdracht"
+
+
+@pytest.mark.asyncio
+async def test_site_scoped_query_blijft_ook_beknopt(monkeypatch):
+    queries = []
+
+    async def vang(query, max_results=5):
+        queries.append(query)
+        return []
+
+    monkeypatch.setattr(live, "_web_search", vang)
+    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+
+    await live._zoek_jaarverslag_pdf("Servatius", 2026, website_url="https://www.servatius.nl/")
+
+    assert queries[0].startswith("site:servatius.nl")
+    for verwaterend in ("bestuursverslag", "jaarverantwoording", "2025", "2024"):
+        assert verwaterend not in queries[0]
