@@ -5,6 +5,10 @@ import {monitoringStatus} from "../../lib/onderzoekLabels.js";
 /**
  * Bouwt uit de monitoringvelden een kandidaat-vormig object, zodat het
  * bewijspaneel de gevonden bron op dezelfde manier kan openen als een bronkaart.
+ *
+ * Paginanummer en bewijsfragment horen erbij: `bewijsUrl` leidt daar de
+ * `#page=`- en `search=`-fragmenten uit af. Ontbreken ze, dan opent het
+ * jaarverslag op pagina 1 in plaats van bij het WP-getal.
  */
 export function alsBewijsBron(company) {
   if (!company?.laatste_bron_url) return null;
@@ -13,6 +17,8 @@ export function alsBewijsBron(company) {
     url: company.laatste_bron_url,
     titel: `Jaarverslag${company.verslagjaar ? ` ${company.verslagjaar}` : ""} ${company.naam || ""}`.trim(),
     brontype: "jaarverslag",
+    bron_pagina: company.bron_pagina ?? null,
+    bewijsfragment: company.bewijsfragment ?? null,
   };
 }
 

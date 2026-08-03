@@ -5,8 +5,12 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
-from ..models import Batch, Company, JaarverslagMonitoring, PipelineRun
+from ..models import (
+    AgentResult, Batch, BronKandidaat, Company, JaarverslagMonitoring,
+    PipelineRun,
+)
 from ..pipeline.monitoring import run_monitoring_watchlist_background
+from ..research.urls import canonicaliseer_url
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"], dependencies=[Depends(get_current_user)])
 
@@ -14,6 +18,55 @@ router = APIRouter(prefix="/monitoring", tags=["monitoring"], dependencies=[Depe
 def _actieve_watchlist(db: Session) -> Batch | None:
     return (db.query(Batch).filter_by(is_monitoringlijst=True)
             .order_by(Batch.created_at.desc()).first())
+
+
+def _bewijsplek_per_company(
+    db: Session,
+    bron_per_company: dict[str, str],
+) -> dict[str, tuple[int | None, str | None]]:
+    """Zoekt bij elke monitoringbron het paginanummer en bewijsfragment op.
+
+    De monitoringronde bewaart op JaarverslagMonitoring alleen de URL, maar legt
+    de vindplaats van het WP-getal wél vast op de BronKandidaat die zij in
+    dezelfde transactie aanmaakt. Zonder die twee velden opent de reviewer het
+    jaarverslag op pagina 1 in plaats van bij het cijfer.
+
+    Vergelijking gaat over de canonieke URL: de monitoring en de kandidaat
+    kunnen dezelfde bron met een andere querystring of trailing slash hebben
+    opgeslagen. AgentResult dient als terugval voor bronnen die vóór de
+    onderzoekswerkbank zijn vastgelegd en dus geen BronKandidaat hebben.
+    """
+    if not bron_per_company:
+        return {}
+
+    canoniek = {cid: canonicaliseer_url(url) for cid, url in bron_per_company.items()}
+    company_ids = list(bron_per_company)
+    gevonden: dict[str, tuple[int | None, str | None]] = {}
+
+    # Oplopend op created_at zodat de nieuwste vondst de oudere overschrijft.
+    for kandidaat in (db.query(BronKandidaat)
+                      .filter(BronKandidaat.company_id.in_(company_ids))
+                      .order_by(BronKandidaat.created_at)):
+        doel = canoniek.get(kandidaat.company_id)
+        bron = kandidaat.canonical_url or canonicaliseer_url(kandidaat.url or "")
+        if doel and bron == doel and (kandidaat.bron_pagina or kandidaat.bewijsfragment):
+            gevonden[kandidaat.company_id] = (
+                kandidaat.bron_pagina, kandidaat.bewijsfragment,
+            )
+
+    ontbreekt = [cid for cid in company_ids if cid not in gevonden]
+    if ontbreekt:
+        for resultaat in (db.query(AgentResult)
+                          .filter(AgentResult.company_id.in_(ontbreekt))
+                          .order_by(AgentResult.created_at)):
+            doel = canoniek.get(resultaat.company_id)
+            bron = canonicaliseer_url(resultaat.bron_url or "")
+            if doel and bron == doel and (resultaat.bron_pagina or resultaat.wp_context):
+                gevonden[resultaat.company_id] = (
+                    resultaat.bron_pagina, resultaat.wp_context,
+                )
+
+    return gevonden
 
 
 @router.get("")
@@ -49,16 +102,27 @@ def monitoring_status(db: Session = Depends(get_db)):
             elif pr.status == "error":
                 fouten_map[pr.company_id] = pr.error or "onbekende fout"
 
+    bewijsplek = _bewijsplek_per_company(db, {
+        cid: status.laatste_bron_url
+        for cid, status in status_map.items()
+        if status.laatste_bron_url
+    })
+
     out = []
     for comp in companies:
         status = status_map.get(comp.id)
         cand = comp.candidate
+        pagina, fragment = bewijsplek.get(comp.id, (None, None))
         out.append({
             "company_id": comp.id, "naam": comp.naam, "gemeente": comp.gemeente,
             "laatst_gecontroleerd_op": (status.laatst_gecontroleerd_op.isoformat() + "Z"
                                         if status and status.laatst_gecontroleerd_op else None),
             "laatste_bron_url": status.laatste_bron_url if status else None,
             "verslagjaar": status.laatste_verslagjaar if status else None,
+            # Vindplaats van het WP-getal, zodat de viewer op de juiste pagina
+            # opent en het cijfer markeert in plaats van op pagina 1 te beginnen.
+            "bron_pagina": pagina,
+            "bewijsfragment": fragment,
             "bron_status": "gevonden" if status and status.laatste_bron_url else "ontbreekt",
             "nieuwe_bevinding": comp.id in bevindingen,
             "fout": fouten_map.get(comp.id),

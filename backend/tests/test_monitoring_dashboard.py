@@ -2,7 +2,11 @@
 from datetime import datetime, timezone
 from io import BytesIO
 
-from app.models import Candidate, Company, JaarverslagMonitoring, PipelineRun, User
+from app.models import (
+    BronKandidaat, Candidate, Company, JaarverslagMonitoring, PipelineRun,
+    ResearchRun, User,
+)
+from app.research.urls import canonicaliseer_url
 from app.routers import monitoring as monitoring_router
 
 
@@ -261,3 +265,50 @@ def test_monitoring_run_met_offset_start_bij_latere_organisatie(
         "offset": 2,
     }
     assert gestart == [(2, 2)]
+
+
+def test_monitoring_status_geeft_bewijsplek_van_de_gevonden_bron(client, db_session):
+    """De monitoringvondst moet de reviewer naar de WP-plek in het PDF brengen.
+
+    De monitoringronde legt paginanummer en bewijsfragment vast op de
+    BronKandidaat die zij zelf aanmaakt. Zonder die twee velden in de payload
+    bouwt de frontend een viewer-URL zonder `#page=`, en opent het jaarverslag
+    op pagina 1 in plaats van bij het WP-getal.
+    """
+    _zorg_voor_test_user(db_session)
+    upload = client.post(
+        "/batches/upload?naam=watchlist-bewijs&jaar=2026&monitoringlijst=true",
+        files={"file": ("orgs.csv", BytesIO(b"naam\nOrganisatie Met Bewijs\n"), "text/csv")},
+    )
+    batch_id = upload.json()["batch_id"]
+    company = db_session.query(Company).filter_by(batch_id=batch_id).one()
+
+    url = "https://voorbeeld.test/jaarverslag-2025.pdf"
+    nu = datetime.now(timezone.utc).replace(tzinfo=None)
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id, laatste_bron_url=url,
+        laatste_verslagjaar=2025, laatst_gecontroleerd_op=nu,
+    ))
+    run = ResearchRun(
+        company_id=company.id, batch_id=batch_id,
+        doel="periodieke jaarverslagmonitoring", gevraagd_jaar=2025,
+        status="completed", resultaat_status="review_nodig",
+    )
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(BronKandidaat(
+        research_run_id=run.id, company_id=company.id, url=url,
+        canonical_url=canonicaliseer_url(url), titel="Jaarverslag 2025",
+        brontype="jaarverslag", documenttype="jaarverslag", verslagjaar=2025,
+        wp_gevonden=47, eenheid="werkzame_personen",
+        bewijsfragment="47 medewerkers in dienst", bron_pagina=14,
+        status="voorgesteld", rang=1,
+    ))
+    db_session.commit()
+
+    data = client.get("/monitoring").json()
+    vondst = {c["naam"]: c for c in data["companies"]}["Organisatie Met Bewijs"]
+
+    assert vondst["laatste_bron_url"] == url
+    assert vondst["bron_pagina"] == 14
+    assert vondst["bewijsfragment"] == "47 medewerkers in dienst"
