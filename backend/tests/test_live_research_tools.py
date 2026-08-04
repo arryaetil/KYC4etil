@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.providers import live
+from app.providers import fetch, live, search
 from app.research.live_tools import LiveResearchTools
 from app.research.query_planner import QueryContext
 from app.research.types import CombinedSearchResult, PlannedQuery
@@ -15,7 +15,7 @@ async def test_opgeloste_officiele_website_wordt_altijd_seed(monkeypatch):
         return "OKECHAMP B.V. verwerkt champignons in Velden."
 
     monkeypatch.setattr(live.settings, "openai_api_key", "")
-    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
 
     document = await LiveResearchTools().find_officiele_website(QueryContext(
         naam="Okechamp B.V.",
@@ -47,8 +47,8 @@ async def test_lege_zoekindex_gebruikt_maximaal_een_fallback_per_pad(
             "bron": "openai_web_search",
         }]
 
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
-    monkeypatch.setattr(live, "_openai_web_search", fake_openai_search)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
+    monkeypatch.setattr(search, "_openai_web_search", fake_openai_search)
     tools = LiveResearchTools()
 
     first, second = await __import__("asyncio").gather(
@@ -90,7 +90,7 @@ async def test_nieuwste_officiele_document_krijgt_eigen_site_search(
         gevraagd_jaar=2025,
         verslagjaar=2025,
     ))
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
 
     document = await tools.find_nieuwste_officiele_document(QueryContext(
         naam="Mondriaan",
@@ -110,7 +110,7 @@ async def test_documentjaar_mag_uit_zoeksnippet_komen(monkeypatch):
         return "Navigatie en algemene informatie zonder zichtbaar jaartal."
 
     monkeypatch.setattr(live.settings, "openai_api_key", "")
-    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
 
     document = await LiveResearchTools().inspect(
         QueryContext(
@@ -157,7 +157,7 @@ async def test_nieuwste_officiele_document_probeert_stabiele_publicatiepagina(
         return None
 
     tools.inspect = AsyncMock(side_effect=fake_inspect)
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
 
     document = await tools.find_nieuwste_officiele_document(QueryContext(
         naam="Mondriaan",
@@ -208,8 +208,8 @@ async def test_publicatiepagina_leidt_naar_pdf_van_gevraagde_jaargang(
 
     tools = LiveResearchTools()
     tools.inspect = AsyncMock(side_effect=fake_inspect)
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
-    monkeypatch.setattr(live, "_haal_pagina_op", fake_page)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
+    monkeypatch.setattr(fetch, "_haal_pagina_op", fake_page)
 
     document = await tools.find_nieuwste_officiele_document(QueryContext(
         naam="Mondriaan",

@@ -154,7 +154,7 @@ async def test_live_classifier_slaat_llm_over_bij_domeinmatch():
         wp_gevonden=3, context="3 medewerkers op onze vestiging.", zekerheid="hoog",
         reden="live", bron_url="https://www.salonhandmade.nl/afspraak", bron_type="website",
     )
-    with patch("app.providers.live._llm_classify_scope", new=AsyncMock(return_value="vestiging")) as scope_mock:
+    with patch("app.providers.identity._llm_classify_scope", new=AsyncMock(return_value="vestiging")) as scope_mock:
         identity, scope = await LiveIdentityScopeClassifier().classify(
             "Salon Handmade", "Langstraat 8", "Weert",
             "https://www.salonhandmade.nl", finding,
@@ -173,7 +173,7 @@ async def test_live_classifier_roept_llm_aan_bij_onbekend_domein():
         reden="live", bron_url="https://www.heijmans.nl/jaarverslag.pdf", bron_type="jaarverslag",
     )
     with patch(
-        "app.providers.live._llm_classify_identity_and_scope",
+        "app.providers.identity._llm_classify_identity_and_scope",
         new=AsyncMock(return_value=("mismatch", "unknown")),
     ) as combined_mock:
         identity, scope = await LiveIdentityScopeClassifier().classify(

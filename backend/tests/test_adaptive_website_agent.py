@@ -1,9 +1,10 @@
 """Tests voor de adaptieve tool-use-loop van LiveWebsiteAgent."""
+import httpx
 import json
 
 import pytest
 
-from app.providers import live
+from app.providers import fetch, live, website_agent, wp_extractie
 
 
 class _FakeHtmlResponse:
@@ -46,9 +47,9 @@ HTML_MET_LINKS = """
 @pytest.mark.asyncio
 async def test_haal_pagina_op_geeft_tekst_en_links(monkeypatch):
     monkeypatch.setattr(live.settings, "playwright_enabled", False)
-    monkeypatch.setattr(live.httpx, "AsyncClient", _FakeHtmlClient(HTML_MET_LINKS))
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHtmlClient(HTML_MET_LINKS))
 
-    resultaat = await live._haal_pagina_op("https://voorbeeld.test/over-ons")
+    resultaat = await fetch._haal_pagina_op("https://voorbeeld.test/over-ons")
 
     assert "12 medewerkers" in resultaat["tekst"]
     # nav/footer-links worden weggefilterd door dezelfde opschoning als _fetch_text
@@ -64,7 +65,7 @@ async def test_haal_pagina_op_geeft_tekst_en_links(monkeypatch):
 @pytest.mark.asyncio
 async def test_haal_pagina_op_gebruikt_crawl4ai_fallback_bij_weinig_tekst(monkeypatch):
     monkeypatch.setattr(live.settings, "playwright_enabled", True)
-    monkeypatch.setattr(live.httpx, "AsyncClient", _FakeHtmlClient("<html><body><div id='root'></div></body></html>"))
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHtmlClient("<html><body><div id='root'></div></body></html>"))
 
     async def fake_haal_pagina_op_crawl4ai(url):
         return {
@@ -72,9 +73,9 @@ async def test_haal_pagina_op_gebruikt_crawl4ai_fallback_bij_weinig_tekst(monkey
             "links": [{"tekst": "Team", "url": "https://voorbeeld.test/team"}],
         }
 
-    monkeypatch.setattr(live, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
+    monkeypatch.setattr(fetch, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
 
-    resultaat = await live._haal_pagina_op("https://voorbeeld.test")
+    resultaat = await fetch._haal_pagina_op("https://voorbeeld.test")
 
     assert "14 medewerkers" in resultaat["tekst"]
     assert resultaat["links"] == [{"tekst": "Team", "url": "https://voorbeeld.test/team"}]
@@ -85,14 +86,14 @@ async def test_haal_pagina_op_valt_terug_op_http_als_crawl4ai_niet_beter_is(monk
     """Als de crawl4ai-fallback niet meer tekst oplevert dan de platte HTTP-poging,
     moet het platte resultaat gebruikt worden (geen onnodige overschrijving)."""
     monkeypatch.setattr(live.settings, "playwright_enabled", True)
-    monkeypatch.setattr(live.httpx, "AsyncClient", _FakeHtmlClient("<html><body><p>een tekst van precies dertig tk</p></body></html>"))
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHtmlClient("<html><body><p>een tekst van precies dertig tk</p></body></html>"))
 
     async def fake_haal_pagina_op_crawl4ai(url):
         return {"tekst": "korter", "links": []}
 
-    monkeypatch.setattr(live, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
+    monkeypatch.setattr(fetch, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
 
-    resultaat = await live._haal_pagina_op("https://voorbeeld.test")
+    resultaat = await fetch._haal_pagina_op("https://voorbeeld.test")
 
     assert resultaat["tekst"] == "een tekst van precies dertig tk"
 
@@ -102,14 +103,14 @@ async def test_haal_pagina_op_negeert_crawl4ai_fout(monkeypatch):
     """Als crawl4ai faalt (bv. browser niet beschikbaar), moet het platte
     HTTP-resultaat gewoon gebruikt worden i.p.v. de hele opvraag te laten crashen."""
     monkeypatch.setattr(live.settings, "playwright_enabled", True)
-    monkeypatch.setattr(live.httpx, "AsyncClient", _FakeHtmlClient("<html><body><div id='root'></div></body></html>"))
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHtmlClient("<html><body><div id='root'></div></body></html>"))
 
     async def fake_haal_pagina_op_crawl4ai(url):
         raise RuntimeError("browser niet beschikbaar")
 
-    monkeypatch.setattr(live, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
+    monkeypatch.setattr(fetch, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
 
-    resultaat = await live._haal_pagina_op("https://voorbeeld.test")
+    resultaat = await fetch._haal_pagina_op("https://voorbeeld.test")
 
     assert resultaat["tekst"] == ""
     assert resultaat["links"] == []
@@ -167,7 +168,7 @@ async def test_tool_use_loop_bezoekt_pagina_en_meldt_resultaat(monkeypatch):
     async def fake_haal_pagina_op(url):
         return {"tekst": "Ons team bestaat uit 12 medewerkers.", "links": []}
 
-    monkeypatch.setattr(live, "_haal_pagina_op", fake_haal_pagina_op)
+    monkeypatch.setattr(fetch, "_haal_pagina_op", fake_haal_pagina_op)
 
     eerste_antwoord = _FakeToolResponse(
         output=[_FakeToolCall("bezoek_pagina", {"url": "https://voorbeeld.test/over-ons"}, "call_1")],
@@ -186,7 +187,7 @@ async def test_tool_use_loop_bezoekt_pagina_en_meldt_resultaat(monkeypatch):
     import openai
     monkeypatch.setattr(openai, "AsyncOpenAI", _maak_fake_openai([eerste_antwoord, tweede_antwoord]))
 
-    resultaat = await live._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
+    resultaat = await website_agent._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
 
     assert resultaat["wp_gevonden"] == 12
     assert resultaat["zekerheid"] == "hoog"
@@ -208,7 +209,7 @@ async def test_tool_use_loop_stopt_bij_budget_op(monkeypatch):
     async def fake_haal_pagina_op(url):
         return {"tekst": "Geen relevante informatie.", "links": []}
 
-    monkeypatch.setattr(live, "_haal_pagina_op", fake_haal_pagina_op)
+    monkeypatch.setattr(fetch, "_haal_pagina_op", fake_haal_pagina_op)
 
     # Het model blijft steeds een nieuwe pagina willen bezoeken, meldt nooit een resultaat
     antwoorden = [
@@ -220,7 +221,7 @@ async def test_tool_use_loop_stopt_bij_budget_op(monkeypatch):
     import openai
     monkeypatch.setattr(openai, "AsyncOpenAI", _maak_fake_openai(antwoorden))
 
-    resultaat = await live._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
+    resultaat = await website_agent._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
 
     assert resultaat is None
 
@@ -234,7 +235,7 @@ async def test_tool_use_loop_weigert_cross_domain_url(monkeypatch):
     async def fake_haal_pagina_op(url):
         raise AssertionError("_haal_pagina_op mag niet aangeroepen worden voor een cross-domain URL")
 
-    monkeypatch.setattr(live, "_haal_pagina_op", fake_haal_pagina_op)
+    monkeypatch.setattr(fetch, "_haal_pagina_op", fake_haal_pagina_op)
 
     # Model probeert een off-domain URL te bezoeken (bv. uit prompt-injection of hallucinatie),
     # daarna meldt het resultaat.
@@ -255,7 +256,7 @@ async def test_tool_use_loop_weigert_cross_domain_url(monkeypatch):
     import openai
     monkeypatch.setattr(openai, "AsyncOpenAI", _maak_fake_openai([eerste_antwoord, tweede_antwoord]))
 
-    resultaat = await live._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
+    resultaat = await website_agent._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
 
     assert resultaat["wp_gevonden"] is None
     calls = _FakeToolOpenAI.laatste_responses.calls
@@ -279,7 +280,7 @@ async def test_tool_use_loop_cross_domain_rejectie_verbruikt_geen_paginabudget(m
         assert url == "https://voorbeeld.test/over-ons"  # alleen de legitieme URL mag gefetcht worden
         return {"tekst": "Ons team bestaat uit 12 medewerkers.", "links": []}
 
-    monkeypatch.setattr(live, "_haal_pagina_op", fake_haal_pagina_op)
+    monkeypatch.setattr(fetch, "_haal_pagina_op", fake_haal_pagina_op)
 
     # Ronde 1: model probeert eerst een off-domain URL (moet geweigerd worden, geen budget-verbruik)
     eerste_antwoord = _FakeToolResponse(
@@ -306,7 +307,7 @@ async def test_tool_use_loop_cross_domain_rejectie_verbruikt_geen_paginabudget(m
     monkeypatch.setattr(openai, "AsyncOpenAI",
                          _maak_fake_openai([eerste_antwoord, tweede_antwoord, derde_antwoord]))
 
-    resultaat = await live._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
+    resultaat = await website_agent._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
 
     assert resultaat["wp_gevonden"] == 12
     assert resultaat["zekerheid"] == "hoog"
@@ -321,7 +322,7 @@ async def test_tool_use_loop_weigert_niet_http_scheme(monkeypatch):
     async def fake_haal_pagina_op(url):
         raise AssertionError("_haal_pagina_op mag niet aangeroepen worden voor een niet-http(s) scheme")
 
-    monkeypatch.setattr(live, "_haal_pagina_op", fake_haal_pagina_op)
+    monkeypatch.setattr(fetch, "_haal_pagina_op", fake_haal_pagina_op)
 
     eerste_antwoord = _FakeToolResponse(
         output=[_FakeToolCall("bezoek_pagina", {"url": "file:///etc/passwd"}, "call_1")],
@@ -340,7 +341,7 @@ async def test_tool_use_loop_weigert_niet_http_scheme(monkeypatch):
     import openai
     monkeypatch.setattr(openai, "AsyncOpenAI", _maak_fake_openai([eerste_antwoord, tweede_antwoord]))
 
-    resultaat = await live._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
+    resultaat = await website_agent._tool_use_loop("Testbedrijf", "Markt 1", "https://voorbeeld.test")
 
     assert resultaat["wp_gevonden"] is None
     output_call = _FakeToolOpenAI.laatste_responses.calls[1]["input"][0]
@@ -358,9 +359,9 @@ async def test_website_agent_gebruikt_tool_use_loop(monkeypatch):
             "is_limburg_specifiek": True, "is_fte": False, "peilmoment": "2026",
         }
 
-    monkeypatch.setattr(live, "_tool_use_loop", fake_tool_use_loop)
+    monkeypatch.setattr(website_agent, "_tool_use_loop", fake_tool_use_loop)
 
-    agent = live.LiveWebsiteAgent()
+    agent = website_agent.LiveWebsiteAgent()
     finding = await agent.run("Testbedrijf", "Markt 1", "https://voorbeeld.test", gemeente="Maastricht")
 
     assert finding is not None
@@ -380,10 +381,10 @@ async def test_website_agent_valt_terug_op_web_search_zonder_resultaat(monkeypat
             bron_url="https://nieuws.test/artikel", bron_type="media",
         )
 
-    monkeypatch.setattr(live, "_tool_use_loop", fake_tool_use_loop)
-    monkeypatch.setattr(live, "_web_search_wp", fake_web_search_wp)
+    monkeypatch.setattr(website_agent, "_tool_use_loop", fake_tool_use_loop)
+    monkeypatch.setattr(wp_extractie, "_web_search_wp", fake_web_search_wp)
 
-    agent = live.LiveWebsiteAgent()
+    agent = website_agent.LiveWebsiteAgent()
     finding = await agent.run("Testbedrijf", "Markt 1", "https://voorbeeld.test", gemeente="Maastricht")
 
     assert finding is not None

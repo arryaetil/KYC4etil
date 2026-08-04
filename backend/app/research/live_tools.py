@@ -3,6 +3,7 @@ import asyncio
 import re
 from urllib.parse import unquote, urljoin, urlsplit
 
+from ..config import get_settings
 from ..pipeline.identity_scope import heuristic_scope_class
 from .query_planner import QueryContext
 from .types import CombinedSearchResult, PlannedQuery
@@ -57,7 +58,7 @@ class LiveResearchTools:
         """
         if not context.website_url or context.gevraagd_jaar is None:
             return None
-        from ..providers import live
+        from ..providers import fetch, search
 
         domein = urlsplit(context.website_url).netloc.lower().removeprefix(
             "www."
@@ -74,7 +75,7 @@ class LiveResearchTools:
         ]
         geziene_urls: set[str] = set()
         for query_text in query_texts:
-            results = await live._web_search(query_text, max_results=8)
+            results = await search._web_search(query_text, max_results=8)
             query = PlannedQuery(
                 "document",
                 query_text,
@@ -104,7 +105,7 @@ class LiveResearchTools:
                 )
                 if ".pdf" not in urlsplit(url).path.lower():
                     try:
-                        pagina = await live._haal_pagina_op(url)
+                        pagina = await fetch._haal_pagina_op(url)
                     except Exception:
                         pagina = None
                     if pagina:
@@ -190,7 +191,7 @@ class LiveResearchTools:
             # de echte PDF en kan de bestaande PDF-extractor ook WP-bewijs
             # ophalen.
             try:
-                pagina = await live._haal_pagina_op(url)
+                pagina = await fetch._haal_pagina_op(url)
             except Exception:
                 pagina = None
             if pagina:
@@ -266,9 +267,9 @@ class LiveResearchTools:
         """
         if context.gevraagd_jaar is None:
             return None
-        from ..providers import live
+        from ..providers import jaarverslag
 
-        finding = await live.LiveJaarverslagAgent().run(
+        finding = await jaarverslag.LiveJaarverslagAgent().run(
             context.naam,
             context.gevraagd_jaar + 1,
             website_url=context.website_url,
@@ -306,16 +307,16 @@ class LiveResearchTools:
     async def search(
         self, query: PlannedQuery, max_results: int,
     ) -> list[CombinedSearchResult]:
-        from ..providers import live
+        from ..providers import search
 
-        results = await live._web_search(query.query, max_results=max_results)
+        results = await search._web_search(query.query, max_results=max_results)
         if not results:
             # De planner start meerdere queries per pad parallel. Door per pad
             # één fallback te cachen blijven kosten begrensd op maximaal drie
             # hosted searches per organisatie.
             async with self._fallback_lock:
                 if query.pad not in self._fallback_searches:
-                    fallback = await live._openai_web_search(
+                    fallback = await search._openai_web_search(
                         query.query,
                         max_results=max_results,
                     )
@@ -356,12 +357,12 @@ class LiveResearchTools:
         query: PlannedQuery,
         result: CombinedSearchResult,
     ) -> SourceDocument | None:
-        from ..providers import live
+        from ..providers import fetch, jaarverslag, llm
 
         is_pdf = ".pdf" in urlsplit(result.url).path.lower()
         if is_pdf:
             try:
-                finding = await live.LiveJaarverslagAgent().run_with_pdf(
+                finding = await jaarverslag.LiveJaarverslagAgent().run_with_pdf(
                     context.naam, result.url,
                 )
             except Exception:
@@ -394,16 +395,16 @@ class LiveResearchTools:
             )
 
         try:
-            tekst = await live._fetch_text(result.url)
+            tekst = await fetch._fetch_text(result.url)
         except Exception:
             tekst = " ".join(result.snippets)
         if not tekst.strip():
             return None
 
         data = None
-        if live.settings.openai_api_key:
+        if get_settings().openai_api_key:
             try:
-                data = await live._llm_extract(
+                data = await llm._llm_extract(
                     context.naam, context.gemeente, tekst,
                 )
             except Exception:
