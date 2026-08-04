@@ -55,9 +55,11 @@ blijft apart beschikbaar voor gecontroleerde vergelijkingen.
 Belangrijke code:
 
 ```text
-backend/app/research/              discovery, validatie, ranking en supervisor
-backend/app/routers/research.py    research- en review-API
-frontend/src/components/ResearchPanel.jsx
+backend/app/research/                     discovery, validatie, ranking en supervisor
+backend/app/routers/research.py           research- en review-API
+frontend/src/views/OnderzoekView.jsx      brononderzoek per organisatie
+frontend/src/views/MonitoringView.jsx     bronnenmonitoring
+frontend/src/components/onderzoek/        kandidaten-, bewijs- en bronpanelen
 backend/data/bronnenresearch_benchmark.csv
 backend/scripts/evaluate_bronnenresearch.py
 ```
@@ -127,11 +129,16 @@ curl -X POST localhost:8000/batches/{batch_id}/run-legacy
 # Voortgang pollen: verwerkt/totaal + research- en reviewstatussen
 curl localhost:8000/batches/{batch_id}
 
-# Bulk-goedkeuren en exports
-curl -X POST localhost:8000/batches/{batch_id}/approve-all-green
-curl localhost:8000/batches/{batch_id}/export.csv
-curl localhost:8000/batches/{batch_id}/bellijst.csv
+# Exports
+curl localhost:8000/batches/{batch_id}/export.xlsx
+curl localhost:8000/batches/{batch_id}/bellijst.xlsx
 ```
+
+De endpoints `approve-all-green`, `bellijst` en `create-chat` bestaan nog wel,
+maar zijn met de frontend-rewrite van 2026-07-26 uit gebruik genomen: geen enkel
+scherm roept ze aan. De review loopt via `BronKandidaat` in
+`routers/research.py`. Zie `CLAUDE.md` voor de volledige lijst bewust inactieve
+onderdelen.
 
 Research-API, eveneens met Bearer-token:
 
@@ -178,9 +185,18 @@ backend/
   app/
     config.py
     models.py
-    providers/
-    pipeline/
-    research/
+    providers/                     mock- en live-providers achter dezelfde Protocols
+      base.py                      de Protocol-interfaces
+      mock.py                      deterministisch voor data/testset.csv
+      live.py                      façade over de live-modules hieronder
+      search.py fetch.py llm.py    zoeken, HTTP/PDF, OpenAI-laag
+      places.py identity.py        contact/locatie, identiteit- en scopeclassificatie
+      website_agent.py             website-agent
+      jaarverslag*.py              jaarverslag-agent, zoeken en bronvalidatie
+      wp_extractie.py              WP uit zoekresultaten
+      prompts.py naam_matching.py  promptteksten, naamnormalisatie
+    pipeline/                      generatie 1, wordt uitgefaseerd
+    research/                      generatie 2, de onderzoekswerkbank
     routers/
       research.py
   data/bronnenresearch_benchmark.csv
