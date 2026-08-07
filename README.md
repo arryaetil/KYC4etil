@@ -33,28 +33,21 @@ Vier regels bepalen vrijwel alle keuzes in de code:
 4. **De mens beslist.** Een researchrun maakt bronkandidaten, geen definitieve
    registerwaarde.
 
-## Twee generaties, één actieve richting
+## De actieve architectuur
 
 ```mermaid
 flowchart TB
-    subgraph G2["Generatie 2 — actieve onderzoekswerkbank"]
-        R["backend/app/research"] --> BK["ResearchRun + BronKandidaat"]
-        BK --> UI["OnderzoekView + MonitoringView"]
-    end
-
-    subgraph G1["Generatie 1 — legacy vergelijking"]
-        P["backend/app/pipeline"] --> C["Candidate + confidence"]
-        C --> W["WPRecord"]
-    end
-
+    R["Researchservice"] --> Q["Queryplanning + seedbronnen"]
+    Q --> S["Zoeken + inspecteren"]
+    S --> V["Bronreview + ranking"]
+    V --> BK["ResearchRun + BronKandidaat"]
     M["Jaarverslagenmonitoring"] --> BK
-    M --> C
+    BK --> UI["OnderzoekView + MonitoringView"]
 ```
 
-Nieuwe bronfunctionaliteit hoort in `backend/app/research/`. De oude pipeline
-blijft beschikbaar via `POST /batches/{id}/run-legacy` voor gecontroleerde
-vergelijkingen. Monitoring is de brug: een nieuwe jaarverslagvondst wordt zowel
-in het moderne bronmodel als, waar mogelijk, in het legacy WP-model vastgelegd.
+Bronfunctionaliteit hoort in `backend/app/research/`. Zowel breed onderzoek als
+jaarverslagenmonitoring levert `ResearchRun`- en `BronKandidaat`-records aan
+dezelfde reviewinterface.
 
 ## Stap 1 — een batch wordt onderzoek
 
@@ -332,8 +325,8 @@ stateDiagram-v2
 Een handmatig ingevoerde bron wordt in een eigen afgeronde `ResearchRun` als
 geaccepteerde kandidaat opgeslagen.
 
-**Belangrijk:** acceptatie kiest de primaire bron. Generatie 2 maakt daarbij nog
-geen definitief `WPRecord`. Die overgang is een afzonderlijke productbeslissing.
+**Belangrijk:** acceptatie kiest de primaire bron. De researchflow stopt bij die
+reviewbeslissing en schrijft niet zelfstandig een definitieve registerwaarde.
 
 ## Waar LangGraph precies zit
 
@@ -344,9 +337,6 @@ LangGraph bestuurt de gespecialiseerde agents met een interne beslisboom.
 flowchart TB
     RS["ResearchSupervisor — asyncio"] --> Q["queries + inspectie + review + ranking"]
     RS --> J["LangGraph-jaarverslagagent als seedfallback"]
-
-    LP["Legacy pipeline"] --> W["LangGraph-websiteagent"]
-    LP --> J
     MON["Jaarverslagenmonitoring"] --> J
 ```
 
@@ -370,8 +360,8 @@ flowchart TD
     F --> END
 ```
 
-De websitegraph bestaat nog voor de legacy pipeline. De nieuwe researchagent
-zoekt websitepagina's via queryplanning en `LiveResearchTools`.
+Websitepagina's worden door de researchagent via queryplanning en
+`LiveResearchTools` onderzocht; LangGraph is daar niet de overkoepelende regie.
 
 ## Jaarverslagenmonitoring
 
@@ -389,7 +379,6 @@ flowchart TD
     F -- "nee" --> G["Controlezeitstip bijwerken"]
     F -- "ja" --> H["JaarverslagMonitoring bijwerken"]
     H --> I["ResearchRun + BronKandidaat"]
-    H --> J["AgentResult + legacy Candidate indien bruikbaar"]
     I --> K["Reviewer ziet nieuwe vondst en bewijsplek"]
 ```
 
@@ -400,9 +389,8 @@ organisaties gelijktijdig, ieder met een eigen databasesessie en timeout.
 
 Een nieuw document wordt opgeslagen in `JaarverslagMonitoring`. Daarnaast maakt
 monitoring een moderne `ResearchRun` en `BronKandidaat`, inclusief citaat en
-PDF-pagina. Als reconciliatie een bruikbaar WP-resultaat oplevert, wordt ook het
-legacy `Candidate` bijgewerkt. Daardoor leven de twee generaties hier bewust
-naast elkaar.
+PDF-pagina. De vondst verschijnt daardoor rechtstreeks in dezelfde
+reviewomgeving als regulier brononderzoek.
 
 ## Statussen, diagnostiek en kosten
 
@@ -494,11 +482,8 @@ backend/app/
     jaarverslag.py                LangGraph-regie en PDF-extractie
     jaarverslag_zoeken.py         jaarverslag vinden
     jaarverslag_validatie.py      identiteit, breedte en actualiteit
-    website_agent.py              LangGraph-websiteagent voor legacy
     live.py                       compatibiliteitsfaçade
-  pipeline/
-    monitoring.py                periodieke jaarverslagcontrole en generatiebrug
-    runner.py                    legacy WP-pipeline
+  pipeline/monitoring.py          actieve periodieke jaarverslagcontrole
 frontend/src/
   views/OnderzoekView.jsx         organisatie → kandidaten → bewijs
   views/MonitoringView.jsx        monitoringvondst + dezelfde reviewwerkplek
@@ -566,9 +551,8 @@ npm test
 npm run build
 ```
 
-De mockvalidatie meet de legacy testset; zij bewijst niet automatisch de
-kwaliteit van live webresearch. Live bronkwaliteit wordt apart beoordeeld met
-de benchmark en shadow runs:
+De mockvalidatie bewijst niet automatisch de kwaliteit van live webresearch.
+Live bronkwaliteit wordt apart beoordeeld met de benchmark en shadow runs:
 
 ```bash
 cd backend
@@ -587,15 +571,3 @@ De repository draait op Railway als twee services plus PostgreSQL:
 Na een eerste deploy: seed gebruikers, controleer `/health`, upload een kleine
 batch en voer enkele live shadow runs uit voordat een brede populatie wordt
 gestart.
-
-## Bewust niet de actieve route
-
-Deze code bestaat nog, maar de huidige frontend roept haar niet aan:
-
-- chatuitnodigingen en chat-admin;
-- bellijstworkflow;
-- handmatige jaarverslagupload en -chat;
-- oude `Candidate`-review en bulkgoedkeuring.
-
-De endpoints blijven bereikbaar voor gecontroleerde legacyflows. Zie
-[`CLAUDE.md`](CLAUDE.md) voor de projectafspraken en open productbeslissingen.
