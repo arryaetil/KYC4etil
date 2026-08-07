@@ -1,14 +1,14 @@
-# Vestigingsregister — zo werkt het onderzoek
+# Vestigingsregister: zo werkt het onderzoek
 
-Deze repository ondersteunt reviewers bij het vinden en controleren van openbare
-bronnen over **Werkzame Personen (WP)** voor het Vestigingsregister van Provincie
-Limburg. De software neemt geen definitieve registerbeslissing: zij zoekt,
-inspecteert en rangschikt bewijs; een reviewer kiest de bron.
+Deze repository helpt reviewers om openbare bronnen over Werkzame Personen (WP)
+te vinden en te controleren voor het Vestigingsregister van Provincie Limburg.
+De software zoekt, inspecteert en rangschikt het bewijs. Een reviewer kiest de
+bron en neemt de registerbeslissing.
 
-Lees deze README als rondleiding door de uitvoerbare flow. Installatie en deploy
-staan bewust onderaan.
+De uitleg volgt een researchrun van upload tot review. Installatie en deployment
+staan onderaan.
 
-## De applicatie in één minuut
+## De hele flow
 
 ```mermaid
 flowchart LR
@@ -22,16 +22,10 @@ flowchart LR
     H --> I["Reviewer accepteert of wijst af"]
 ```
 
-Vier regels bepalen vrijwel alle keuzes in de code:
-
-1. **FTE is geen WP.** Een FTE-getal blijft als FTE zichtbaar en wordt nooit
-   stilzwijgend omgerekend.
-2. **Scope is essentieel.** Een concern- of landelijk getal kan context zijn,
-   maar is geen vestigingswaarde.
-3. **De bron moet bij de juiste organisatie horen.** Onzekere identiteit wordt
-   fail-closed afgewezen.
-4. **De mens beslist.** Een researchrun maakt bronkandidaten, geen definitieve
-   registerwaarde.
+De code behandelt FTE en WP als verschillende eenheden. Een landelijk cijfer of
+concerncijfer kan context geven, maar geldt niet als vestigingswaarde. Bij twijfel
+over de organisatie wijst de validatie de bron af. Een researchrun levert daarom
+bronkandidaten op; de reviewer neemt de registerbeslissing.
 
 ## De actieve architectuur
 
@@ -49,7 +43,7 @@ Bronfunctionaliteit hoort in `backend/app/research/`. Zowel breed onderzoek als
 jaarverslagenmonitoring levert `ResearchRun`- en `BronKandidaat`-records aan
 dezelfde reviewinterface.
 
-## Stap 1 — een batch wordt onderzoek
+## 1. Een batch wordt onderzoek
 
 Een reviewer uploadt een CSV- of Excel-bestand. De backend maakt één `Batch` en
 één `Company` per rij. Daarna start:
@@ -59,9 +53,9 @@ POST /batches/{batch_id}/run
 ```
 
 `backend/app/routers/batches.py` plant `run_research_batch()` als
-achtergrondtaak. Die verwerkt organisaties **sequentieel** om API-budgetten en
-belasting te begrenzen. Binnen één organisatie lopen onafhankelijke zoek- en
-inspectietaken juist **parallel**.
+achtergrondtaak. Die verwerkt organisaties na elkaar om API-budgetten en
+belasting te begrenzen. De onafhankelijke zoek- en inspectietaken voor één
+organisatie lopen tegelijk.
 
 ```mermaid
 flowchart LR
@@ -78,7 +72,7 @@ Voor iedere organisatie ontstaat een `ResearchRun`. Bij registerjaar 2026 zoekt
 de batch standaard naar verslagjaar 2025 (`batch.jaar - 1`). Een individuele
 researchrun heeft een timeout van 300 seconden.
 
-## Stap 2 — de organisatiecontext wordt opgebouwd
+## 2. Organisatiecontext
 
 De researchservice verzamelt:
 
@@ -94,10 +88,10 @@ Een gevonden website wordt opgeslagen voor volgende runs.
 De databaseverbinding wordt vóór de lange netwerkfase gesloten. Research houdt
 daardoor niet minutenlang een SQLAlchemy-sessie bezet.
 
-## Stap 3 — sterke seedbronnen krijgen voorrang
+## 3. Officiële bronnen gaan voor
 
-Voordat de brede zoeklaag begint, verzamelt `research/seeds.py` kansrijke
-startdocumenten:
+`research/seeds.py` zoekt eerst naar bronnen die waarschijnlijk direct bruikbaar
+zijn:
 
 ```mermaid
 flowchart TD
@@ -110,24 +104,23 @@ flowchart TD
     E --> D
 ```
 
-De officiële website en het nieuwste formele document worden parallel gezocht.
-De gespecialiseerde jaarverslagagent draait alleen als het officiële document
-niet tegelijk het gevraagde jaar én een echt WP-getal bevat. Een FTE-getal is
-dus geen reden om de verdere jaarverslagzoektocht over te slaan.
+De officiële website en het nieuwste formele document worden tegelijk gezocht.
+De gespecialiseerde jaarverslagagent draait als het officiële document geen
+WP-getal voor het gevraagde jaar bevat. Bij alleen een FTE-getal zoekt de agent
+dus verder.
 
 De documentzoeker probeert naast site-scoped queries ook gangbare publicatiepaden
 zoals `/jaarverslag`, `/jaarverslagen` en `/publicaties`.
 
-## Stap 4 — de queryplanner maakt drie onderzoekspaden
+## 4. De queryplanner maakt zoekopdrachten
 
 `research/query_planner.py` maakt maximaal twaalf korte, deterministische
-queries. De breedte zit in het aantal queries, niet in lange zoekzinnen vol
-synoniemen.
+queries, verdeeld over websites, documenten en recente media.
 
 Voor een fictieve organisatie `Voorbeeld Zorg Maastricht`, domein
 `voorbeeldzorg.nl`, verslagjaar 2025 ontstaan bijvoorbeeld:
 
-### Website
+### Websitequeries
 
 ```text
 site:voorbeeldzorg.nl medewerkers team
@@ -138,7 +131,7 @@ Voorbeeld Zorg Maastricht medewerkers team
 Administratieve woorden zoals `vestiging`, `filiaal` of `locatie` kunnen worden
 verwijderd voor een aanvullende zoekalias.
 
-### Documenten
+### Documentqueries
 
 ```text
 site:voorbeeldzorg.nl jaarverslag 2025
@@ -149,10 +142,10 @@ Voorbeeld Zorg Maastricht annual report pdf
 Voorbeeld Zorg Maastricht jaarverslag gepubliceerd 2026
 ```
 
-Een verslag over jaar N verschijnt vaak pas in N+1; daarom zijn verslagjaar en
-publicatiejaar aparte signalen.
+Een verslag over jaar N verschijnt vaak pas in N+1. De code behandelt verslagjaar
+en publicatiejaar daarom als aparte signalen.
 
-### Recente media
+### Mediaqueries
 
 ```text
 Voorbeeld Zorg Maastricht nieuws medewerkers 2026
@@ -162,16 +155,17 @@ Voorbeeld Zorg Maastricht reorganisatie overname
 Media kunnen groei, krimp, fusie of overname signaleren waardoor een formeel
 cijfer aanvullende context nodig heeft.
 
-## Stap 5 — zoeken met begrensde fallbacks
+## 5. De providers voeren de zoekopdrachten uit
 
-Alle geplande queries worden parallel uitgevoerd. In live-modus combineert de
-zoeklaag DuckDuckGo met Serper wanneer een key beschikbaar is. Resultaten van
-verschillende providers worden op canonieke URL samengevoegd; trackingparameters
-en fragmenten tellen niet mee voor deduplicatie.
+Alle geplande queries worden tegelijk uitgevoerd. In live-modus gebruikt de
+zoeklaag DuckDuckGo en, als er een key is, Serper. De zoeklaag voegt dubbele
+resultaten samen op basis van de canonieke URL. Trackingparameters en fragmenten
+tellen daarbij niet mee.
 
-Als klassieke zoekproviders voor een onderzoekspad niets opleveren, gebruikt
-`LiveResearchTools` OpenAI hosted web search. De fallback wordt per pad gecachet,
-zodat meerdere lege queries niet ieder een betaalde fallback veroorzaken.
+Als die providers voor een onderzoekspad niets vinden, gebruikt
+`LiveResearchTools` OpenAI hosted web search. Het resultaat wordt per pad
+gecachet. Meerdere lege queries veroorzaken daardoor samen hoogstens één betaalde
+fallback.
 
 ```mermaid
 flowchart TD
@@ -180,11 +174,11 @@ flowchart TD
     DDG --> K{"Resultaten?"}
     S --> K
     K -- "ja" --> U["Samenvoegen + canonicaliseren"]
-    K -- "nee" --> O["OpenAI web search — max. eenmaal per pad"]
+    K -- "nee" --> O["OpenAI web search, max. eenmaal per pad"]
     O --> U
 ```
 
-## Stap 6 — het paginabudget blijft verdeeld
+## 6. De supervisor verdeelt het paginabudget
 
 Een query kan meerdere resultaten leveren, maar de supervisor inspecteert
 standaard maximaal vijftien brede zoekresultaten. Bij een officiële bron uit het
@@ -206,7 +200,7 @@ media resultaat 2
 Zo kan één websitequery het hele budget niet vullen voordat documenten en media
 aan bod komen.
 
-## Stap 7 — pagina's en PDF's worden inhoudelijk gelezen
+## 7. De inspectielaag leest pagina's en PDF's
 
 De geselecteerde resultaten worden parallel geïnspecteerd.
 
@@ -230,7 +224,7 @@ De gespecialiseerde jaarverslagcode:
 Iedere vondst wordt genormaliseerd naar hetzelfde `SourceDocument`-contract,
 ongeacht of hij uit website, document of media kwam.
 
-## Stap 8 — bronreview is fail-closed
+## 8. De bronreview wijst twijfelgevallen af
 
 `research/validation.py` voert eerst goedkope, deterministische controles uit.
 Daarna gebruikt `IntelligentSourceReviewer` in live-modus een LLM voor de
@@ -250,7 +244,7 @@ flowchart TD
     R --> A
 ```
 
-Deterministisch worden onder andere geweerd:
+De deterministische controles weren:
 
 - sociale profielen als primaire WP-bron;
 - vacatures zonder concreet personeelsbewijs;
@@ -269,7 +263,7 @@ beslissing:     tonen_aan_reviewer | context_only | afwijzen
 concerncijfers kunnen hoogstens als context worden getoond. Externe tekst staat
 in de prompt expliciet als onbetrouwbare input om promptinjectie te begrenzen.
 
-## Stap 9 — ranking kiest kwaliteit én diversiteit
+## 9. Ranking maakt een gevarieerd bronportfolio
 
 Alle overgebleven bronnen krijgen een verklaarbare score:
 
@@ -281,9 +275,8 @@ Alle overgebleven bronnen krijgen een verklaarbare score:
 | Actualiteit | 15% |
 | Concreet WP-bewijs | 10% |
 
-Daarna kiest `selecteer_bronportfolio()` maximaal acht kandidaten. Het portfolio
-probeert niet acht varianten van dezelfde bron te tonen, maar verschillende
-menselijke functies te bewaren, zoals:
+Daarna kiest `selecteer_bronportfolio()` maximaal acht kandidaten. De selectie
+kan bronnen met verschillende functies bevatten:
 
 - direct WP-bewijs;
 - formeel document;
@@ -292,10 +285,10 @@ menselijke functies te bewaren, zoals:
 - actuele context;
 - indicatie van organisatieomvang.
 
-Een lager gerankte mediabron kan daardoor naast een formeel jaarverslag blijven
-staan wanneer hij een andere vraag voor de reviewer beantwoordt.
+Een mediabron met een lagere score kan naast een formeel jaarverslag blijven
+staan als die bron een andere vraag van de reviewer beantwoordt.
 
-## Stap 10 — de reviewer krijgt bewijs, geen automatische waarheid
+## 10. De reviewer kiest de bron
 
 De researchservice slaat iedere geselecteerde bron op als `BronKandidaat`, met:
 
@@ -325,17 +318,17 @@ stateDiagram-v2
 Een handmatig ingevoerde bron wordt in een eigen afgeronde `ResearchRun` als
 geaccepteerde kandidaat opgeslagen.
 
-**Belangrijk:** acceptatie kiest de primaire bron. De researchflow stopt bij die
-reviewbeslissing en schrijft niet zelfstandig een definitieve registerwaarde.
+Acceptatie kiest de primaire bron. De researchflow stopt bij die reviewbeslissing
+en schrijft zelf geen definitieve registerwaarde.
 
-## Waar LangGraph precies zit
+## LangGraph bestuurt alleen de jaarverslagagent
 
-De volledige researchsupervisor is gewone Python met `asyncio`, geen LangGraph.
-LangGraph bestuurt de gespecialiseerde agents met een interne beslisboom.
+De researchsupervisor gebruikt gewone Python met `asyncio`. LangGraph bestuurt
+de gespecialiseerde jaarverslagagent met een interne beslisboom.
 
 ```mermaid
 flowchart TB
-    RS["ResearchSupervisor — asyncio"] --> Q["queries + inspectie + review + ranking"]
+    RS["ResearchSupervisor met asyncio"] --> Q["queries + inspectie + review + ranking"]
     RS --> J["LangGraph-jaarverslagagent als seedfallback"]
     MON["Jaarverslagenmonitoring"] --> J
 ```
@@ -382,15 +375,14 @@ flowchart TD
     I --> K["Reviewer ziet nieuwe vondst en bewijsplek"]
 ```
 
-Er is precies één actieve watchlist (`Batch.is_monitoringlijst=true`). De
-scheduler start die iedere maandag om 06:00 Europe/Amsterdam; een reviewer kan
-de controle ook handmatig starten. Monitoring verwerkt maximaal acht
-organisaties gelijktijdig, ieder met een eigen databasesessie en timeout.
+Er is één actieve watchlist (`Batch.is_monitoringlijst=true`). De scheduler start
+die iedere maandag om 06:00 Europe/Amsterdam. Een reviewer kan de controle ook
+handmatig starten. Monitoring verwerkt maximaal acht organisaties tegelijk,
+ieder met een eigen databasesessie en timeout.
 
-Een nieuw document wordt opgeslagen in `JaarverslagMonitoring`. Daarnaast maakt
-monitoring een moderne `ResearchRun` en `BronKandidaat`, inclusief citaat en
-PDF-pagina. De vondst verschijnt daardoor rechtstreeks in dezelfde
-reviewomgeving als regulier brononderzoek.
+Een nieuw document wordt opgeslagen in `JaarverslagMonitoring`. Monitoring maakt
+ook een `ResearchRun` en `BronKandidaat`, inclusief citaat en PDF-pagina. De
+vondst verschijnt in dezelfde reviewomgeving als regulier brononderzoek.
 
 ## Statussen, diagnostiek en kosten
 
@@ -442,14 +434,14 @@ supervisor voert momenteel nog geen reflectie- of follow-uprondes uit.
 `PROVIDER_MODE` bepaalt alleen de externe uitvoeringslaag; het persistente
 researchcontract blijft hetzelfde.
 
-### Mock
+### Mockmodus
 
 - deterministisch;
 - geen netwerk- of modelcalls;
 - geschikt voor tests en `scripts.validate`;
 - gebruikt `backend/data/mock_data.json`.
 
-### Live
+### Livemodus
 
 - OpenAI voor extractie en bronreview;
 - DuckDuckGo en optioneel Serper voor search;
@@ -562,11 +554,11 @@ cd backend
 
 ## Deployment in het kort
 
-De repository draait op Railway als twee services plus PostgreSQL:
+De repository draait op Railway met twee services en PostgreSQL:
 
-- `backend/` — FastAPI, config in `backend/railway.toml`;
-- `frontend/` — statische Vite-build, config in `frontend/railway.toml`;
-- PostgreSQL — via `DATABASE_URL` gekoppeld aan de backend.
+- `backend/`: FastAPI, config in `backend/railway.toml`;
+- `frontend/`: statische Vite-build, config in `frontend/railway.toml`;
+- PostgreSQL: via `DATABASE_URL` gekoppeld aan de backend.
 
 Na een eerste deploy: seed gebruikers, controleer `/health`, upload een kleine
 batch en voer enkele live shadow runs uit voordat een brede populatie wordt
