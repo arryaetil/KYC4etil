@@ -132,6 +132,30 @@ def _run_kosten(run: ResearchRun) -> dict:
     return (run.configuratie or {}).get("kosten") or {}
 
 
+def _onderzoekspaden(run: ResearchRun) -> list[dict]:
+    """Houd oude runs met tekstpaden compatibel met het huidige API-contract."""
+    legacy_status = {
+        "pending": "wachtend",
+        "running": "bezig",
+        "completed": "afgerond",
+        "error": "mislukt",
+    }.get(run.status, "onbekend")
+    return [
+        {
+            "route": item,
+            "verplicht": True,
+            "status": legacy_status,
+            "reden": "route uit eerdere onderzoeksrun",
+        }
+        if isinstance(item, str) else item
+        for item in (run.onderzoekspaden or [])
+        if (
+            (isinstance(item, str) and item)
+            or (isinstance(item, dict) and item.get("route"))
+        )
+    ]
+
+
 def _gedeelde_bronnen(
     db: Session,
     batch_id: str,
@@ -247,7 +271,7 @@ def start_research(
     return {
         "run_id": run.id,
         "status": run.status,
-        "onderzoekspaden": run.onderzoekspaden or [],
+        "onderzoekspaden": _onderzoekspaden(run),
     }
 
 
@@ -269,7 +293,7 @@ def get_research_run(run_id: str, db: Session = Depends(get_db)):
         "status": run.status,
         "resultaat_status": run.resultaat_status,
         "gevraagd_jaar": run.gevraagd_jaar,
-        "onderzoekspaden": run.onderzoekspaden or [],
+        "onderzoekspaden": _onderzoekspaden(run),
         "fout": run.fout,
         "kosten": _run_kosten(run),
         "diagnostiek": _run_diagnostiek(run),
@@ -312,7 +336,7 @@ def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
         ],
         "kosten": _run_kosten(laatste_run),
         "diagnostiek": _run_diagnostiek(laatste_run),
-        "onderzoekspaden": laatste_run.onderzoekspaden or [],
+        "onderzoekspaden": _onderzoekspaden(laatste_run),
     }
 
 

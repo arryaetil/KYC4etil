@@ -55,6 +55,34 @@ def test_start_research_maakt_run_en_plant_achtergrondtaak(
     assert aangeroepen == [run.id]
 
 
+def test_candidates_normaliseert_oude_onderzoekspaden(client, db_session):
+    company = _maak_company(db_session)
+    run = ResearchRun(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        doel="legacy routes",
+        status="completed",
+        onderzoekspaden=["website", "document", "media"],
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    response = client.get(f"/research/companies/{company.id}/candidates")
+
+    assert response.status_code == 200
+    verwacht = [
+        {
+            "route": route,
+            "verplicht": True,
+            "status": "afgerond",
+            "reden": "route uit eerdere onderzoeksrun",
+        }
+        for route in ("website", "document", "media")
+    ]
+    assert response.json()["onderzoekspaden"] == verwacht
+    assert client.get(f"/research/runs/{run.id}").json()["onderzoekspaden"] == verwacht
+
+
 def test_reviewer_kan_een_primaire_bron_per_run_accepteren(client, db_session):
     company = _maak_company(db_session)
     run = ResearchRun(
