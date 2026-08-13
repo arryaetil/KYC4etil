@@ -53,7 +53,6 @@ export function createApi(token, onUnauthorized) {
       return request(`/batches/upload?${params.toString()}`, {method: "POST", body});
     },
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
-    runLegacyBatch: (id) => request(`/batches/${id}/run-legacy`, {method: "POST"}),
     monitoringStatus: () => request("/monitoring"),
     monitorRun: () => request("/monitoring/run", {method: "POST"}),
     startResearch: (companyId, gevraagdJaar) => request(`/research/companies/${companyId}/run`, {
@@ -62,9 +61,9 @@ export function createApi(token, onUnauthorized) {
     }),
     researchRun: (runId) => request(`/research/runs/${runId}`),
     researchCandidates: (companyId) => request(`/research/companies/${companyId}/candidates`),
-    reviewResearchCandidate: (candidateId, beslissing, reden = null) => request(`/research/candidates/${candidateId}/review`, {
+    reviewResearchCandidate: (candidateId, beslissing, reasonCode = null, reden = null) => request(`/research/candidates/${candidateId}/review`, {
       method: "POST",
-      json: {beslissing, reden},
+      json: {beslissing, reason_code: reasonCode, reden},
     }),
     addManualResearchSource: (companyId, body) => request(`/research/companies/${companyId}/manual-source`, {
       method: "POST",
@@ -78,48 +77,6 @@ export function createApi(token, onUnauthorized) {
     cancelBatch: (id) => request(`/batches/${id}/cancel`, {method: "POST"}),
     resetVastgelopen: (id) => request(`/batches/${id}/reset-vastgelopen`, {method: "POST"}),
     deleteBatch: (id) => request(`/batches/${id}`, {method: "DELETE"}),
-    herverwerk: (batchId, companyId) => request(`/batches/${batchId}/companies/${companyId}/herverwerk`, {method: "POST"}),
-    saveVastgoed: (batchId, companyId, body) => request(`/batches/${batchId}/companies/${companyId}/vastgoed`, {method: "PUT", json: body}),
-    saveWpUitsplitsing: (batchId, companyId, body) => request(`/batches/${batchId}/companies/${companyId}/wp-uitsplitsing`, {method: "PUT", json: body}),
-    updateCompany: (batchId, companyId, body) => request(`/batches/${batchId}/companies/${companyId}`, {method: "PATCH", json: body}),
-    createChatSession: (candidateId) => request(`/candidates/${candidateId}/create-chat`, {method: "POST"}),
-    approve: (candidateId) => request(`/candidates/${candidateId}/approve`, {method: "POST"}),
-    correct: (candidateId, wp_waarde, reden) => request(`/candidates/${candidateId}/correct`, {
-      method: "POST",
-      json: {wp_waarde: Number(wp_waarde), reden},
-    }),
-    bellijst: (candidateId, reden) => request(`/candidates/${candidateId}/bellijst`, {
-      method: "POST",
-      json: {reden},
-    }),
-    bellijstItems: (batchId) => request(`/batches/${batchId}/bellijst`),
-    updateBellijstItem: (itemId, data) => request(`/bellijst/${itemId}`, {method: "PATCH", json: data}),
-    doorvoerenBellijst: (itemId) => request(`/bellijst/${itemId}/doorvoeren`, {method: "POST"}),
-    deleteBellijstItem: (itemId) => request(`/bellijst/${itemId}`, {method: "DELETE"}),
-    approveAllGreen: (batchId) => request(`/batches/${batchId}/approve-all-green`, {method: "POST"}),
-    chatSessies: (batchId) => request(`/batches/${batchId}/chat-sessies`),
-    doorvoerenChat: (sessionId) => request(`/chat-sessies/${sessionId}/doorvoeren`, {method: "POST"}),
-    chatTemplates: () => request("/chat-templates"),
-    createTemplate: (body) => request("/chat-templates", {method: "POST", json: body}),
-    updateTemplate: (id, body) => request(`/chat-templates/${id}`, {method: "PUT", json: body}),
-    setDefaultTemplate: (id) => request(`/chat-templates/${id}`, {method: "PUT", json: {is_default: true}}),
-    deleteTemplate: (id) => request(`/chat-templates/${id}`, {method: "DELETE"}),
-    uploadJaarverslag: (file, jaar, companyId) => {
-      const body = new FormData();
-      body.append("file", file);
-      if (jaar) body.append("jaar", String(jaar));
-      if (companyId) body.append("company_id", companyId);
-      return request("/jaarverslagen/upload", {method: "POST", body});
-    },
-    zoekCompanies: (q) => request(`/batches/companies/zoeken${q ? `?q=${encodeURIComponent(q)}` : ""}`),
-    jaarverslagen: () => request("/jaarverslagen"),
-    jaarverslag: (id) => request(`/jaarverslagen/${id}`),
-    chatJaarverslag: (id, vraag) => request(`/jaarverslagen/${id}/chat`, {method: "POST", json: {vraag}}),
-    verwijderJaarverslag: (id) => request(`/jaarverslagen/${id}`, {method: "DELETE"}),
-    opslaanWP: (id, wpWaarde, wpJaar) => request(`/jaarverslagen/${id}/opslaan-wp`, {
-      method: "POST",
-      json: {wp_waarde: wpWaarde, wp_jaar: wpJaar},
-    }),
     download: async (path, filename) => {
       const headers = new Headers();
       if (token) headers.set("Authorization", `Bearer ${token}`);

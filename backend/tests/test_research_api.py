@@ -103,7 +103,57 @@ def test_reviewer_kan_een_primaire_bron_per_run_accepteren(client, db_session):
     assert eerste.status == "alternatief"
     assert tweede.status == "geaccepteerd"
     assert tweede.reviewed_by == "test-user-id"
+    assert tweede.review_reason_code == "juiste_bron_bruikbaar_bewijs"
     assert tweede.review_reason == "actueler"
+
+
+def test_afwijzen_vereist_gestructureerde_reden(client, db_session):
+    company = _maak_company(db_session)
+    run = ResearchRun(company_id=company.id, batch_id=company.batch_id,
+                      doel="reden", status="completed")
+    db_session.add(run)
+    db_session.flush()
+    kandidaat = BronKandidaat(
+        research_run_id=run.id, company_id=company.id,
+        url="https://example.test/bron", canonical_url="https://example.test/bron",
+        brontype="media", status="voorgesteld",
+    )
+    db_session.add(kandidaat)
+    db_session.commit()
+
+    ontbreekt = client.post(
+        f"/research/candidates/{kandidaat.id}/review",
+        json={"beslissing": "afwijzen"},
+    )
+    assert ontbreekt.status_code == 422
+
+    response = client.post(
+        f"/research/candidates/{kandidaat.id}/review",
+        json={"beslissing": "afwijzen", "reason_code": "verkeerde_organisatie"},
+    )
+    assert response.status_code == 200
+    db_session.refresh(kandidaat)
+    assert kandidaat.review_reason_code == "verkeerde_organisatie"
+
+
+def test_anders_vereist_toelichting(client, db_session):
+    company = _maak_company(db_session)
+    run = ResearchRun(company_id=company.id, batch_id=company.batch_id,
+                      doel="reden", status="completed")
+    db_session.add(run)
+    db_session.flush()
+    kandidaat = BronKandidaat(
+        research_run_id=run.id, company_id=company.id,
+        url="https://example.test/anders", canonical_url="https://example.test/anders",
+        brontype="media", status="voorgesteld",
+    )
+    db_session.add(kandidaat)
+    db_session.commit()
+    response = client.post(
+        f"/research/candidates/{kandidaat.id}/review",
+        json={"beslissing": "afwijzen", "reason_code": "anders"},
+    )
+    assert response.status_code == 422
 
 
 def test_handmatige_bron_wordt_als_reviewerinput_bewaard(client, db_session):
@@ -184,6 +234,7 @@ def test_reviewerstatistieken_meten_alleen_agentkandidaten(
             rang=1,
             reviewed_at=reviewed_at,
             review_reason="verkeerde organisatie",
+            review_reason_code="verkeerde_organisatie",
         ),
         BronKandidaat(
             research_run_id=run.id,
@@ -221,7 +272,7 @@ def test_reviewerstatistieken_meten_alleen_agentkandidaten(
         "geaccepteerde_rangen": {"2": 1},
         "rang_1_percentage": 0.0,
         "afwijsredenen": [
-            {"reden": "verkeerde organisatie", "aantal": 1},
+            {"reden": "verkeerde_organisatie", "aantal": 1},
         ],
         "afgeronde_runs": 1,
         "gemiddeld_kandidaten_per_run": 3.0,

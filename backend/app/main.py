@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import Base, SessionLocal, engine, ensure_lightweight_migrations
-from .models import Batch, ChatTemplate, PipelineRun
-from .routers import auth, batches, chat, chat_admin, review, jaarverslagen, monitoring, research
+from .models import Batch, PipelineRun
+from .routers import auth, batches, monitoring, research
 from .scheduler import start_scheduler
 
 settings = get_settings()
@@ -12,41 +12,22 @@ settings = get_settings()
 Base.metadata.create_all(bind=engine)
 ensure_lightweight_migrations()
 
-app = FastAPI(title="Vestigingsregister AI Platform", version="0.1.0",
-              description="AI-pipeline voor WP-dataverzameling — Etil / Provincie Limburg")
+app = FastAPI(title="KYC4etil Bronnenwerkbank", version="0.2.0",
+              description="Werkbank voor brononderzoek en menselijke bronbeoordeling")
 
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"],
                    allow_headers=["*"], expose_headers=["Content-Disposition"])
 
 app.include_router(auth.router)
 app.include_router(batches.router)
-app.include_router(review.router)
-app.include_router(chat.router)
-app.include_router(chat_admin.router)
-app.include_router(jaarverslagen.router)
 app.include_router(monitoring.router)
 app.include_router(research.router)
 app.include_router(research.bron_router)
 
 
-DEFAULT_TEMPLATE_CONFIG = {
-    "veld_config": {
-        "wp_totaal": True, "eigen_personeel": True, "uitzend": True,
-        "detachering": True, "wsw": True, "man": True, "vrouw": True,
-        "voltijd": True, "deeltijd": True, "pct_op_locatie": True,
-        "adres": True, "correspondentieadres": True,
-        "perceeloppervlakte": True, "winkeloppervlakte": True,
-        "kantooroppervlakte": True, "bedrijfsvloeroppervlakte": True,
-        "uitbreidingsruimte": True, "seizoensverschil": True, "opmerking": True,
-    },
-    "intro_tekst": "",
-    "extra_vragen": [],
-}
-
-
 @app.on_event("startup")
 def reset_stuck_batches() -> None:
-    """Zet batches die 'running' waren bij herstart terug naar 'error'. Seeded standaard chat-template."""
+    """Zet batches die tijdens een service-herstart liepen terug naar 'error'."""
     import logging
     _log = logging.getLogger("startup")
     if settings.jwt_secret == "change-me":
@@ -72,20 +53,6 @@ def reset_stuck_batches() -> None:
         if stuck:
             db.commit()
 
-        if db.query(ChatTemplate).count() == 0:
-            db.add(ChatTemplate(
-                naam="Standaard vragenlijst",
-                beschrijving="Basisvragenlijst voor gerichte WP-uitvraag bij bedrijven",
-                vragen=DEFAULT_TEMPLATE_CONFIG,
-                is_default=True,
-            ))
-            db.commit()
-        else:
-            # Migreer bestaande templates met oud lijstformaat naar nieuw dict-formaat
-            for tmpl in db.query(ChatTemplate).all():
-                if isinstance(tmpl.vragen, list) or tmpl.vragen is None:
-                    tmpl.vragen = DEFAULT_TEMPLATE_CONFIG
-            db.commit()
     except Exception as exc:
         import logging
         logging.getLogger("startup").error("Startup event fout: %s", exc)

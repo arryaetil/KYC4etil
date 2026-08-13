@@ -3,6 +3,7 @@
 2. Jaarverslag-agent actief via web search
 3. Lookup_failed blokkeert agents niet meer
 """
+import httpx
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -42,7 +43,7 @@ async def test_live_website_agent_roept_web_search_aan_zonder_url():
         reden="web search", bron_url="https://example.com", bron_type="media",
         is_limburg_specifiek=True,
     )
-    with patch("app.providers.live._web_search_wp", new=AsyncMock(return_value=mock_finding)):
+    with patch("app.providers.wp_extractie._web_search_wp", new=AsyncMock(return_value=mock_finding)):
         from app.providers.live import LiveWebsiteAgent
         agent = LiveWebsiteAgent()
         result = await agent.run("TestBedrijf", None, None, gemeente="Maastricht")
@@ -54,12 +55,12 @@ async def test_live_website_agent_roept_web_search_aan_zonder_url():
 @pytest.mark.asyncio
 async def test_live_website_agent_slaat_web_search_over_als_scraping_slaagt():
     """Als de tool-use-loop een resultaat geeft, moet web search NIET aangeroepen worden."""
-    with patch("app.providers.live._tool_use_loop", new=AsyncMock(return_value={
+    with patch("app.providers.website_agent._tool_use_loop", new=AsyncMock(return_value={
              "wp_gevonden": 10, "context": "10 medewerkers", "zekerheid": "hoog",
              "reden": "ok", "is_totaal_meerdere_vestigingen": False,
              "is_limburg_specifiek": True, "is_fte": False, "peilmoment": "2024",
          })), \
-         patch("app.providers.live._web_search_wp", new=AsyncMock(return_value=None)) as mock_ws, \
+         patch("app.providers.wp_extractie._web_search_wp", new=AsyncMock(return_value=None)) as mock_ws, \
          patch("asyncio.sleep", new=AsyncMock()):
         from app.providers.live import LiveWebsiteAgent
         agent = LiveWebsiteAgent()
@@ -74,9 +75,9 @@ async def test_live_website_agent_slaat_web_search_over_als_scraping_slaagt():
 @pytest.mark.asyncio
 async def test_live_jaarverslag_agent_zoekt_pdf_via_web_search():
     """LiveJaarverslagAgent.run() moet _zoek_jaarverslag_pdf aanroepen; fallback gemockt als None."""
-    with patch("app.providers.live._zoek_jaarverslag_pdf",
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
                new=AsyncMock(return_value=None)) as mock_zoek, \
-         patch("app.providers.live._web_search_jaarverslag_wp",
+         patch("app.providers.jaarverslag._web_search_jaarverslag_wp",
                new=AsyncMock(return_value=None)):
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
@@ -93,9 +94,9 @@ async def test_live_jaarverslag_agent_verwerkt_pdf_als_gevonden():
         reden="jaarverslag", bron_url="https://example.com/jaarverslag.pdf",
         bron_type="jaarverslag",
     )
-    with patch("app.providers.live._zoek_jaarverslag_pdf",
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
                new=AsyncMock(return_value="https://example.com/jaarverslag.pdf")), \
-         patch("app.providers.live._classificeer_jaarverslag_bron_identiteit",
+         patch("app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit",
                new=AsyncMock(return_value=IdentityClass.EXACT_ENTITY)), \
          patch.object(
              __import__("app.providers.live", fromlist=["LiveJaarverslagAgent"]).LiveJaarverslagAgent,
@@ -113,13 +114,13 @@ async def test_live_jaarverslag_agent_verwerkt_pdf_als_gevonden():
 async def test_live_jaarverslag_agent_keurt_pdf_van_ander_bedrijf_af():
     """Een gevonden PDF die aantoonbaar niet over het bedrijf gaat, mag niet worden
     verwerkt. Dit vangt o.a. Salon Handmade -> Heijmans-achtige mismatches af."""
-    with patch("app.providers.live._zoek_jaarverslag_pdf",
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
                new=AsyncMock(return_value="https://heijmans.test/jaarverslag-2025.pdf")), \
-         patch("app.providers.live._classificeer_jaarverslag_bron_identiteit",
+         patch("app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit",
                new=AsyncMock(return_value=IdentityClass.MISMATCH)), \
-         patch("app.providers.live.LiveJaarverslagAgent.run_with_pdf",
+         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_with_pdf",
                new=AsyncMock(return_value=None)) as mock_extract, \
-         patch("app.providers.live._web_search_jaarverslag_wp",
+         patch("app.providers.jaarverslag._web_search_jaarverslag_wp",
                new=AsyncMock(return_value=None)):
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
@@ -134,7 +135,7 @@ async def test_live_jaarverslag_agent_probeert_opnieuw_na_afgewezen_bron():
     """Als de eerste gevonden PDF wordt afgewezen (verkeerd bedrijf), moet de graaf
     een ANDER zoekresultaat proberen i.p.v. meteen op te geven — dit was letterlijk
     het Mondriaan/Salon Handmade-scenario in productie."""
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     zoek_calls = []
 
@@ -155,11 +156,11 @@ async def test_live_jaarverslag_agent_probeert_opnieuw_na_afgewezen_bron():
         bron_type="jaarverslag",
     )
 
-    with patch("app.providers.live._zoek_jaarverslag_pdf", new=fake_zoek_pdf), \
-         patch("app.providers.live._classificeer_jaarverslag_bron_identiteit", new=fake_identiteit), \
-         patch("app.providers.live.LiveJaarverslagAgent.run_with_pdf",
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf", new=fake_zoek_pdf), \
+         patch("app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit", new=fake_identiteit), \
+         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_with_pdf",
                new=AsyncMock(return_value=goede_finding)):
-        result = await live.LiveJaarverslagAgent().run("Testbedrijf", 2025)
+        result = await jaarverslag.LiveJaarverslagAgent().run("Testbedrijf", 2025)
 
     assert result is not None
     assert result.bron_url == "https://echte-bron.test/jaarverslag.pdf"
@@ -176,11 +177,11 @@ async def test_live_jaarverslag_agent_laat_brand_of_group_match_door():
         reden="jaarverslag", bron_url="https://jumborapportage.test/jaarverslag.pdf",
         bron_type="jaarverslag", is_limburg_specifiek=False,
     )
-    with patch("app.providers.live._zoek_jaarverslag_pdf",
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
                new=AsyncMock(return_value="https://jumborapportage.test/jaarverslag.pdf")), \
-         patch("app.providers.live._classificeer_jaarverslag_bron_identiteit",
+         patch("app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit",
                new=AsyncMock(return_value=IdentityClass.SAME_BRAND_OR_GROUP)), \
-         patch("app.providers.live.LiveJaarverslagAgent.run_with_pdf",
+         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_with_pdf",
                new=AsyncMock(return_value=wp_finding)):
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
@@ -193,7 +194,7 @@ async def test_live_jaarverslag_agent_laat_brand_of_group_match_door():
 @pytest.mark.asyncio
 async def test_monitoringmodus_weigert_onzekere_of_alleen_groepsmatch():
     """Monitoring mag een twijfelachtige bron niet als nieuwe baseline opslaan."""
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     async def fake_zoek_pdf(
         naam, jaar, website_url=None, uitgesloten=None,
@@ -201,16 +202,16 @@ async def test_monitoringmodus_weigert_onzekere_of_alleen_groepsmatch():
         return "https://onbekende-bron.test/jaarverslag-2025.pdf"
 
     with patch(
-        "app.providers.live._zoek_jaarverslag_pdf",
+        "app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
         new=fake_zoek_pdf,
     ), patch(
-        "app.providers.live._classificeer_jaarverslag_bron_identiteit",
+        "app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit",
         new=AsyncMock(return_value=IdentityClass.SAME_BRAND_OR_GROUP),
     ), patch(
-        "app.providers.live.LiveJaarverslagAgent.run_with_pdf",
+        "app.providers.jaarverslag.LiveJaarverslagAgent.run_with_pdf",
         new=AsyncMock(),
     ) as extract:
-        result = await live.LiveJaarverslagAgent().run(
+        result = await jaarverslag.LiveJaarverslagAgent().run(
             "Testbedrijf Limburg",
             2026,
             strict_identity=True,
@@ -224,7 +225,7 @@ async def test_monitoringmodus_weigert_onzekere_of_alleen_groepsmatch():
 async def test_jaarverslagzoeker_slaat_aantoonbaar_verouderde_hit_over(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     async def fake_web_search(query, max_results=8):
         return [
@@ -238,9 +239,9 @@ async def test_jaarverslagzoeker_slaat_aantoonbaar_verouderde_hit_over(
             },
         ]
 
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
 
-    result = await live._zoek_jaarverslag_pdf(
+    result = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
         "Testbedrijf",
         2025,
         zoekjaren=(2025,),
@@ -253,7 +254,7 @@ async def test_jaarverslagzoeker_slaat_aantoonbaar_verouderde_hit_over(
 async def test_jaarverslagzoeker_negeert_andere_pdf_op_officieel_domein(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     async def fake_web_search(query, max_results=8):
         return [{
@@ -261,9 +262,9 @@ async def test_jaarverslagzoeker_negeert_andere_pdf_op_officieel_domein(
             "url": "https://example.test/privacy-statement.pdf",
         }]
 
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
 
-    result = await live._zoek_jaarverslag_pdf(
+    result = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
         "Testbedrijf",
         2025,
         website_url="https://example.test",
@@ -277,11 +278,9 @@ async def test_jaarverslagzoeker_negeert_andere_pdf_op_officieel_domein(
 async def test_jaarverslagzoeker_gebruikt_hosted_fallback_bij_lege_indexen(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    monkeypatch.setattr(
-        live,
-        "_web_search",
+    monkeypatch.setattr(search, "_web_search",
         AsyncMock(return_value=[]),
     )
     hosted = AsyncMock(return_value=[{
@@ -290,9 +289,9 @@ async def test_jaarverslagzoeker_gebruikt_hosted_fallback_bij_lege_indexen(
         "snippet": "",
         "bron": "openai_web_search",
     }])
-    monkeypatch.setattr(live, "_openai_web_search", hosted)
+    monkeypatch.setattr(search, "_openai_web_search", hosted)
 
-    result = await live._zoek_jaarverslag_pdf(
+    result = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
         "Testbedrijf",
         2025,
         website_url="https://testbedrijf.example",
@@ -307,15 +306,13 @@ async def test_jaarverslagzoeker_gebruikt_hosted_fallback_bij_lege_indexen(
 async def test_strikte_monitoring_weigert_oud_pdf_na_inhoudscontrole(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    monkeypatch.setattr(
-        live,
-        "_eerste_pdf_paginas",
+    monkeypatch.setattr(fetch, "_eerste_pdf_paginas",
         AsyncMock(return_value="Rijkswaterstaat Jaarverslag 2009"),
     )
 
-    assert await live._pdf_is_recent_jaarverslag(
+    assert await jaarverslag_validatie._pdf_is_recent_jaarverslag(
         "https://example.test/opaque.pdf",
         2026,
     ) is False
@@ -325,15 +322,13 @@ async def test_strikte_monitoring_weigert_oud_pdf_na_inhoudscontrole(
 async def test_strikte_monitoring_accepteert_recent_pdf_na_inhoudscontrole(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    monkeypatch.setattr(
-        live,
-        "_eerste_pdf_paginas",
+    monkeypatch.setattr(fetch, "_eerste_pdf_paginas",
         AsyncMock(return_value="Bestuursverslag 2025 Zuyderland"),
     )
 
-    assert await live._pdf_is_recent_jaarverslag(
+    assert await jaarverslag_validatie._pdf_is_recent_jaarverslag(
         "https://example.test/opaque.pdf",
         2026,
     ) is True
@@ -344,18 +339,16 @@ async def test_strikte_monitoring_weigert_recente_toezichtbrief_die_jaarverslag_
     monkeypatch,
 ):
     """Een toezichtbrief over een jaarverslag is zelf geen jaarverslag."""
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    monkeypatch.setattr(
-        live,
-        "_eerste_pdf_paginas",
+    monkeypatch.setattr(fetch, "_eerste_pdf_paginas",
         AsyncMock(return_value=(
             "Toezichtbrief Autoriteit woningcorporaties 2024. "
             "Wij beoordeelden uw jaarverslag 2024."
         )),
     )
 
-    assert await live._pdf_is_recent_jaarverslag(
+    assert await jaarverslag_validatie._pdf_is_recent_jaarverslag(
         "https://ilent.test/L0269-Stichting-ZOwonen.pdf",
         2026,
     ) is False
@@ -374,15 +367,15 @@ async def test_strikte_monitoring_weigert_recente_toezichtbrief_die_jaarverslag_
     "https://example.test/dzjaarverslagrvt2025.pdf",
 ])
 def test_jaarverslagherkenning_weigert_deelrapporten(documenttype):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    assert live._lijkt_jaarverslag(documenttype, 2025) is False
+    assert jaarverslag_zoeken._lijkt_jaarverslag(documenttype, 2025) is False
 
 
 def test_hoofdverslag_mag_inhoudelijk_een_raad_van_toezicht_noemen():
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    assert live._lijkt_jaarverslag(
+    assert jaarverslag_zoeken._lijkt_jaarverslag(
         "Bestuursverslag 2024\nInhoud\nVerslag van de Raad van Toezicht",
         2024,
         weiger_deelrapporten=False,
@@ -393,7 +386,7 @@ def test_hoofdverslag_mag_inhoudelijk_een_raad_van_toezicht_noemen():
 async def test_officiele_jaarverslagpagina_verkiest_organisatiebreed_verslag(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     class Response:
         text = """
@@ -415,9 +408,9 @@ async def test_officiele_jaarverslagpagina_verkiest_organisatiebreed_verslag(
         async def get(self, url):
             return Response()
 
-    monkeypatch.setattr(live.httpx, "AsyncClient", lambda **kwargs: Client())
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: Client())
 
-    result = await live._scrape_pdf_van_pagina(
+    result = await jaarverslag_zoeken._scrape_pdf_van_pagina(
         "https://organisatie.test/jaarverslagen",
         2024,
     )
@@ -429,28 +422,26 @@ async def test_officiele_jaarverslagpagina_verkiest_organisatiebreed_verslag(
 async def test_geldige_jaarverslagbron_blijft_behouden_zonder_wp_getal(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     url = "https://organisatie.test/bestuursverslag-2024.pdf"
 
     async def fake_zoek(*args, uitgesloten=None, **kwargs):
         return None if url in (uitgesloten or set()) else url
 
-    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek)
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", fake_zoek)
     monkeypatch.setattr(
-        live.LiveJaarverslagAgent,
+        jaarverslag.LiveJaarverslagAgent,
         "run_with_pdf",
         AsyncMock(return_value=None),
     )
-    monkeypatch.setattr(live, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        live,
-        "_is_organisatiebreed_jaarverslag",
+    monkeypatch.setattr(jaarverslag_validatie, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
+    monkeypatch.setattr(jaarverslag_validatie, "_is_organisatiebreed_jaarverslag",
         AsyncMock(return_value=True),
     )
     monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
 
-    finding = await live._run_jaarverslag_research_graph(
+    finding = await jaarverslag._run_jaarverslag_research_graph(
         "Organisatie",
         2026,
         website_url="https://organisatie.test",
@@ -466,7 +457,7 @@ async def test_geldige_jaarverslagbron_blijft_behouden_zonder_wp_getal(
 async def test_strikte_monitoring_weigert_jaarverslag_van_deelorganisatie(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     deelrapport = "https://organisatie.test/vrienden-jaarrekening-2025.pdf"
     hoofdrapport = "https://organisatie.test/bestuursverslag-2024.pdf"
@@ -477,21 +468,19 @@ async def test_strikte_monitoring_weigert_jaarverslag_van_deelorganisatie(
             return None
         return hoofdrapport if deelrapport in uitgesloten else deelrapport
 
-    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek)
-    monkeypatch.setattr(
-        live,
-        "_is_organisatiebreed_jaarverslag",
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", fake_zoek)
+    monkeypatch.setattr(jaarverslag_validatie, "_is_organisatiebreed_jaarverslag",
         AsyncMock(side_effect=[False, True]),
     )
-    monkeypatch.setattr(live, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
+    monkeypatch.setattr(jaarverslag_validatie, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
     monkeypatch.setattr(
-        live.LiveJaarverslagAgent,
+        jaarverslag.LiveJaarverslagAgent,
         "run_with_pdf",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
 
-    finding = await live._run_jaarverslag_research_graph(
+    finding = await jaarverslag._run_jaarverslag_research_graph(
         "Organisatie",
         2026,
         website_url="https://organisatie.test",
@@ -504,24 +493,20 @@ async def test_strikte_monitoring_weigert_jaarverslag_van_deelorganisatie(
 
 @pytest.mark.asyncio
 async def test_monitoring_sourcezoeker_slaat_wp_extractie_over(monkeypatch):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     url = "https://organisatie.test/bestuursverslag-2024.pdf"
-    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", AsyncMock(return_value=url))
-    monkeypatch.setattr(
-        live,
-        "_is_organisatiebreed_jaarverslag",
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", AsyncMock(return_value=url))
+    monkeypatch.setattr(jaarverslag_validatie, "_is_organisatiebreed_jaarverslag",
         AsyncMock(return_value=True),
     )
-    monkeypatch.setattr(
-        live,
-        "_eerste_pdf_paginas",
+    monkeypatch.setattr(fetch, "_eerste_pdf_paginas",
         AsyncMock(return_value="Bestuursverslag Organisatie 2024"),
     )
     extract = AsyncMock()
-    monkeypatch.setattr(live.LiveJaarverslagAgent, "run_with_pdf", extract)
+    monkeypatch.setattr(jaarverslag.LiveJaarverslagAgent, "run_with_pdf", extract)
 
-    finding = await live.LiveJaarverslagAgent().find_latest_source(
+    finding = await jaarverslag.LiveJaarverslagAgent().find_latest_source(
         "Organisatie",
         2026,
         website_url="https://organisatie.test",
@@ -538,7 +523,7 @@ async def test_monitoring_sourcezoeker_slaat_wp_extractie_over(monkeypatch):
 async def test_monitoring_sourcezoeker_zoekt_nieuwer_jaar_als_combined_search_oud_resultaat_geeft(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     oud = "https://organisatie.test/bestuursverslag-2023.pdf"
     nieuw = "https://organisatie.test/bestuursverslag-2025.pdf"
@@ -548,22 +533,18 @@ async def test_monitoring_sourcezoeker_zoekt_nieuwer_jaar_als_combined_search_ou
             return nieuw
         return None if oud in (uitgesloten or set()) else oud
 
-    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek)
-    monkeypatch.setattr(
-        live,
-        "_eerste_pdf_paginas",
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", fake_zoek)
+    monkeypatch.setattr(fetch, "_eerste_pdf_paginas",
         AsyncMock(side_effect=[
             "Jaarverslag Organisatie 2023",
             "Jaarverslag Organisatie 2025",
         ]),
     )
-    monkeypatch.setattr(
-        live,
-        "_is_organisatiebreed_jaarverslag",
+    monkeypatch.setattr(jaarverslag_validatie, "_is_organisatiebreed_jaarverslag",
         AsyncMock(return_value=True),
     )
 
-    finding = await live.LiveJaarverslagAgent().find_latest_source(
+    finding = await jaarverslag.LiveJaarverslagAgent().find_latest_source(
         "Organisatie",
         2026,
         website_url="https://organisatie.test",
@@ -581,26 +562,24 @@ async def test_monitoring_sourcezoeker_zoekt_nieuwer_jaar_als_combined_search_ou
     ("Bestuursverslag\n2024\nVastgesteld in 2025", 2024),
 ])
 def test_verslagjaar_komt_uit_documenttitel_niet_publicatiejaar(tekst, verwacht):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    assert live._verslagjaar_uit_pdftekst(tekst, 2026) == verwacht
+    assert jaarverslag_zoeken._verslagjaar_uit_pdftekst(tekst, 2026) == verwacht
 
 
 @pytest.mark.asyncio
 async def test_nederlandse_organisatie_weigert_belgische_naamgenoot(monkeypatch):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     belgisch = "https://koraal.be/jaarverslag-2024.pdf"
-    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", AsyncMock(return_value=belgisch))
-    monkeypatch.setattr(
-        live,
-        "_eerste_pdf_paginas",
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", AsyncMock(return_value=belgisch))
+    monkeypatch.setattr(fetch, "_eerste_pdf_paginas",
         AsyncMock(return_value="Koraal jaarverslag 2024"),
     )
     scope = AsyncMock(return_value=True)
-    monkeypatch.setattr(live, "_is_organisatiebreed_jaarverslag", scope)
+    monkeypatch.setattr(jaarverslag_validatie, "_is_organisatiebreed_jaarverslag", scope)
 
-    finding = await live.LiveJaarverslagAgent().find_latest_source(
+    finding = await jaarverslag.LiveJaarverslagAgent().find_latest_source(
         "Koraal Groep",
         2026,
         website_url="https://www.koraal.nl",
@@ -609,7 +588,7 @@ async def test_nederlandse_organisatie_weigert_belgische_naamgenoot(monkeypatch)
 
     assert finding is None
     scope.assert_not_awaited()
-    assert live._heeft_landdomein_conflict(
+    assert fetch._heeft_landdomein_conflict(
         belgisch,
         "https://www.koraal.nl",
     ) is True
@@ -619,17 +598,17 @@ async def test_nederlandse_organisatie_weigert_belgische_naamgenoot(monkeypatch)
 async def test_jaarverslagzoeker_zoekt_drie_jaren_in_een_provider_ronde(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     web_search = AsyncMock(return_value=[{
         "title": "Annual Report 2025",
         "url": "https://organisatie.test/annual-report-2025.pdf",
     }])
     hosted = AsyncMock(return_value=[])
-    monkeypatch.setattr(live, "_web_search", web_search)
-    monkeypatch.setattr(live, "_openai_web_search", hosted)
+    monkeypatch.setattr(search, "_web_search", web_search)
+    monkeypatch.setattr(search, "_openai_web_search", hosted)
 
-    result = await live._zoek_jaarverslag_pdf("Organisatie", 2026)
+    result = await jaarverslag_zoeken._zoek_jaarverslag_pdf("Organisatie", 2026)
 
     assert result == "https://organisatie.test/annual-report-2025.pdf"
     # Eén provider-ronde voor drie verslagjaren: de jaarselectie gebeurt op de
@@ -646,17 +625,15 @@ async def test_jaarverslagzoeker_zoekt_drie_jaren_in_een_provider_ronde(
 async def test_generieke_eenwoordnaam_is_zonder_domein_geen_exacte_identiteit(
     monkeypatch,
 ):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    monkeypatch.setattr(
-        live,
-        "_eerste_pdf_paginas",
+    monkeypatch.setattr(fetch, "_eerste_pdf_paginas",
         AsyncMock(return_value=(
             "Bestuursverslag 2025 van Zorggroep Sint Maarten"
         )),
     )
 
-    identity = await live._classificeer_jaarverslag_bron_identiteit(
+    identity = await jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit(
         "De Zorggroep",
         "https://andere-zorggroep.example/bestuursverslag-2025.pdf",
     )
@@ -665,9 +642,9 @@ async def test_generieke_eenwoordnaam_is_zonder_domein_geen_exacte_identiteit(
 
 
 def test_safelink_wordt_teruggebracht_naar_echte_bron_url():
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    result = live._unwrap_safelink(
+    result = fetch._unwrap_safelink(
         "https://eur05.safelinks.protection.outlook.com/"
         "?url=https%3A%2F%2Fexample.test%2FJaarverslag%25202025.pdf"
         "&data=tracking",
@@ -677,9 +654,9 @@ def test_safelink_wordt_teruggebracht_naar_echte_bron_url():
 
 
 def test_deterministische_pdf_fallback_vindt_explicitiete_headcount():
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    result = live._deterministische_wp_uit_pdf([
+    result = jaarverslag._deterministische_wp_uit_pdf([
         (1, "Voorwoord"),
         (
             6,
@@ -695,9 +672,9 @@ def test_deterministische_pdf_fallback_vindt_explicitiete_headcount():
 
 
 def test_deterministische_pdf_fallback_negeert_deelnemersaantal():
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
-    result = live._deterministische_wp_uit_pdf([
+    result = jaarverslag._deterministische_wp_uit_pdf([
         (
             32,
             "Het medewerkersonderzoek had bijna 4.900 deelnemers en "
@@ -714,13 +691,13 @@ async def test_live_jaarverslag_agent_handelt_pdf_fout_af():
     geeft de agent toch de gevonden bron_url door (zonder wp_gevonden) — zodat de
     jaarverslag-monitoring in elk geval een baseline-URL heeft, in plaats van de
     gevonden link stilzwijgend te laten vervallen."""
-    with patch("app.providers.live._zoek_jaarverslag_pdf",
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
                new=AsyncMock(return_value="https://example.com/broken.pdf")), \
-         patch("app.providers.live._classificeer_jaarverslag_bron_identiteit",
+         patch("app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit",
                new=AsyncMock(return_value=IdentityClass.EXACT_ENTITY)), \
-         patch("app.providers.live.LiveJaarverslagAgent.run_with_pdf",
+         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_with_pdf",
                new=AsyncMock(side_effect=Exception("download fout"))), \
-         patch("app.providers.live._web_search_jaarverslag_wp",
+         patch("app.providers.jaarverslag._web_search_jaarverslag_wp",
                new=AsyncMock(return_value=None)):
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
@@ -734,7 +711,7 @@ async def test_live_jaarverslag_agent_handelt_pdf_fout_af():
 async def test_extract_wp_zoekresultaten_slaat_cross_company_resultaat_over(monkeypatch):
     """Zoekresultaten waarvan titel/snippet/tekst de bedrijfsnaam niet noemen,
     worden niet naar de LLM gestuurd."""
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
 
@@ -744,10 +721,10 @@ async def test_extract_wp_zoekresultaten_slaat_cross_company_resultaat_over(monk
     async def fake_llm_extract(naam, gemeente, tekst):
         raise AssertionError("_llm_extract mag niet worden aangeroepen voor een mismatch")
 
-    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
-    monkeypatch.setattr(live, "_llm_extract", fake_llm_extract)
+    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(llm, "_llm_extract", fake_llm_extract)
 
-    bevindingen = await live._extract_wp_van_zoekresultaten(
+    bevindingen = await wp_extractie._extract_wp_van_zoekresultaten(
         "Salon Handmade",
         "Weert",
         [{
@@ -764,16 +741,16 @@ async def test_extract_wp_zoekresultaten_slaat_cross_company_resultaat_over(monk
 
 @pytest.mark.asyncio
 async def test_extract_wp_zoekresultaten_slaat_vacaturepagina_over(monkeypatch):
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
 
     async def fake_fetch_text(url):
         raise AssertionError("_fetch_text mag niet worden aangeroepen voor vacaturepagina")
 
-    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
 
-    bevindingen = await live._extract_wp_van_zoekresultaten(
+    bevindingen = await wp_extractie._extract_wp_van_zoekresultaten(
         "IKEA Heerlen",
         "Heerlen",
         [{

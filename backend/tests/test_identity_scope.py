@@ -154,7 +154,7 @@ async def test_live_classifier_slaat_llm_over_bij_domeinmatch():
         wp_gevonden=3, context="3 medewerkers op onze vestiging.", zekerheid="hoog",
         reden="live", bron_url="https://www.salonhandmade.nl/afspraak", bron_type="website",
     )
-    with patch("app.providers.live._llm_classify_scope", new=AsyncMock(return_value="vestiging")) as scope_mock:
+    with patch("app.providers.identity._llm_classify_scope", new=AsyncMock(return_value="vestiging")) as scope_mock:
         identity, scope = await LiveIdentityScopeClassifier().classify(
             "Salon Handmade", "Langstraat 8", "Weert",
             "https://www.salonhandmade.nl", finding,
@@ -173,7 +173,7 @@ async def test_live_classifier_roept_llm_aan_bij_onbekend_domein():
         reden="live", bron_url="https://www.heijmans.nl/jaarverslag.pdf", bron_type="jaarverslag",
     )
     with patch(
-        "app.providers.live._llm_classify_identity_and_scope",
+        "app.providers.identity._llm_classify_identity_and_scope",
         new=AsyncMock(return_value=("mismatch", "unknown")),
     ) as combined_mock:
         identity, scope = await LiveIdentityScopeClassifier().classify(
@@ -183,25 +183,3 @@ async def test_live_classifier_roept_llm_aan_bij_onbekend_domein():
     assert identity == "mismatch"
     assert scope == "unknown"
     combined_mock.assert_awaited_once()
-
-
-def test_company_detail_toont_identity_en_scope_classificatie(client, db_session):
-    batch = Batch(naam="test-batch", jaar=2026, totaal=1)
-    db_session.add(batch)
-    db_session.flush()
-    company = Company(batch_id=batch.id, naam="Testbedrijf")
-    db_session.add(company)
-    db_session.flush()
-    ar = AgentResult(
-        company_id=company.id, batch_id=batch.id, agent_type="website",
-        wp_gevonden=5, bron_type="website",
-        identity_class="exact_entity", scope_class="vestiging",
-    )
-    db_session.add(ar)
-    db_session.commit()
-
-    response = client.get(f"/batches/{batch.id}/companies/{company.id}")
-    assert response.status_code == 200
-    result = response.json()["agent_results"][0]
-    assert result["identity_class"] == "exact_entity"
-    assert result["scope_class"] == "vestiging"

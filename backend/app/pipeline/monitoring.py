@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..database import SessionLocal
 from ..models import (
-    AgentResult, Batch, BronKandidaat, Candidate, Company,
-    JaarverslagMonitoring, PipelineRun, ResearchRun,
+    Batch, BronKandidaat, Company, JaarverslagMonitoring, PipelineRun,
+    ResearchRun,
 )
 from ..pipeline.identity_scope import heuristic_scope_class
 from ..providers import get_providers
@@ -21,8 +21,6 @@ from ..research.ranking import rank_bronnen
 from ..research.urls import canonicaliseer_url
 from ..research.validation import SourceDocument, valideer_bron
 from ..research.usage import get_cost_summary, start_usage_tracking
-from .confidence import bereken_confidence
-from .reconcile import reconcilieer
 from .runner import _log as _log_stap
 from .runner import _now
 
@@ -51,7 +49,7 @@ def _sla_moderne_bron_op(
     jaar: int,
     finding,
 ) -> None:
-    """Maak een moderne, reviewbare bronkandidaat naast legacy-compatibiliteit."""
+    """Maak een reviewbare bronkandidaat in het canonieke bronnenmodel."""
     gevraagd_jaar = jaar - 1
     titel = unquote(PurePosixPath(urlsplit(finding.bron_url).path).name)
     document = SourceDocument(
@@ -153,36 +151,20 @@ def _documentjaar(url: str | None) -> int | None:
     return jaren[-1] if jaren else None
 
 
-def _trek_candidate_van_afgewezen_bron_in(
+def _trek_afgewezen_bron_in(
     db: Session,
     company: Company,
     afgewezen_url: str,
 ) -> None:
-    candidate = db.query(Candidate).filter_by(
-        company_id=company.id,
-        batch_id=company.batch_id,
-    ).one_or_none()
-    if candidate is None or not candidate.gekozen_agent_result:
-        return
-    agent_result = db.get(AgentResult, candidate.gekozen_agent_result)
-    if (
-        agent_result is None
-        or agent_result.agent_type != "jaarverslag"
-        or canonicaliseer_url(agent_result.bron_url or "")
-        != canonicaliseer_url(afgewezen_url)
+    canonical = canonicaliseer_url(afgewezen_url)
+    for bron in db.query(BronKandidaat).filter(
+        BronKandidaat.company_id == company.id,
+        BronKandidaat.canonical_url == canonical,
+        BronKandidaat.status != "afgewezen",
     ):
-        return
-    candidate.wp_kandidaat = None
-    candidate.gekozen_agent_result = None
-    candidate.confidence_score = None
-    candidate.confidence_label = None
-    candidate.score_breakdown = None
-    candidate.reconciliatie_reden = "jaarverslagbron afgewezen bij hervalidatie"
-    candidate.status = "pending"
-    candidate.reviewer_signaal = (
-        "Eerder WP-getal ingetrokken: de bijbehorende jaarverslagbron voldoet "
-        "niet aan de huidige identiteits-, documenttype- of recentheidscontrole."
-    )
+        bron.status = "afgewezen"
+        bron.review_reason_code = "bron_niet_toegankelijk"
+        bron.review_reason = "Automatisch ingetrokken bij hervalidatie"
 
 
 def _beste_moderne_jaarverslagbron(
@@ -214,22 +196,6 @@ def _beste_moderne_jaarverslagbron(
     return max(geldig, key=lambda item: item[0])[1] if geldig else None
 
 
-def _jaarverslagbron_van_candidate(
-    db: Session,
-    company: Company,
-) -> str | None:
-    candidate = db.query(Candidate).filter_by(
-        company_id=company.id,
-        batch_id=company.batch_id,
-    ).one_or_none()
-    if candidate is None or not candidate.gekozen_agent_result:
-        return None
-    agent_result = db.get(AgentResult, candidate.gekozen_agent_result)
-    if agent_result is None or agent_result.agent_type != "jaarverslag":
-        return None
-    return agent_result.bron_url
-
-
 def _wp_is_nieuw_voor_bron(
     db: Session,
     company: Company,
@@ -238,19 +204,18 @@ def _wp_is_nieuw_voor_bron(
 ) -> bool:
     if wp_gevonden is None:
         return False
-    candidate = db.query(Candidate).filter_by(
-        company_id=company.id,
-        batch_id=company.batch_id,
-    ).one_or_none()
-    if candidate is None or not candidate.gekozen_agent_result:
-        return True
-    agent_result = db.get(AgentResult, candidate.gekozen_agent_result)
-    return (
-        agent_result is None
-        or canonicaliseer_url(agent_result.bron_url or "")
-        != canonicaliseer_url(bron_url)
-        or candidate.wp_kandidaat != wp_gevonden
+    bestaande_bron = (
+        db.query(BronKandidaat)
+        .filter(
+            BronKandidaat.company_id == company.id,
+            BronKandidaat.canonical_url == canonicaliseer_url(bron_url),
+        )
+        .order_by(BronKandidaat.created_at.desc())
+        .first()
     )
+    if bestaande_bron is None:
+        return True
+    return bestaande_bron.wp_gevonden != wp_gevonden
 
 
 async def check_company_jaarverslag(db: Session, company: Company, jaar: int) -> bool:
@@ -299,10 +264,7 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         except Exception:
             website_url = None
 
-    te_valideren_url = (
-        status.laatste_bron_url
-        or _jaarverslagbron_van_candidate(db, company)
-    )
+    te_valideren_url = status.laatste_bron_url
     source_finder = getattr(type(jaarverslag_agent), "find_latest_source", None)
     if source_finder is not None:
         finding = await jaarverslag_agent.find_latest_source(
@@ -362,7 +324,7 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
             status.laatste_bron_url = None
             status.laatste_verslagjaar = None
             bestaand_jaar = None
-            _trek_candidate_van_afgewezen_bron_in(
+            _trek_afgewezen_bron_in(
                 db,
                 company,
                 te_valideren_url,
@@ -448,72 +410,6 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
     wijzigingsstatus = "new" if verslag_is_nieuw else "updated"
 
     _sla_moderne_bron_op(db, company, jaar, finding)
-
-    if not finding.wp_gevonden:
-        _log(
-            db,
-            company.batch_id,
-            company.id,
-            "jaarverslag_monitoring",
-            wijzigingsstatus,
-            t0,
-        )
-        db.commit()
-        return True
-
-    ar = AgentResult(
-        company_id=company.id, batch_id=company.batch_id, agent_type="jaarverslag",
-        wp_gevonden=finding.wp_gevonden, wp_context=finding.context,
-        is_limburg_specifiek=finding.is_limburg_specifiek, is_fte=finding.is_fte,
-        peilmoment=finding.peilmoment, bron_url=finding.bron_url,
-        bron_type=finding.bron_type, llm_zekerheid=finding.zekerheid,
-        raw_output=finding.raw or None,
-        eigen_personeel=finding.eigen_personeel, uitzend=finding.uitzend,
-        detachering=finding.detachering, wsw=finding.wsw,
-        man=finding.man, vrouw=finding.vrouw,
-        voltijd=finding.voltijd, deeltijd=finding.deeltijd,
-        pct_op_locatie=finding.pct_op_locatie,
-    )
-    db.add(ar)
-    db.flush()
-
-    rec = reconcilieer(None, finding, None, None)
-    if rec.finding is None:
-        # Reconciliatie kan de bevinding alsnog afwijzen (bv. cross-company-mismatch of
-        # niet-Limburg-specifiek zonder vestigingscount) — dan is er wel een nieuwe
-        # bron_url gedetecteerd, maar geen bruikbare WP-kandidaat. Bestaande candidate
-        # blijft ongemoeid, net als bij "url gewijzigd maar geen wp_gevonden" hierboven.
-        _log(db, company.batch_id, company.id, "jaarverslag_monitoring", wijzigingsstatus, t0,
-             error=f"bron afgewezen door reconciliatie: {rec.reden}"[:1000])
-        db.commit()
-        return True
-
-    score = bereken_confidence(
-        rec.finding,
-        n_bronnen=rec.n_bronnen, bronnen_consistent=rec.bronnen_consistent,
-        peiljaar=jaar, is_schatting=rec.is_schatting,
-        schatting_penalty=rec.schatting_penalty, locatie_bron="mock",
-    )
-
-    bestaande_candidate = db.query(Candidate).filter_by(
-        company_id=company.id, batch_id=company.batch_id).one_or_none()
-    if bestaande_candidate is not None:
-        bestaande_candidate.wp_kandidaat = rec.wp_kandidaat
-        bestaande_candidate.is_schatting = rec.is_schatting
-        bestaande_candidate.gekozen_agent_result = ar.id
-        bestaande_candidate.reconciliatie_reden = rec.reden
-        bestaande_candidate.confidence_score = score.score
-        bestaande_candidate.confidence_label = score.label
-        bestaande_candidate.score_breakdown = score.breakdown
-        bestaande_candidate.status = "pending"
-    else:
-        db.add(Candidate(
-            company_id=company.id, batch_id=company.batch_id,
-            wp_kandidaat=rec.wp_kandidaat, is_schatting=rec.is_schatting,
-            gekozen_agent_result=ar.id, reconciliatie_reden=rec.reden,
-            confidence_score=score.score, confidence_label=score.label,
-            score_breakdown=score.breakdown, strategie="auto",
-        ))
 
     _log(
         db,

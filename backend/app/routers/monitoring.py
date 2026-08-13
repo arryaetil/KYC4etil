@@ -6,8 +6,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import (
-    AgentResult, Batch, BronKandidaat, Company, JaarverslagMonitoring,
-    PipelineRun,
+    Batch, BronKandidaat, Company, JaarverslagMonitoring, PipelineRun,
 )
 from ..pipeline.monitoring import run_monitoring_watchlist_background
 from ..research.urls import canonicaliseer_url
@@ -32,9 +31,7 @@ def _bewijsplek_per_company(
     jaarverslag op pagina 1 in plaats van bij het cijfer.
 
     Vergelijking gaat over de canonieke URL: de monitoring en de kandidaat
-    kunnen dezelfde bron met een andere querystring of trailing slash hebben
-    opgeslagen. AgentResult dient als terugval voor bronnen die vóór de
-    onderzoekswerkbank zijn vastgelegd en dus geen BronKandidaat hebben.
+    kunnen dezelfde bron met een andere querystring of trailing slash hebben.
     """
     if not bron_per_company:
         return {}
@@ -53,18 +50,6 @@ def _bewijsplek_per_company(
             gevonden[kandidaat.company_id] = (
                 kandidaat.bron_pagina, kandidaat.bewijsfragment,
             )
-
-    ontbreekt = [cid for cid in company_ids if cid not in gevonden]
-    if ontbreekt:
-        for resultaat in (db.query(AgentResult)
-                          .filter(AgentResult.company_id.in_(ontbreekt))
-                          .order_by(AgentResult.created_at)):
-            doel = canoniek.get(resultaat.company_id)
-            bron = canonicaliseer_url(resultaat.bron_url or "")
-            if doel and bron == doel and (resultaat.bron_pagina or resultaat.wp_context):
-                gevonden[resultaat.company_id] = (
-                    resultaat.bron_pagina, resultaat.wp_context,
-                )
 
     return gevonden
 
@@ -111,7 +96,6 @@ def monitoring_status(db: Session = Depends(get_db)):
     out = []
     for comp in companies:
         status = status_map.get(comp.id)
-        cand = comp.candidate
         pagina, fragment = bewijsplek.get(comp.id, (None, None))
         out.append({
             "company_id": comp.id, "naam": comp.naam, "gemeente": comp.gemeente,
@@ -126,8 +110,6 @@ def monitoring_status(db: Session = Depends(get_db)):
             "bron_status": "gevonden" if status and status.laatste_bron_url else "ontbreekt",
             "nieuwe_bevinding": comp.id in bevindingen,
             "fout": fouten_map.get(comp.id),
-            "wp_kandidaat": cand.wp_kandidaat if cand else None,
-            "confidence_label": cand.confidence_label if cand else None,
         })
 
     gecontroleerd = sum(1 for c in out if c["laatst_gecontroleerd_op"])

@@ -1,5 +1,5 @@
 """Autonome bronnenresearch als primaire batchworkflow."""
-from app.models import Batch, BronKandidaat, Candidate, Company, ResearchRun
+from app.models import Batch, BronKandidaat, Company, ResearchRun
 
 
 def _batch(db_session) -> tuple[Batch, Company, Company]:
@@ -13,17 +13,10 @@ def _batch(db_session) -> tuple[Batch, Company, Company]:
     return batch, eerste, tweede
 
 
-def test_companylijst_toont_laatste_research_en_legacy_vergelijking(
+def test_companylijst_toont_laatste_research(
     client, db_session,
 ):
     batch, company, _ = _batch(db_session)
-    legacy = Candidate(
-        batch_id=batch.id,
-        company_id=company.id,
-        wp_kandidaat=100,
-        confidence_score=0.8,
-        confidence_label="hoog",
-    )
     run = ResearchRun(
         batch_id=batch.id,
         company_id=company.id,
@@ -31,7 +24,7 @@ def test_companylijst_toont_laatste_research_en_legacy_vergelijking(
         status="completed",
         resultaat_status="review_nodig",
     )
-    db_session.add_all([legacy, run])
+    db_session.add(run)
     db_session.flush()
     db_session.add(BronKandidaat(
         research_run_id=run.id,
@@ -56,9 +49,7 @@ def test_companylijst_toont_laatste_research_en_legacy_vergelijking(
     assert item["research_status"] == "completed"
     assert item["research_top_wp"] == 110
     assert item["research_top_score"] == 0.91
-    assert item["legacy_wp"] == 100
-    assert item["verschil_abs"] == 10
-    assert item["vergelijking"] == "afwijkend"
+    assert "legacy_wp" not in item
 
 
 def test_batchstatus_telt_research_reviewwerk(client, db_session):

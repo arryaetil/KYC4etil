@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from app.providers import live
+from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, places, search, wp_extractie
 
 
 class _FakeResponse:
@@ -37,7 +37,7 @@ async def test_openai_extract_parseert_json(monkeypatch):
     import openai
     monkeypatch.setattr(openai, "AsyncOpenAI", _FakeOpenAI)
 
-    result = await live._llm_extract("Testbedrijf", "Markt 1", "Er werken 7 medewerkers.")
+    result = await llm._llm_extract("Testbedrijf", "Markt 1", "Er werken 7 medewerkers.")
 
     assert result["wp_gevonden"] == 7
     assert _FakeOpenAI.last_responses.kwargs["model"] == "gpt-test"
@@ -65,7 +65,7 @@ async def test_llm_extract_registreert_tokenverbruik(monkeypatch):
     monkeypatch.setattr(openai, "AsyncOpenAI", UsageOpenAI)
 
     usage.start_usage_tracking()
-    await live._llm_extract("Voorbeeld Zorg", "Adres 1", "47 medewerkers.")
+    await llm._llm_extract("Voorbeeld Zorg", "Adres 1", "47 medewerkers.")
 
     assert usage.get_usage_totals() == (120, 30)
 
@@ -113,7 +113,7 @@ async def test_openai_web_search_parseert_bronnen_en_citaties(monkeypatch):
     monkeypatch.setattr(live.settings, "openai_web_search_model", "gpt-test")
     monkeypatch.setattr(openai, "AsyncOpenAI", SearchOpenAI)
 
-    results = await live._openai_web_search("Example jaarverslag", 5)
+    results = await search._openai_web_search("Example jaarverslag", 5)
 
     assert [item["url"] for item in results] == [
         "https://example.test/jaarverslag.pdf",
@@ -142,9 +142,9 @@ async def test_openai_contact_fallback_negeert_bedrijvengids(monkeypatch):
             },
         ]
 
-    monkeypatch.setattr(live, "_openai_web_search", fake_search)
+    monkeypatch.setattr(search, "_openai_web_search", fake_search)
 
-    result = await live._openai_contact_fallback(
+    result = await places._openai_contact_fallback(
         "Okechamp B.V.", "Horst aan de Maas",
     )
 
@@ -164,11 +164,11 @@ async def test_web_search_contact_valt_terug_op_serper_als_duckduckgo_niets_geef
     async def fake_fetch_text(url):
         return "Testbedrijf Maastricht. Bel ons op 043-1234567 voor meer info."
 
-    monkeypatch.setattr(live, "_duckduckgo_search", fake_ddg)
-    monkeypatch.setattr(live, "_serper_search", fake_serper)
-    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(search, "_duckduckgo_search", fake_ddg)
+    monkeypatch.setattr(search, "_serper_search", fake_serper)
+    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
 
-    result = await live._web_search_contact("Testbedrijf", "Maastricht")
+    result = await places._web_search_contact("Testbedrijf", "Maastricht")
 
     assert result.website == "https://example.test"
     assert result.phone == "043-1234567"
@@ -183,16 +183,22 @@ async def test_web_search_contact_geeft_none_als_geen_zoekresultaten(monkeypatch
     async def fake_serper(query, max_results=6):
         return []
 
-    monkeypatch.setattr(live, "_duckduckgo_search", fake_ddg)
-    monkeypatch.setattr(live, "_serper_search", fake_serper)
+    monkeypatch.setattr(search, "_duckduckgo_search", fake_ddg)
+    monkeypatch.setattr(search, "_serper_search", fake_serper)
 
-    result = await live._web_search_contact("Testbedrijf", "Maastricht")
+    result = await places._web_search_contact("Testbedrijf", "Maastricht")
 
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_web_search_gebruikt_uitsluitend_serper(monkeypatch):
+    async def fake_duckduckgo(query, max_results=5):
+        return [
+            {"title": "Team", "url": "https://example.test/team?utm_source=ddg",
+             "snippet": "47 medewerkers", "bron": "duckduckgo"},
+        ]
+
     async def fake_serper(query, max_results=5):
         return [
             {"title": "Team", "url": "https://example.test/team",
@@ -201,15 +207,13 @@ async def test_web_search_gebruikt_uitsluitend_serper(monkeypatch):
              "snippet": "Example groeit", "bron": "serper"},
         ]
 
-    duckduckgo = AsyncMock(return_value=[])
-    monkeypatch.setattr(live, "_duckduckgo_search", duckduckgo)
-    monkeypatch.setattr(live, "_serper_search", fake_serper)
+    monkeypatch.setattr(search, "_duckduckgo_search", fake_duckduckgo)
+    monkeypatch.setattr(search, "_serper_search", fake_serper)
 
-    results = await live._web_search("Example medewerkers", max_results=5)
+    results = await search._web_search("Example medewerkers", max_results=5)
 
     assert len(results) == 2
     assert all(item["bron"] == "serper" for item in results)
-    duckduckgo.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -217,7 +221,7 @@ async def test_openai_web_search_is_standaard_hard_uitgeschakeld(monkeypatch):
     monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
     monkeypatch.setattr(live.settings, "openai_web_search_enabled", False)
 
-    assert await live._openai_web_search("Example jaarverslag") == []
+    assert await search._openai_web_search("Example jaarverslag") == []
 
 
 @pytest.mark.asyncio
@@ -233,7 +237,7 @@ async def test_places_lookup_valt_terug_op_web_search_bij_google_http_fout(monke
             return False
 
         async def post(self, *args, **kwargs):
-            request = httpx.Request("POST", live.PLACES_SEARCH_URL)
+            request = httpx.Request("POST", places.PLACES_SEARCH_URL)
             response = httpx.Response(400, request=request)
             raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
 
@@ -246,10 +250,10 @@ async def test_places_lookup_valt_terug_op_web_search_bij_google_http_fout(monke
         )
 
     monkeypatch.setattr(live.settings, "google_places_api_key", "ongeldige-key")
-    monkeypatch.setattr(live.httpx, "AsyncClient", FailingGoogleClient)
-    monkeypatch.setattr(live, "_web_search_contact", fake_web_search_contact)
+    monkeypatch.setattr(httpx, "AsyncClient", FailingGoogleClient)
+    monkeypatch.setattr(places, "_web_search_contact", fake_web_search_contact)
 
-    result = await live.LivePlacesProvider().lookup("Testbedrijf", "Maastricht")
+    result = await places.LivePlacesProvider().lookup("Testbedrijf", "Maastricht")
 
     assert result.website == "https://fallback.test"
     assert result.phone == "043-7654321"
@@ -273,10 +277,10 @@ async def test_places_zonder_website_is_geen_succesvolle_lookup(monkeypatch):
         )
 
     monkeypatch.setattr(live.settings, "google_places_api_key", "")
-    monkeypatch.setattr(live, "_serper_places", fake_serper_places)
-    monkeypatch.setattr(live, "_web_search_contact", fake_web_search_contact)
+    monkeypatch.setattr(search, "_serper_places", fake_serper_places)
+    monkeypatch.setattr(places, "_web_search_contact", fake_web_search_contact)
 
-    result = await live.LivePlacesProvider().lookup("Mondriaan", "Heerlen")
+    result = await places.LivePlacesProvider().lookup("Mondriaan", "Heerlen")
 
     assert result.website == "https://www.mondriaan.eu"
 
@@ -296,7 +300,7 @@ async def test_google_place_zonder_website_valt_terug_op_web_search(
             return False
 
         async def post(self, *args, **kwargs):
-            request = httpx.Request("POST", live.PLACES_SEARCH_URL)
+            request = httpx.Request("POST", places.PLACES_SEARCH_URL)
             return httpx.Response(
                 200,
                 request=request,
@@ -316,13 +320,12 @@ async def test_google_place_zonder_website_valt_terug_op_web_search(
         )
 
     monkeypatch.setattr(live.settings, "google_places_api_key", "test-key")
-    monkeypatch.setattr(live.httpx, "AsyncClient", GoogleWithoutWebsiteClient)
-    monkeypatch.setattr(live, "_serper_places", fake_serper_places)
-    monkeypatch.setattr(
-        live, "_web_search_contact", fake_web_search_contact,
+    monkeypatch.setattr(httpx, "AsyncClient", GoogleWithoutWebsiteClient)
+    monkeypatch.setattr(search, "_serper_places", fake_serper_places)
+    monkeypatch.setattr(places, "_web_search_contact", fake_web_search_contact,
     )
 
-    result = await live.LivePlacesProvider().lookup(
+    result = await places.LivePlacesProvider().lookup(
         "Okechamp B.V.", "Horst aan de Maas",
     )
 
@@ -353,10 +356,10 @@ async def test_web_search_contact_weigert_naamgenoot_buiten_gemeente(monkeypatch
             "https://www.mondriaan.eu": "Mondriaan, John F. Kennedylaan in Heerlen",
         }[url]
 
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
-    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
+    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
 
-    result = await live._web_search_contact("Mondriaan", "Heerlen")
+    result = await places._web_search_contact("Mondriaan", "Heerlen")
 
     assert result.website == "https://www.mondriaan.eu"
 
@@ -376,10 +379,10 @@ async def test_web_search_contact_accepteert_exact_merkdomein_bij_oude_gemeente(
     async def fake_fetch_text(url):
         return "OKECHAMP B.V. Oude Venloseweg 84, Velden"
 
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
-    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
+    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
 
-    result = await live._web_search_contact(
+    result = await places._web_search_contact(
         "Okechamp B.V.", "Horst aan de Maas",
     )
 
@@ -406,10 +409,10 @@ async def test_web_search_contact_herprobeert_zonder_foutieve_gemeente(
     async def fake_fetch_text(url):
         return "OKECHAMP B.V., Oude Venloseweg 84, Velden"
 
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
-    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
+    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
 
-    result = await live._web_search_contact(
+    result = await places._web_search_contact(
         "Okechamp B.V.", "Horst aan de Maas",
     )
 
@@ -445,7 +448,7 @@ async def test_openai_extract_parseert_wp_uitsplitsing(monkeypatch):
     import openai
     monkeypatch.setattr(openai, "AsyncOpenAI", _FakeUitsplitsingOpenAI)
 
-    result = await live._llm_extract("Testbedrijf", "Markt 1", "Er werken 100 medewerkers.")
+    result = await llm._llm_extract("Testbedrijf", "Markt 1", "Er werken 100 medewerkers.")
 
     assert result["man"] == 60
     assert result["vrouw"] == 40
@@ -487,11 +490,11 @@ async def test_verzamel_extra_media_bronnen_verzamelt_meerdere(monkeypatch):
 
     monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
     monkeypatch.setattr(live.settings, "extra_bronnen_aantal", 2)
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
-    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
-    monkeypatch.setattr(live, "_llm_extract", fake_llm_extract)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
+    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(llm, "_llm_extract", fake_llm_extract)
 
-    resultaat = await live.verzamel_extra_media_bronnen("Testbedrijf", "Maastricht")
+    resultaat = await wp_extractie.verzamel_extra_media_bronnen("Testbedrijf", "Maastricht")
 
     assert len(resultaat) == 2
     assert {r.wp_gevonden for r in resultaat} == {50, 60}
@@ -505,9 +508,9 @@ async def test_verzamel_extra_media_bronnen_sluit_bekende_urls_uit(monkeypatch):
 
     monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
     monkeypatch.setattr(live.settings, "extra_bronnen_aantal", 2)
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
 
-    resultaat = await live.verzamel_extra_media_bronnen(
+    resultaat = await wp_extractie.verzamel_extra_media_bronnen(
         "Testbedrijf", "Maastricht", uitsluiten={"https://example.test"},
     )
 
@@ -517,7 +520,7 @@ async def test_verzamel_extra_media_bronnen_sluit_bekende_urls_uit(monkeypatch):
 @pytest.mark.asyncio
 async def test_verzamel_extra_media_bronnen_uit_via_config(monkeypatch):
     monkeypatch.setattr(live.settings, "extra_bronnen_aantal", 0)
-    resultaat = await live.verzamel_extra_media_bronnen("Testbedrijf", "Maastricht")
+    resultaat = await wp_extractie.verzamel_extra_media_bronnen("Testbedrijf", "Maastricht")
     assert resultaat == []
 
 
@@ -536,9 +539,9 @@ async def test_zoek_jaarverslag_pdf_probeert_eerst_site_scoped_zoekopdracht(monk
         return [{"title": "Kwaliteitsverslag (fout document)", "url": "https://mondriaan.eu/kwaliteitsverslag.pdf",
                   "snippet": "", "bron": "serper"}]
 
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
 
-    resultaat = await live._zoek_jaarverslag_pdf(
+    resultaat = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
         "Mondriaan", 2026, website_url="https://www.mondriaan.eu/",
     )
 
@@ -554,9 +557,9 @@ async def test_zoek_jaarverslag_pdf_valt_terug_op_open_zoekopdracht_zonder_domei
         return [{"title": "Jaarverslag", "url": "https://example.test/jaarverslag.pdf",
                   "snippet": "", "bron": "serper"}]
 
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
 
-    resultaat = await live._zoek_jaarverslag_pdf(
+    resultaat = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
         "Testbedrijf", 2026, website_url="https://www.example.test/",
     )
 
@@ -571,11 +574,11 @@ async def test_zoek_jaarverslag_pdf_zonder_bekend_domein_zoekt_alleen_open(monke
         gedane_queries.append(query)
         return []
 
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
 
-    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+    monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
 
-    await live._zoek_jaarverslag_pdf("Testbedrijf", 2026, website_url=None)
+    await jaarverslag_zoeken._zoek_jaarverslag_pdf("Testbedrijf", 2026, website_url=None)
 
     # Zonder bekend domein mag er geen site:-scoped zoekopdracht worden gedaan.
     assert not any(q.startswith("site:") for q in gedane_queries)
@@ -587,18 +590,18 @@ def test_vind_paginanummer_vindt_juiste_pagina():
         (2, "In 2024 waren er 2294 medewerkers en vrijwilligers actief."),
         (3, "Financiële verantwoording."),
     ]
-    resultaat = live._vind_paginanummer(
+    resultaat = jaarverslag._vind_paginanummer(
         "In 2024 waren er 2294 medewerkers en vrijwilligers actief.", pagina_teksten,
     )
     assert resultaat == 2
 
 
 def test_vind_paginanummer_geeft_none_als_context_ontbreekt():
-    assert live._vind_paginanummer(None, [(1, "tekst")]) is None
+    assert jaarverslag._vind_paginanummer(None, [(1, "tekst")]) is None
 
 
 def test_vind_paginanummer_geeft_none_als_niet_gevonden():
-    assert live._vind_paginanummer("dit staat nergens in", [(1, "andere tekst")]) is None
+    assert jaarverslag._vind_paginanummer("dit staat nergens in", [(1, "andere tekst")]) is None
 
 
 @pytest.mark.asyncio
@@ -632,13 +635,13 @@ async def test_web_search_jaarverslag_wp_geeft_uitsplitsing_door(monkeypatch):
 
     monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
     monkeypatch.setattr(live.settings, "openai_model", "gpt-test")
-    monkeypatch.setattr(live, "_web_search", fake_web_search)
-    monkeypatch.setattr(live, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(search, "_web_search", fake_web_search)
+    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
 
     import openai
     monkeypatch.setattr(openai, "AsyncOpenAI", _FakeJaarverslagOpenAI)
 
-    result = await live._web_search_jaarverslag_wp("Testbedrijf", 2026)
+    result = await jaarverslag._web_search_jaarverslag_wp("Testbedrijf", 2026)
 
     assert result.bron_type == "jaarverslag"
     assert result.bron_url == "https://example.test/jaarverslag.pdf"
@@ -661,16 +664,14 @@ async def test_run_geeft_bron_url_door_als_pdf_gevonden_maar_geen_wp_geextraheer
     async def fake_run_with_pdf(self, naam, pdf_url):
         return None
 
-    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek_pdf)
-    monkeypatch.setattr(
-        live,
-        "_classificeer_jaarverslag_bron_identiteit",
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", fake_zoek_pdf)
+    monkeypatch.setattr(jaarverslag_validatie, "_classificeer_jaarverslag_bron_identiteit",
         AsyncMock(return_value=live.IdentityClass.EXACT_ENTITY),
     )
-    monkeypatch.setattr(live.LiveJaarverslagAgent, "run_with_pdf", fake_run_with_pdf)
+    monkeypatch.setattr(jaarverslag.LiveJaarverslagAgent, "run_with_pdf", fake_run_with_pdf)
     monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
 
-    result = await live.LiveJaarverslagAgent().run("Testbedrijf", 2026)
+    result = await jaarverslag.LiveJaarverslagAgent().run("Testbedrijf", 2026)
 
     assert result is not None
     assert result.bron_url == "https://example.test/jaarverslag-2025.pdf"
@@ -683,10 +684,10 @@ async def test_run_geeft_none_als_geen_pdf_gevonden(monkeypatch):
     async def fake_zoek_pdf(naam, jaar, website_url=None, uitgesloten=None):
         return None
 
-    monkeypatch.setattr(live, "_zoek_jaarverslag_pdf", fake_zoek_pdf)
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", fake_zoek_pdf)
     monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
 
-    result = await live.LiveJaarverslagAgent().run("Testbedrijf", 2026)
+    result = await jaarverslag.LiveJaarverslagAgent().run("Testbedrijf", 2026)
 
     assert result is None
 
@@ -696,7 +697,7 @@ async def test_parse_json_met_herstel_parseert_geldige_json_direct():
     """Geldige JSON wordt meteen geparsed, zonder hersteloproep (geen extra kosten)."""
     client = _FakeOpenAI(api_key="test-key")
 
-    resultaat = await live._parse_json_met_herstel(
+    resultaat = await llm._parse_json_met_herstel(
         client, "gpt-test", '{"wp_gevonden": 100, "context": "ctx"}',
     )
 
@@ -723,7 +724,7 @@ async def test_parse_json_met_herstel_valt_terug_op_hersteloproep(monkeypatch):
 
     client = _HerstelOpenAI(api_key="test-key")
 
-    resultaat = await live._parse_json_met_herstel(
+    resultaat = await llm._parse_json_met_herstel(
         client, "gpt-test", "Zeker, hier is het antwoord: {wp_gevonden: 42} (geen geldige json)",
     )
 
@@ -750,7 +751,7 @@ async def test_parse_json_met_herstel_geeft_none_als_herstel_ook_faalt():
 
     client = _NogSteedsFoutOpenAI(api_key="test-key")
 
-    resultaat = await live._parse_json_met_herstel(client, "gpt-test", "helemaal geen json")
+    resultaat = await llm._parse_json_met_herstel(client, "gpt-test", "helemaal geen json")
 
     assert resultaat is None
 
@@ -761,7 +762,7 @@ async def test_parse_json_met_herstel_geeft_none_als_herstel_ook_faalt():
 async def test_create_response_zet_temperatuur_op_de_configwaarde():
     """Zonder expliciete temperature draait elke call op de OpenAI-default 1.0;
     voor extractie en classificatie is dat onnodige niet-determinisme."""
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, places, search, wp_extractie
 
     gezien = {}
 
@@ -772,7 +773,7 @@ async def test_create_response_zet_temperatuur_op_de_configwaarde():
                 gezien.update(kwargs)
                 return SimpleNamespace(output_text="{}", usage=None)
 
-    await live._create_response(_Client(), model="gpt-4o-mini", input="x")
+    await llm._create_response(_Client(), model="gpt-4o-mini", input="x")
 
     assert gezien["temperature"] == live.settings.openai_temperature
     assert live.settings.openai_temperature == 0.0
@@ -780,7 +781,7 @@ async def test_create_response_zet_temperatuur_op_de_configwaarde():
 
 @pytest.mark.asyncio
 async def test_create_response_laat_expliciete_temperatuur_staan():
-    from app.providers import live
+    from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, places, search, wp_extractie
 
     gezien = {}
 
@@ -791,7 +792,7 @@ async def test_create_response_laat_expliciete_temperatuur_staan():
                 gezien.update(kwargs)
                 return SimpleNamespace(output_text="{}", usage=None)
 
-    await live._create_response(_Client(), model="gpt-4o-mini", input="x", temperature=0.7)
+    await llm._create_response(_Client(), model="gpt-4o-mini", input="x", temperature=0.7)
 
     assert gezien["temperature"] == 0.7
 
@@ -849,7 +850,7 @@ async def test_serper_zonder_quota_registreert_geen_kosten(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _FailingClient(403))
     usage.start_usage_tracking()
 
-    resultaten = await live._serper_search("Testbedrijf jaarverslag")
+    resultaten = await search._serper_search("Testbedrijf jaarverslag")
 
     assert resultaten == []
     assert "serper_search" not in usage.get_cost_summary()["providers"]
@@ -872,7 +873,7 @@ async def test_serper_succes_registreert_wel_kosten(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _OkClient())
     usage.start_usage_tracking()
 
-    resultaten = await live._serper_search("Testbedrijf")
+    resultaten = await search._serper_search("Testbedrijf")
 
     assert len(resultaten) == 1
     assert usage.get_cost_summary()["providers"]["serper_search"]["calls"] == 1
@@ -887,7 +888,7 @@ async def test_serper_quotafout_wordt_gelogd_als_waarschuwing(monkeypatch, caplo
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _FailingClient(403))
 
     with caplog.at_level("WARNING"):
-        await live._serper_search("Testbedrijf")
+        await search._serper_search("Testbedrijf")
 
     assert any("serper" in r.message.lower() for r in caplog.records)
     assert any("403" in r.message for r in caplog.records)
@@ -899,7 +900,7 @@ async def test_serper_places_quotafout_wordt_ook_gelogd(monkeypatch, caplog):
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _FailingClient(429))
 
     with caplog.at_level("WARNING"):
-        resultaat = await live._serper_places("Testbedrijf Weert")
+        resultaat = await search._serper_places("Testbedrijf Weert")
 
     assert resultaat is None
     assert any("serper" in r.message.lower() for r in caplog.records)
@@ -924,7 +925,7 @@ async def test_serper_zonder_tegoed_geeft_400_en_wordt_herkend(monkeypatch, capl
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _GeenTegoed())
 
     with caplog.at_level("WARNING"):
-        resultaten = await live._serper_search("Testbedrijf jaarverslag")
+        resultaten = await search._serper_search("Testbedrijf jaarverslag")
 
     assert resultaten == []
     meldingen = " ".join(r.message.lower() for r in caplog.records)
@@ -939,7 +940,7 @@ def test_verslagjaar_negeert_uploadpad_bij_afwijzen():
     jaar in de tekst het uploadjaar 2026 was. Het pad zegt niets over het
     verslagjaar; zonder jaar in titel of bestandsnaam mag het niet vetoën."""
     tekst = "Jaarverslag https://www.servatius.nl/media/2026/jaarverslag.pdf"
-    assert live._lijkt_jaarverslag(tekst, 2025)
+    assert jaarverslag_zoeken._lijkt_jaarverslag(tekst, 2025)
 
 
 def test_verslagjaar_accepteert_geen_verouderd_verslag_via_uploadpad():
@@ -947,20 +948,20 @@ def test_verslagjaar_accepteert_geen_verouderd_verslag_via_uploadpad():
     werd als verslagjaar 2024 geaccepteerd. Titel en bestandsnaam zijn leidend."""
     tekst = ("Jaarverslag 2017 "
              "https://heemwonen.nl/wp-content/uploads/2024/01/jaarverslag-hm-2017.pdf")
-    assert not live._lijkt_jaarverslag(tekst, 2024)
+    assert not jaarverslag_zoeken._lijkt_jaarverslag(tekst, 2024)
 
 
 def test_verslagjaar_uit_bestandsnaam_blijft_leidend():
     tekst = ("JAARVERANTWOORDING 2022 "
              "https://www.zorgboog.nl/wp-content/uploads/2025/11/Jaarverantwoording-2022.pdf")
-    assert not live._lijkt_jaarverslag(tekst, 2025)
-    assert live._lijkt_jaarverslag(tekst, 2022)
+    assert not jaarverslag_zoeken._lijkt_jaarverslag(tekst, 2025)
+    assert jaarverslag_zoeken._lijkt_jaarverslag(tekst, 2022)
 
 
 def test_verslagjaar_in_bestandsnaam_wordt_wel_gebruikt():
     tekst = "Jaarverslag https://example.nl/uploads/2026/03/jaarverslag-2025.pdf"
-    assert live._lijkt_jaarverslag(tekst, 2025)
-    assert not live._lijkt_jaarverslag(tekst, 2023)
+    assert jaarverslag_zoeken._lijkt_jaarverslag(tekst, 2025)
+    assert not jaarverslag_zoeken._lijkt_jaarverslag(tekst, 2023)
 
 
 # --- zoekopdracht mag niet verwateren ---
@@ -978,10 +979,10 @@ async def test_jaarverslagquery_is_beknopt_en_bevat_de_naam(monkeypatch):
         queries.append(query)
         return []
 
-    monkeypatch.setattr(live, "_web_search", vang)
-    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+    monkeypatch.setattr(search, "_web_search", vang)
+    monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
 
-    await live._zoek_jaarverslag_pdf("Stichting Pergamijn", 2026, website_url=None)
+    await jaarverslag_zoeken._zoek_jaarverslag_pdf("Stichting Pergamijn", 2026, website_url=None)
 
     # De eerste zoekopdracht is de bepalende; daarna volgt hooguit nog de
     # jaarstukken-ronde voor overheden.
@@ -1000,10 +1001,10 @@ async def test_site_scoped_query_blijft_ook_beknopt(monkeypatch):
         queries.append(query)
         return []
 
-    monkeypatch.setattr(live, "_web_search", vang)
-    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+    monkeypatch.setattr(search, "_web_search", vang)
+    monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
 
-    await live._zoek_jaarverslag_pdf("Servatius", 2026, website_url="https://www.servatius.nl/")
+    await jaarverslag_zoeken._zoek_jaarverslag_pdf("Servatius", 2026, website_url="https://www.servatius.nl/")
 
     assert queries[0].startswith("site:servatius.nl")
     for verwaterend in ("bestuursverslag", "jaarverantwoording", "2025", "2024"):
@@ -1015,16 +1016,16 @@ async def test_site_scoped_query_blijft_ook_beknopt(monkeypatch):
 def test_domein_valt_terug_op_hoofddomein_bij_subdomein():
     """Een jaarverslag staat op de hoofdsite, niet op de helpdesk of de
     vacaturesite. site:support.hollandcasino.nl levert per definitie niets op."""
-    assert live._domein_van_url("https://support.hollandcasino.nl/hc/nl/artikel") == "hollandcasino.nl"
-    assert live._domein_van_url("https://werkenbij.arriva.nl/vacatures") == "arriva.nl"
-    assert live._domein_van_url("https://shop.mitsubishi-motors.nl/") == "mitsubishi-motors.nl"
-    assert live._domein_van_url("https://nu.venlo.nl/nieuws") == "venlo.nl"
+    assert fetch._domein_van_url("https://support.hollandcasino.nl/hc/nl/artikel") == "hollandcasino.nl"
+    assert fetch._domein_van_url("https://werkenbij.arriva.nl/vacatures") == "arriva.nl"
+    assert fetch._domein_van_url("https://shop.mitsubishi-motors.nl/") == "mitsubishi-motors.nl"
+    assert fetch._domein_van_url("https://nu.venlo.nl/nieuws") == "venlo.nl"
 
 
 def test_domein_blijft_ongemoeid_zonder_subdomein():
-    assert live._domein_van_url("https://www.servatius.nl/") == "servatius.nl"
-    assert live._domein_van_url("https://ou.nl/onderwijs") == "ou.nl"
-    assert live._domein_van_url("https://www.sif-group.com/nl") == "sif-group.com"
+    assert fetch._domein_van_url("https://www.servatius.nl/") == "servatius.nl"
+    assert fetch._domein_van_url("https://ou.nl/onderwijs") == "ou.nl"
+    assert fetch._domein_van_url("https://www.sif-group.com/nl") == "sif-group.com"
 
 
 def test_gidsdomein_geeft_geen_domein_voor_site_scoping():
@@ -1036,7 +1037,7 @@ def test_gidsdomein_geeft_geen_domein_voor_site_scoping():
                  "https://www.zorgkiezer.nl/zorginstelling/x",
                  "https://eur-lex.europa.eu/legal-content/NL/TXT/",
                  "https://www.belastingadviseur-info.nl/newtone"):
-        assert live._domein_van_url(gids) is None, gids
+        assert fetch._domein_van_url(gids) is None, gids
 
 
 # --- documenttypen van overheden ---
@@ -1045,9 +1046,9 @@ def test_jaarstukken_telt_als_jaarverslag():
     """Gemeenten en provincies publiceren geen 'jaarverslag' maar jaarstukken en
     een programmarekening. Die stonden niet in de markers, dus werd de correcte
     'Jaarstukken 2024' van Gemeente Maastricht afgewezen."""
-    assert live._lijkt_jaarverslag("Jaarstukken 2024 Gemeente Maastricht", 2024)
-    assert live._lijkt_jaarverslag("Programmarekening 2024", 2024)
-    assert live._lijkt_jaarverslag("Programmaverantwoording 2024", 2024)
+    assert jaarverslag_zoeken._lijkt_jaarverslag("Jaarstukken 2024 Gemeente Maastricht", 2024)
+    assert jaarverslag_zoeken._lijkt_jaarverslag("Programmarekening 2024", 2024)
+    assert jaarverslag_zoeken._lijkt_jaarverslag("Programmaverantwoording 2024", 2024)
 
 
 def test_vth_jaarverslag_blijft_geweerd_ongeacht_schrijfwijze():
@@ -1055,7 +1056,7 @@ def test_vth_jaarverslag_blijft_geweerd_ongeacht_schrijfwijze():
     een deelrapport over vergunningen als jaarverslag van de gemeente doorging."""
     for schrijfwijze in ("VTH-jaarverslag 2024", "jaarverslag VTH 2024",
                          "VTH jaarverslag 2024", "jaarverslag_vth 2024"):
-        assert not live._lijkt_jaarverslag(schrijfwijze, 2024), schrijfwijze
+        assert not jaarverslag_zoeken._lijkt_jaarverslag(schrijfwijze, 2024), schrijfwijze
 
 
 @pytest.mark.asyncio
@@ -1070,10 +1071,10 @@ async def test_tweede_poging_met_jaarstukken_alleen_als_eerste_niets_geeft(monke
             return [{"title": "Jaarstukken 2025", "url": "https://maastricht.nl/jaarstukken-2025.pdf"}]
         return []
 
-    monkeypatch.setattr(live, "_web_search", vang)
-    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+    monkeypatch.setattr(search, "_web_search", vang)
+    monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
 
-    result = await live._zoek_jaarverslag_pdf("Gemeente Maastricht", 2026, website_url=None)
+    result = await jaarverslag_zoeken._zoek_jaarverslag_pdf("Gemeente Maastricht", 2026, website_url=None)
 
     assert result == "https://maastricht.nl/jaarstukken-2025.pdf"
     assert any("jaarstukken" in q for q in queries)
@@ -1087,10 +1088,10 @@ async def test_geen_tweede_poging_als_eerste_al_raak_is(monkeypatch):
         queries.append(query)
         return [{"title": "Jaarverslag 2025", "url": "https://x.test/jaarverslag-2025.pdf"}]
 
-    monkeypatch.setattr(live, "_web_search", vang)
-    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+    monkeypatch.setattr(search, "_web_search", vang)
+    monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
 
-    await live._zoek_jaarverslag_pdf("Bedrijf", 2026, website_url=None)
+    await jaarverslag_zoeken._zoek_jaarverslag_pdf("Bedrijf", 2026, website_url=None)
 
     assert not any("jaarstukken" in q for q in queries)
 
@@ -1106,13 +1107,13 @@ async def test_wp_zoekopdrachten_stapelen_geen_synoniemen(monkeypatch):
         queries.append(query)
         return []
 
-    monkeypatch.setattr(live, "_web_search", vang)
-    monkeypatch.setattr(live, "_openai_web_search", AsyncMock(return_value=[]))
+    monkeypatch.setattr(search, "_web_search", vang)
+    monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
     monkeypatch.setattr(live.settings, "extra_bronnen_aantal", 2)
 
-    await live._web_search_wp("Testbedrijf", "Weert")
-    await live._web_search_jaarverslag_wp("Testbedrijf", 2025)
-    await live.verzamel_extra_media_bronnen("Testbedrijf", "Weert", set())
+    await wp_extractie._web_search_wp("Testbedrijf", "Weert")
+    await jaarverslag._web_search_jaarverslag_wp("Testbedrijf", 2025)
+    await wp_extractie.verzamel_extra_media_bronnen("Testbedrijf", "Weert", set())
 
     assert queries, "geen zoekopdrachten uitgevoerd"
     synoniemen = {"medewerkers", "werknemers", "personeel", "headcount",

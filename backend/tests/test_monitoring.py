@@ -74,12 +74,11 @@ def test_check_company_jaarverslag_nieuw_gevonden():
         resultaat = asyncio.run(check_company_jaarverslag(db, company, 2026))
 
         assert resultaat is True
-        ar = db.query(AgentResult).filter_by(company_id=company.id).one()
-        assert ar.wp_gevonden == 138
-        assert ar.bron_type == "jaarverslag"
-
-        candidate = db.query(Candidate).filter_by(company_id=company.id).one()
-        assert candidate.wp_kandidaat == 138
+        bron = db.query(BronKandidaat).filter_by(company_id=company.id).one()
+        assert bron.wp_gevonden == 138
+        assert bron.brontype == "jaarverslag"
+        assert db.query(AgentResult).filter_by(company_id=company.id).count() == 0
+        assert db.query(Candidate).filter_by(company_id=company.id).count() == 0
 
         status = db.query(JaarverslagMonitoring).filter_by(company_id=company.id).one()
         assert status.laatste_bron_url == "https://www.okechamp.nl/jaarverslag-2025.pdf"
@@ -98,10 +97,8 @@ def test_check_company_jaarverslag_nieuw_gevonden():
         db.close()
 
 
-def test_check_company_jaarverslag_werkt_bestaande_candidate_bij():
-    """Een company kan al een candidate hebben (bijv. van een eerdere, volledige
-    pipeline-run) — een nieuw gevonden jaarverslag moet die bijwerken, niet dupliceren
-    (Candidate heeft een UniqueConstraint op company_id+batch_id)."""
+def test_check_company_jaarverslag_laat_legacy_candidate_ongemoeid():
+    """Monitoring schrijft alleen naar het canonieke bronnenmodel."""
     db = SessionLocal()
     try:
         company = _maak_company(db)
@@ -112,15 +109,14 @@ def test_check_company_jaarverslag_werkt_bestaande_candidate_bij():
         )
         db.add(oude_candidate)
         db.commit()
-        oude_candidate_id = oude_candidate.id
-
         resultaat = asyncio.run(check_company_jaarverslag(db, company, 2026))
 
         assert resultaat is True
         candidaten = db.query(Candidate).filter_by(company_id=company.id).all()
-        assert len(candidaten) == 1  # bijgewerkt, niet gedupliceerd
-        assert candidaten[0].id == oude_candidate_id  # zelfde rij
-        assert candidaten[0].wp_kandidaat == 138  # nieuwe waarde uit het jaarverslag
+        assert len(candidaten) == 1
+        assert candidaten[0].wp_kandidaat == 99
+        bron = db.query(BronKandidaat).filter_by(company_id=company.id).one()
+        assert bron.wp_gevonden == 138
     finally:
         db.query(Candidate).delete()
         db.query(AgentResult).delete()
@@ -141,8 +137,9 @@ def test_check_company_jaarverslag_geen_wijziging_tweede_keer():
 
         assert eerste is True
         assert tweede is False
-        assert db.query(AgentResult).filter_by(company_id=company.id).count() == 1
-        assert db.query(Candidate).filter_by(company_id=company.id).count() == 1
+        assert db.query(BronKandidaat).filter_by(company_id=company.id).count() == 1
+        assert db.query(AgentResult).filter_by(company_id=company.id).count() == 0
+        assert db.query(Candidate).filter_by(company_id=company.id).count() == 0
     finally:
         db.query(Candidate).delete()
         db.query(AgentResult).delete()
@@ -274,14 +271,11 @@ async def test_monitoring_verwerkt_nieuw_wp_bij_dezelfde_bron_url(
 
     assert await check_company_jaarverslag(db_session, company, 2026) is True
 
-    candidate = db_session.query(Candidate).filter_by(
-        company_id=company.id,
-    ).one()
     bron = db_session.query(BronKandidaat).filter_by(
         company_id=company.id,
     ).one()
-    assert candidate.wp_kandidaat == 11000
     assert bron.wp_gevonden == 11000
+    assert db_session.query(Candidate).filter_by(company_id=company.id).count() == 0
     run = db_session.query(PipelineRun).filter_by(
         company_id=company.id,
         stap="jaarverslag_monitoring",
@@ -574,13 +568,10 @@ async def test_monitoring_ruimt_ongeldige_legacy_baseline_op(
         company_id=company.id,
     ).one()
     assert status.laatste_bron_url is None
-    candidate = db_session.query(Candidate).filter_by(
+    legacy_candidate = db_session.query(Candidate).filter_by(
         company_id=company.id,
     ).one()
-    assert candidate.wp_kandidaat is None
-    assert candidate.gekozen_agent_result is None
-    assert candidate.confidence_label is None
-    assert "ingetrokken" in candidate.reviewer_signaal.lower()
+    assert legacy_candidate.wp_kandidaat == 999
 
 
 @pytest.mark.asyncio
@@ -755,12 +746,11 @@ async def test_monitoring_ruimt_wees_wp_zonder_statusbron_op(
         lambda: (None, None, Agent(), None),
     )
 
-    assert await check_company_jaarverslag(db_session, company, 2026) is True
+    assert await check_company_jaarverslag(db_session, company, 2026) is False
     candidate = db_session.query(Candidate).filter_by(
         company_id=company.id,
     ).one()
-    assert candidate.wp_kandidaat is None
-    assert candidate.gekozen_agent_result is None
+    assert candidate.wp_kandidaat == 321
 
 
 @pytest.mark.asyncio
