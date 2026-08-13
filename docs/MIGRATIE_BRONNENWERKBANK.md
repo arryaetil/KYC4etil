@@ -25,6 +25,9 @@ De canonieke gegevensstroom is:
   afwijkingsreden en volledigheid van de ingelezen bron.
 - Research-runs bewaren een klein SBI-gestuurd routeplan met eindstatus per
   route; DUO, DigiMV en team-/afspraakonderzoek zijn de eerste sectorroutes.
+- De DUO-route leest voor PO, VO en MBO rechtstreeks adres- en personeelsdata
+  in personen in. Instellingscodes en deelwaarden blijven als auditmetadata
+  bewaard; meerdere instellingen worden nooit stilzwijgend opgeteld.
 
 ## Veilig teruggaan
 

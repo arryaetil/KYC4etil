@@ -26,6 +26,7 @@ const IDENTITEIT = {
 const BEREIK = {
   vestiging: {label: "Deze vestiging", toon: "neutraal"},
   limburg: {label: "Limburg", toon: "neutraal"},
+  instelling: {label: "Onderwijsinstelling", toon: "aandacht"},
   nederland: {label: "Heel Nederland", toon: "aandacht"},
   concern: {label: "Hele concern", toon: "aandacht"},
   unknown: {label: "Onbekend bereik", toon: "aandacht"},
@@ -49,6 +50,9 @@ const WAARSCHUWING = {
   geen_concreet_wp_bewijs: {label: "Geen hard WP-bewijs", toon: "aandacht"},
   alleen_context_geen_wp_voorstel: {
     label: "Alleen context, geen WP-getal", toon: "aandacht",
+  },
+  duo_definitie_wijkt_af_van_wp: {
+    label: "DUO-definitie — controleer tegen WP", toon: "aandacht",
   },
 };
 
@@ -131,6 +135,15 @@ export function brontypeLabel(brontype) {
 export function menselijkeWaarde(candidate) {
   const vastgelegd = candidate?.validaties?.menselijke_waarde;
   if (vastgelegd?.label && vastgelegd?.actie) return vastgelegd;
+  if (candidate?.documenttype === "duo_personeel_personen") {
+    return {
+      rol: "duo_personeelsbron",
+      label: "DUO-personeelscijfer",
+      actie: candidate.wp_gevonden == null
+        ? "Controleer de deelinstellingen; DUO-waarden zijn bewust niet opgeteld."
+        : "Controleer of de DUO-instelling en het bereik overeenkomen met de registratievestiging.",
+    };
+  }
   if (
     candidate?.wp_gevonden != null
     && candidate?.eenheid === "werkzame_personen"

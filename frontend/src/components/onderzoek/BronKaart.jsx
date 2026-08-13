@@ -84,7 +84,13 @@ export function BronKaart({
         <Signaal {...bereik} />
         {candidate.wp_gevonden != null ? (
           <span className="text-xs tabular-nums text-slate-600">
-            {candidate.wp_gevonden} {candidate.eenheid === "fte" ? "FTE" : "WP"}
+            {candidate.wp_gevonden} {
+              candidate.eenheid === "fte"
+                ? "FTE"
+                : candidate.eenheid === "onderwijspersoneel_personen"
+                  ? "onderwijspersoneel"
+                  : "WP"
+            }
             {candidate.gecorrigeerd_wp != null
               ? ` → ${candidate.gecorrigeerd_wp} gecorrigeerd`
               : ""}

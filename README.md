@@ -121,6 +121,14 @@ kappers een team-/afspraakroute. Formele documenten zijn verplicht voor
 onderwijs en institutionele zorg, voorwaardelijk voor een onbekend profiel en
 niet geselecteerd voor herkenbare lokale praktijken.
 
+De DUO-route leest voor PO, VO en MBO rechtstreeks de actuele officiële
+adresbestanden en het jaarlijkse personeelsbestand in personen. Naam, gemeente
+en waar beschikbaar adres worden gekoppeld aan de instellingscode. Eén
+instellingscode levert een getal met expliciete DUO-eenheid en instellingsscope;
+waarden van meerdere instellingscodes worden bewust niet opgeteld. Downloads
+worden per applicatieproces hergebruikt. Serper blijft alleen het aanvullende
+zoekpad voor andere DUO-publicaties.
+
 Voor een fictieve organisatie `Voorbeeld Zorg Maastricht`, domein
 `voorbeeldzorg.nl`, verslagjaar 2025 ontstaan bijvoorbeeld:
 

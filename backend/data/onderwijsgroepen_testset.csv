@@ -1,0 +1,8 @@
+case_id,naam,gemeente,adres,sbi_code,verwachte_sector,verwachte_instellingscodes,verwachte_uitkomst,verwacht_aantal_2025,verwachte_scope,toelichting
+po-enkel,Rooms Katholieke Basisschool De Zjwiek,Leudal,Beeklaan 3 Roggel,85201,po,03HL,direct_getal,29,vestiging,Eén instelling en één vestiging
+vo-enkel,Praktijkonderwijs Roermond,Roermond,Heinsbergerweg 184 Roermond,85311,vo,23HH,direct_getal,35,vestiging,Eén VO-instelling en één vestiging
+vo-meervestiging,Mundium College,Roermond,Jagerstraat 6 Roermond,85202,vo,03XF,direct_getal,338,limburg,Instellingscijfer hoort bij meerdere Limburgse vestigingen
+vo-groep,Trevianum Scholengroep,Sittard-Geleen,Bradleystraat 25 Sittard,85202,vo,01MO|04DS|07BQ,context_meerdere_instellingen,,limburg,Groepsnaam raakt meerdere instellingscodes en mag niet blind worden opgeteld
+mbo-vista,VISTA College,Maastricht,Sibemaweg 20 Maastricht,85342,mbo,25PL,direct_getal,1370,instelling,MBO-personeel is per instelling en niet per afzonderlijke leslocatie
+mbo-gilde,Gilde Opleidingen,Roermond,Bredeweg 235 Roermond,85342,mbo,25LT,direct_getal,1023,instelling,MBO-personeel is per instelling en niet per afzonderlijke leslocatie
+ho-geen-bestand,Maastricht University,Maastricht,Minderbroedersberg 4 Maastricht,85421,ho,,geen_directe_duo_personeelsbron,,onbekend,DUO publiceert in deze route geen vergelijkbaar HO-personeelsbestand

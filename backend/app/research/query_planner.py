@@ -19,6 +19,7 @@ class QueryContext:
     gevraagd_jaar: int | None = None
     website_url: str | None = None
     gemeente: str | None = None
+    adres: str | None = None
     huidig_jaar: int | None = None
     sbi_code: str | None = None
     sbi_omschrijving: str | None = None

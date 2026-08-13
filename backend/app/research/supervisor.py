@@ -62,7 +62,16 @@ class ResearchSupervisor:
         seed_documents: list[SourceDocument] | None = None,
     ) -> ResearchOutcome:
         route_plan = plan_routes(context)
-        queries = plan_queries(context)[:self.max_queries]
+        seed_documents = seed_documents or []
+        directe_routes = {
+            document.research_route
+            for document in seed_documents
+            if document.research_route
+        }
+        queries = [
+            query for query in plan_queries(context)
+            if query.pad not in directe_routes
+        ][:self.max_queries]
         query_aantallen = Counter(query.pad for query in queries)
         search_results = await asyncio.gather(*[
             self.tools.search(query, self.max_results_per_query)
@@ -72,7 +81,6 @@ class ResearchSupervisor:
         fouten: list[str] = []
         zoekfouten_per_route: Counter = Counter()
         te_inspecteren: list[tuple[PlannedQuery, CombinedSearchResult]] = []
-        seed_documents = seed_documents or []
         geziene_urls: set[str] = {
             document.url for document in seed_documents
         }
@@ -117,13 +125,14 @@ class ResearchSupervisor:
         inspectiefouten_per_route: Counter = Counter()
         documenten_met_route: list[tuple[SourceDocument, str]] = []
         for document in seed_documents:
-            route = (
-                "document"
-                if document.documenttype in {
+            if document.research_route:
+                route = document.research_route
+            elif document.documenttype in {
                     "jaarverslag", "jaarrekening", "bestuursverslag", "pdf_document",
-                }
-                else "website"
-            )
+            }:
+                route = "document"
+            else:
+                route = "website"
             documenten_met_route.append((document, route))
         for (query, _), item in zip(te_inspecteren, inspected):
             if isinstance(item, BaseException):
@@ -193,7 +202,10 @@ class ResearchSupervisor:
             fout_count = (
                 zoekfouten_per_route[route] + inspectiefouten_per_route[route]
             )
-            if query_count == 0 and bruikbaar_per_route[route] == 0:
+            if bruikbaar_per_route[route]:
+                status = "afgerond"
+                statusreden = "bruikbare bronnen gevonden"
+            elif query_count == 0:
                 status = "overgeslagen"
                 statusreden = "niet uitgevoerd binnen het querybudget"
             elif query_count and zoekfouten_per_route[route] == query_count:
@@ -204,11 +216,7 @@ class ResearchSupervisor:
                 statusreden = "bronnen konden technisch niet worden verwerkt"
             else:
                 status = "afgerond"
-                statusreden = (
-                    "bruikbare bronnen gevonden"
-                    if bruikbaar_per_route[route]
-                    else "geen bruikbare bron gevonden"
-                )
+                statusreden = "geen bruikbare bron gevonden"
             route_statussen.append({
                 **gepland,
                 "status": status,

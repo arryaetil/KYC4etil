@@ -109,6 +109,7 @@ def _candidate_dict(
         "score_breakdown": candidate.score_breakdown,
         "validaties": candidate.validaties,
         "waarschuwingen": candidate.waarschuwingen,
+        "raw_data": candidate.raw_data,
         "status": candidate.status,
         "rang": candidate.rang,
         "review_reason_code": candidate.review_reason_code,

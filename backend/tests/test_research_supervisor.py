@@ -265,6 +265,43 @@ async def test_supervisor_neemt_gespecialiseerd_jaarverslag_als_seed_mee():
     assert outcome.diagnostiek["gelezen_documenten"] == 1
 
 
+@pytest.mark.asyncio
+async def test_supervisor_boekt_directe_duo_seed_op_duo_route():
+    seed = SourceDocument(
+        naam="Praktijkonderwijs Roermond",
+        company_website_url=None,
+        url="https://duo.nl/personeel-vo.xlsx",
+        titel="DUO onderwijspersoneel — Praktijkonderwijs Roermond",
+        brontype="overheid",
+        documenttype="duo_personeel_personen",
+        gevraagd_jaar=2025,
+        verslagjaar=2025,
+        wp_gevonden=35,
+        eenheid="onderwijspersoneel_personen",
+        bewijsfragment="DUO registreert 35 personen bij instellingscode 23HH.",
+        scope_class="vestiging",
+        research_route="duo",
+    )
+    outcome = await ResearchSupervisor(
+        EmptyResearchTools(), max_queries=6, max_pages=5,
+    ).run(
+        QueryContext(
+            naam="Praktijkonderwijs Roermond",
+            gevraagd_jaar=2025,
+            sbi_code="85311",
+        ),
+        seed_documents=[seed],
+    )
+
+    duo_status = next(
+        item for item in outcome.diagnostiek["route_statussen"]
+        if item["route"] == "duo"
+    )
+    assert duo_status["status"] == "afgerond"
+    assert duo_status["aantal_bronnen"] == 1
+    assert duo_status["aantal_queries"] == 0
+
+
 class TrageReviewTools(FakeResearchTools):
     """3 documenten (1 per pad), elk met een kunstmatige vertraging in
     inspect() zodat sequentieel vs. concurrent review meetbaar is."""

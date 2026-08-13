@@ -261,7 +261,7 @@ export function KandidatenPaneel({
               </select>
             </label>
             <label className="text-sm text-ink">
-              Klopt het gevonden WP?
+              Klopt het gevonden aantal?
               <select
                 value={wpOordeel}
                 onChange={(event) => {
@@ -285,7 +285,7 @@ export function KandidatenPaneel({
           {["te_laag", "te_hoog"].includes(wpOordeel) ? (
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="text-sm text-ink">
-                Correct WP-aantal
+                Correct aantal werkzame personen
                 <input
                   type="number"
                   min="0"

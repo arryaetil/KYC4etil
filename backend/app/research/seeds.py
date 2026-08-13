@@ -10,6 +10,7 @@ onafhankelijke strategieën hetzelfde te vinden."""
 import asyncio
 
 from .live_tools import LiveResearchTools
+from .duo import vind_duo_personeelsbron
 from .query_planner import QueryContext
 from .validation import SourceDocument
 
@@ -40,11 +41,16 @@ async def verzamel_seed_documenten(
         except Exception:
             return None
 
-    officiele_website, nieuwste_document = await asyncio.gather(
+    officiele_website, nieuwste_document, duo_bron = await asyncio.gather(
         _veilig(tools.find_officiele_website(context)),
         (
             _veilig(tools.find_nieuwste_officiele_document(context))
             if "document" in actieve_routes
+            else asyncio.sleep(0, result=None)
+        ),
+        (
+            _veilig(vind_duo_personeelsbron(context))
+            if "duo" in actieve_routes
             else asyncio.sleep(0, result=None)
         ),
     )
@@ -52,6 +58,8 @@ async def verzamel_seed_documenten(
         seed_documents.append(officiele_website)
     if nieuwste_document is not None:
         seed_documents.append(nieuwste_document)
+    if duo_bron is not None:
+        seed_documents.append(duo_bron)
 
     if (
         "document" in actieve_routes

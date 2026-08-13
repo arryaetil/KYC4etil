@@ -169,3 +169,30 @@ async def test_uitzonderingen_per_stap_worden_genegeerd():
     documenten = await verzamel_seed_documenten(tools, context)
 
     assert len(documenten) == 1
+
+
+@pytest.mark.asyncio
+async def test_duo_wordt_alleen_als_directe_seed_op_de_duo_route_opgehaald(
+    monkeypatch,
+):
+    duo_bron = _document(
+        url="https://duo.nl/personeel-vo.xlsx",
+        brontype="overheid",
+        documenttype="duo_personeel_personen",
+        eenheid="onderwijspersoneel_personen",
+        research_route="duo",
+    )
+
+    async def fake_duo(context):
+        return duo_bron
+
+    monkeypatch.setattr(
+        "app.research.seeds.vind_duo_personeelsbron", fake_duo,
+    )
+    documenten = await verzamel_seed_documenten(
+        TragereTraceerTools(),
+        QueryContext(naam="Voorbeeldschool", sbi_code="85311"),
+        {"website", "duo", "media"},
+    )
+
+    assert documenten == [duo_bron]

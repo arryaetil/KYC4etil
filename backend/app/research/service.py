@@ -57,6 +57,7 @@ def maak_research_run(
         gevraagd_jaar=gevraagd_jaar,
         website_url=company.website_url,
         gemeente=company.gemeente,
+        adres=company.adres,
         sbi_code=company.sbi_code,
         sbi_omschrijving=company.sbi_omschrijving,
     )
@@ -110,6 +111,7 @@ async def _run_research_run(run_id: str) -> None:
             company_id = company.id
             company_naam = company.naam
             company_gemeente = company.gemeente
+            company_adres = company.adres
             company_sbi_code = company.sbi_code
             company_sbi_omschrijving = company.sbi_omschrijving
             gevraagd_jaar = run.gevraagd_jaar
@@ -181,6 +183,7 @@ async def _run_research_run(run_id: str) -> None:
             gevraagd_jaar=gevraagd_jaar,
             website_url=website_url,
             gemeente=company_gemeente,
+            adres=company_adres,
             sbi_code=company_sbi_code,
             sbi_omschrijving=company_sbi_omschrijving,
         )
@@ -244,6 +247,7 @@ async def _run_research_run(run_id: str) -> None:
                     score_breakdown=ranked.score_breakdown,
                     validaties=ranked.validaties,
                     waarschuwingen=ranked.waarschuwingen,
+                    raw_data=document.raw_data,
                     status="voorgesteld",
                     rang=rang,
                 ))

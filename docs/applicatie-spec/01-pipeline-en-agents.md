@@ -12,6 +12,13 @@ per route `afgerond`, `overgeslagen` of `mislukt`, inclusief aantal queries en
 bruikbare bronnen. Een verplichte mislukte of wegens budget overgeslagen route
 maakt de inhoudelijke runstatus `technisch_onvolledig`.
 
+Voor onderwijs is DUO niet alleen een zoekquery. `research/duo.py` leest de
+officiële PO-, VO- en MBO-adresbestanden rechtstreeks in, koppelt naar een
+instellingscode en haalt uit het jaarlijkse personenbestand het gevraagde of
+laatst beschikbare jaar. Pydantic valideert de externe rijen. Een getal houdt
+de eenheid `onderwijspersoneel_personen`; bij meerdere instellingscodes worden
+alle deelwaarden bewaard maar niet opgeteld.
+
 Elke `Company` in een `Batch` doorloopt dezelfde reeks stappen, gecoördineerd in
 `backend/app/pipeline/runner.py` (functie `verwerk_company`). Elke stap logt zijn
 tijdsduur en status (`ok`/`skipped`/`error`) naar de `PipelineRun`-tabel.
