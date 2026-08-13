@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"         # hoofd-model; overschrijfbaar via OPENAI_MODEL
     openai_model_extraction: str = ""          # leeg = fallback naar openai_model
     openai_web_search_model: str = "gpt-4.1-mini"
+    openai_web_search_enabled: bool = False     # zoeken uitsluitend via Serper
     # Extractie en classificatie zijn oordeelstaken met één juist antwoord, geen
     # creatieve taken. De OpenAI-default van 1.0 levert daar alleen ruis op:
     # dezelfde bron kan tussen twee runs een ander oordeel krijgen.

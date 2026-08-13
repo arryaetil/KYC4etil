@@ -475,50 +475,16 @@ async def _serper_search(query: str, max_results: int = 5) -> list[dict[str, str
 
 
 async def _web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
-    """Combineer beschikbare zoekindexen en dedupliceer per canonieke URL.
-
-    DuckDuckGo en Serper vullen elkaar aan: een matig DuckDuckGo-resultaat mag
-    niet langer verhinderen dat sterkere Google/Serper-resultaten worden gezien.
-    Eén falende provider blokkeert de andere niet.
-    """
-    from ..research.urls import canonicaliseer_url
-
-    provider_results = await asyncio.gather(
-        _duckduckgo_search(query, max_results=max_results),
-        _serper_search(query, max_results=max_results),
-        return_exceptions=True,
-    )
-    combined: dict[str, dict] = {}
-    for results in provider_results:
-        if isinstance(results, BaseException):
-            continue
-        for result in results:
-            canonical = canonicaliseer_url(result["url"])
-            bestaand = combined.get(canonical)
-            bron = result.get("bron", "web_search")
-            if bestaand is None:
-                combined[canonical] = {
-                    **result,
-                    "bronnen": [bron],
-                    "snippets": [result.get("snippet", "")] if result.get("snippet") else [],
-                }
-                continue
-            if bron not in bestaand["bronnen"]:
-                bestaand["bronnen"].append(bron)
-            snippet = result.get("snippet", "")
-            if snippet and snippet not in bestaand["snippets"]:
-                bestaand["snippets"].append(snippet)
-            bestaand["bron"] = "+".join(bestaand["bronnen"])
-            bestaand["snippet"] = " ".join(bestaand["snippets"])
-    return list(combined.values())[:max_results]
+    """Zoek uitsluitend via Serper; geen scraping of hosted websearch."""
+    return await _serper_search(query, max_results=max_results)
 
 
 async def _openai_web_search(
     query: str,
     max_results: int = 5,
 ) -> list[dict[str, str]]:
-    """Begrensde hosted-searchfallback wanneer beide klassieke indexen leeg zijn."""
-    if not settings.openai_api_key:
+    """Optionele hosted-searchfallback; standaard en in productie uitgeschakeld."""
+    if not settings.openai_web_search_enabled or not settings.openai_api_key:
         return []
     from openai import AsyncOpenAI
 

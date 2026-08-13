@@ -109,6 +109,7 @@ async def test_openai_web_search_parseert_bronnen_en_citaties(monkeypatch):
 
     import openai
     monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "openai_web_search_enabled", True)
     monkeypatch.setattr(live.settings, "openai_web_search_model", "gpt-test")
     monkeypatch.setattr(openai, "AsyncOpenAI", SearchOpenAI)
 
@@ -191,13 +192,7 @@ async def test_web_search_contact_geeft_none_als_geen_zoekresultaten(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_web_search_combineert_duckduckgo_en_serper(monkeypatch):
-    async def fake_duckduckgo(query, max_results=5):
-        return [
-            {"title": "Team", "url": "https://example.test/team?utm_source=ddg",
-             "snippet": "47 medewerkers", "bron": "duckduckgo"},
-        ]
-
+async def test_web_search_gebruikt_uitsluitend_serper(monkeypatch):
     async def fake_serper(query, max_results=5):
         return [
             {"title": "Team", "url": "https://example.test/team",
@@ -206,14 +201,23 @@ async def test_web_search_combineert_duckduckgo_en_serper(monkeypatch):
              "snippet": "Example groeit", "bron": "serper"},
         ]
 
-    monkeypatch.setattr(live, "_duckduckgo_search", fake_duckduckgo)
+    duckduckgo = AsyncMock(return_value=[])
+    monkeypatch.setattr(live, "_duckduckgo_search", duckduckgo)
     monkeypatch.setattr(live, "_serper_search", fake_serper)
 
     results = await live._web_search("Example medewerkers", max_results=5)
 
     assert len(results) == 2
-    assert results[0]["bronnen"] == ["duckduckgo", "serper"]
-    assert results[0]["bron"] == "duckduckgo+serper"
+    assert all(item["bron"] == "serper" for item in results)
+    duckduckgo.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_openai_web_search_is_standaard_hard_uitgeschakeld(monkeypatch):
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "openai_web_search_enabled", False)
+
+    assert await live._openai_web_search("Example jaarverslag") == []
 
 
 @pytest.mark.asyncio
