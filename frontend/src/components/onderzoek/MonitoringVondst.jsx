@@ -72,12 +72,6 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
             >
               <Eye size={14} />Bewijs bekijken
             </button>
-            {company.wp_kandidaat != null ? (
-              <span className="text-xs tabular-nums text-slate-500">
-                {company.wp_kandidaat} WP in het register
-                {company.confidence_label ? ` · ${company.confidence_label}` : ""}
-              </span>
-            ) : null}
           </div>
         </>
       ) : (

@@ -45,7 +45,7 @@ def test_run_batch_start_standaard_autonome_research(monkeypatch):
 
     monkeypatch.setattr(
         batches_router,
-        "run_research_batch_background",
+        "_run_research_batch_background",
         fake_run_research_batch_background,
     )
 
@@ -66,7 +66,7 @@ def test_run_batch_start_standaard_autonome_research(monkeypatch):
     assert poll.json()["status"] == "running"
 
 
-def test_legacy_pipeline_blijft_expiet_beschikbaar(monkeypatch):
+def test_legacy_pipeline_is_niet_meer_beschikbaar():
     db = SessionLocal()
     try:
         batch = Batch(naam="legacy-test", jaar=2026, totaal=1)
@@ -76,18 +76,9 @@ def test_legacy_pipeline_blijft_expiet_beschikbaar(monkeypatch):
     finally:
         db.close()
 
-    scheduled = []
-    monkeypatch.setattr(
-        batches_router,
-        "run_batch_background",
-        lambda batch_id_arg: scheduled.append(batch_id_arg),
-    )
-
     response = client.post(
         f"/batches/{batch_id}/run-legacy",
         headers=_auth_headers(),
     )
 
-    assert response.status_code == 200
-    assert response.json()["workflow"] == "legacy_pipeline"
-    assert scheduled == [batch_id]
+    assert response.status_code == 404

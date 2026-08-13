@@ -1,9 +1,9 @@
-# Vestigingsregister: zo werkt het onderzoek
+# KYC4etil: bronnenwerkbank
 
 Deze repository helpt reviewers om openbare bronnen over Werkzame Personen (WP)
 te vinden en te controleren voor het Vestigingsregister van Provincie Limburg.
-De software zoekt, inspecteert en rangschikt het bewijs. Een reviewer kiest de
-bron en neemt de registerbeslissing.
+De software zoekt, inspecteert en rangschikt het bewijs. Een reviewer kiest of
+wijst een bron af en legt vast waarom. KYC4etil beheert zelf geen register.
 
 De uitleg volgt een researchrun van upload tot review. Installatie en deployment
 staan onderaan.
@@ -25,7 +25,7 @@ flowchart LR
 De code behandelt FTE en WP als verschillende eenheden. Een landelijk cijfer of
 concerncijfer kan context geven, maar geldt niet als vestigingswaarde. Bij twijfel
 over de organisatie wijst de validatie de bron af. Een researchrun levert daarom
-bronkandidaten op; de reviewer neemt de registerbeslissing.
+bronkandidaten op; de reviewer neemt uitsluitend de bronbeslissing.
 
 ## De actieve architectuur
 

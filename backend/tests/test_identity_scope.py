@@ -183,25 +183,3 @@ async def test_live_classifier_roept_llm_aan_bij_onbekend_domein():
     assert identity == "mismatch"
     assert scope == "unknown"
     combined_mock.assert_awaited_once()
-
-
-def test_company_detail_toont_identity_en_scope_classificatie(client, db_session):
-    batch = Batch(naam="test-batch", jaar=2026, totaal=1)
-    db_session.add(batch)
-    db_session.flush()
-    company = Company(batch_id=batch.id, naam="Testbedrijf")
-    db_session.add(company)
-    db_session.flush()
-    ar = AgentResult(
-        company_id=company.id, batch_id=batch.id, agent_type="website",
-        wp_gevonden=5, bron_type="website",
-        identity_class="exact_entity", scope_class="vestiging",
-    )
-    db_session.add(ar)
-    db_session.commit()
-
-    response = client.get(f"/batches/{batch.id}/companies/{company.id}")
-    assert response.status_code == 200
-    result = response.json()["agent_results"][0]
-    assert result["identity_class"] == "exact_entity"
-    assert result["scope_class"] == "vestiging"

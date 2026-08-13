@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, get_current_user_of_querytoken
 from ..database import get_db
 from ..models import (
-    AgentResult, BronKandidaat, Company, JaarverslagMonitoring, ResearchRun, User,
+    BronKandidaat, Company, JaarverslagMonitoring, ResearchRun, User,
 )
 from ..research.service import maak_research_run, run_research_run
 from ..providers.live import USER_AGENT
@@ -39,7 +39,23 @@ class StartResearchBody(BaseModel):
 
 class ReviewBody(BaseModel):
     beslissing: str
+    reason_code: str | None = Field(default=None, max_length=50)
     reden: str | None = Field(default=None, max_length=2000)
+
+
+ACCEPT_REASON = "juiste_bron_bruikbaar_bewijs"
+REJECT_REASONS = {
+    "verkeerde_organisatie",
+    "verkeerde_scope",
+    "verkeerd_jaar",
+    "fte_geen_wp",
+    "onvoldoende_bewijs",
+    "bron_niet_toegankelijk",
+    "duplicaat",
+    "sterkere_bron_beschikbaar",
+    "verouderde_bron",
+    "anders",
+}
 
 
 class ManualSourceBody(BaseModel):
@@ -77,6 +93,7 @@ def _candidate_dict(
         "waarschuwingen": candidate.waarschuwingen,
         "status": candidate.status,
         "rang": candidate.rang,
+        "review_reason_code": candidate.review_reason_code,
         "review_reason": candidate.review_reason,
         "gedeeld_met_vestigingen": gedeeld_met_vestigingen,
     }
@@ -152,9 +169,9 @@ def get_reviewer_statistics(
         str(item.rang) for item in accepted if item.rang is not None
     )
     reason_counts = Counter(
-        item.review_reason.strip()
+        item.review_reason_code
+        or (item.review_reason.strip() if item.review_reason else "onbekend")
         for item in rejected
-        if item.review_reason and item.review_reason.strip()
     )
     decision_count = len(reviewed)
     completed_runs = completed_runs_query.count()
@@ -277,6 +294,13 @@ def review_candidate(
 ):
     if body.beslissing not in {"accepteren", "afwijzen"}:
         raise HTTPException(422, "beslissing moet accepteren of afwijzen zijn")
+    if body.beslissing == "afwijzen":
+        if body.reason_code not in REJECT_REASONS:
+            raise HTTPException(422, "kies een geldige afwijsreden")
+        if body.reason_code == "anders" and not (body.reden or "").strip():
+            raise HTTPException(422, "een toelichting is verplicht bij 'anders'")
+    elif body.reason_code not in {None, ACCEPT_REASON}:
+        raise HTTPException(422, "deze reden hoort niet bij accepteren")
     candidate = db.get(BronKandidaat, candidate_id)
     if candidate is None:
         raise HTTPException(404, "bronkandidaat niet gevonden")
@@ -294,8 +318,10 @@ def review_candidate(
         for item in andere:
             item.status = "alternatief"
         candidate.status = "geaccepteerd"
+        candidate.review_reason_code = ACCEPT_REASON
     else:
         candidate.status = "afgewezen"
+        candidate.review_reason_code = body.reason_code
 
     candidate.reviewed_by = current_user.id
     candidate.reviewed_at = _now()
@@ -339,6 +365,7 @@ def add_manual_source(
         rang=1,
         reviewed_by=current_user.id,
         reviewed_at=_now(),
+        review_reason_code=ACCEPT_REASON,
         review_reason=body.reden,
         validaties={"handmatig_toegevoegd": True},
     )
@@ -363,8 +390,6 @@ def _is_bekende_bron(db: Session, url: str) -> bool:
     allowlist; die URL's komen aantoonbaar van het open web.
     """
     if db.query(BronKandidaat).filter_by(url=url).first() is not None:
-        return True
-    if db.query(AgentResult).filter_by(bron_url=url).first() is not None:
         return True
     return (
         db.query(JaarverslagMonitoring)

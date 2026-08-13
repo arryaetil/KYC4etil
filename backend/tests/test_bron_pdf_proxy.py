@@ -5,7 +5,7 @@ adres kunnen laten benaderen (server-side request forgery), inclusief interne
 diensten die van buitenaf onbereikbaar zijn.
 """
 from app.models import (
-    AgentResult, Batch, BronKandidaat, Company, JaarverslagMonitoring, ResearchRun,
+    Batch, BronKandidaat, Company, JaarverslagMonitoring, ResearchRun,
 )
 
 
@@ -112,48 +112,6 @@ def test_monitoringbron_passeert_de_allowlist_ook(client, db_session, monkeypatc
     kandidaat = _maak_kandidaat(db_session, "https://ander.nl/iets.pdf")
     db_session.add(JaarverslagMonitoring(
         company_id=kandidaat.company_id, laatste_bron_url=url,
-    ))
-    db_session.commit()
-
-    class FakeResponse:
-        headers = {"content-type": "application/pdf"}
-
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            yield b"%PDF"
-
-        async def aclose(self):
-            return None
-
-    class FakeClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def build_request(self, methode, doel, headers=None):
-            return object()
-
-        async def send(self, request, stream=False):
-            return FakeResponse()
-
-        async def aclose(self):
-            return None
-
-    import app.routers.research as research_router
-    monkeypatch.setattr(research_router.httpx, "AsyncClient", FakeClient)
-
-    assert client.get("/research/bron-pdf", params={"url": url}).status_code == 200
-
-
-def test_bestaand_agentresultaat_passeert_de_allowlist(client, db_session, monkeypatch):
-    url = "https://voorbeeldzorg.nl/jaarverslag-2025.pdf"
-    kandidaat = _maak_kandidaat(db_session, "https://ander.nl/iets.pdf")
-    db_session.add(AgentResult(
-        company_id=kandidaat.company_id,
-        batch_id=kandidaat.company.batch_id,
-        agent_type="jaarverslag",
-        bron_url=url,
     ))
     db_session.commit()
 

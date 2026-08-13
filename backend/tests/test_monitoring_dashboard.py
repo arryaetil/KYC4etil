@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 from io import BytesIO
 
 from app.models import (
-    BronKandidaat, Candidate, Company, JaarverslagMonitoring, PipelineRun,
-    ResearchRun, User,
+    BronKandidaat, Company, JaarverslagMonitoring, PipelineRun, ResearchRun,
+    User,
 )
 from app.research.urls import canonicaliseer_url
 from app.routers import monitoring as monitoring_router
@@ -51,9 +51,6 @@ def test_monitoring_status_met_actieve_watchlist(client, db_session):
     ))
     db_session.add(PipelineRun(batch_id=batch_id, company_id=gecontroleerd.id,
                                stap="jaarverslag_monitoring", status="new", duur_ms=100))
-    db_session.add(Candidate(company_id=gecontroleerd.id, batch_id=batch_id,
-                             wp_kandidaat=50, is_schatting=False,
-                             confidence_score=0.9, confidence_label="hoog", strategie="auto"))
     db_session.commit()
 
     response = client.get("/monitoring")
@@ -71,7 +68,7 @@ def test_monitoring_status_met_actieve_watchlist(client, db_session):
     per_naam = {c["naam"]: c for c in data["companies"]}
     assert per_naam["Gecontroleerde Organisatie"]["nieuwe_bevinding"] is True
     assert per_naam["Gecontroleerde Organisatie"]["bron_status"] == "gevonden"
-    assert per_naam["Gecontroleerde Organisatie"]["wp_kandidaat"] == 50
+    assert "wp_kandidaat" not in per_naam["Gecontroleerde Organisatie"]
     assert per_naam["Nog Niet Gecontroleerd"]["laatst_gecontroleerd_op"] is None
     assert per_naam["Nog Niet Gecontroleerd"]["bron_status"] == "ontbreekt"
 

@@ -202,6 +202,7 @@ class BronKandidaat(Base):
     rang: Mapped[int | None] = mapped_column(Integer)
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    review_reason_code: Mapped[str | None] = mapped_column(String(50))
     review_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 

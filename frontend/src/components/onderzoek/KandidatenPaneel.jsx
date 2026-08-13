@@ -15,6 +15,9 @@ export function KandidatenPaneel({
   const [bezig, setBezig] = useState(false);
   const [handmatigOpen, setHandmatigOpen] = useState(false);
   const [handmatigUrl, setHandmatigUrl] = useState("");
+  const [afwijzen, setAfwijzen] = useState(null);
+  const [afwijsreden, setAfwijsreden] = useState("");
+  const [toelichting, setToelichting] = useState("");
 
   const gevraagdJaar = batchJaar ? batchJaar - 1 : null;
 
@@ -68,14 +71,17 @@ export function KandidatenPaneel({
 
   // `bezig` voorkomt dat een dubbelklik twee beoordelingen verstuurt; dat racet
   // met de demotie-logica in de backend.
-  async function beoordeel(candidate, beslissing) {
+  async function beoordeel(candidate, beslissing, reasonCode = null, reden = null) {
     if (bezig) return;
     setBezig(true);
     setError("");
     try {
-      await api.reviewResearchCandidate(candidate.id, beslissing);
+      await api.reviewResearchCandidate(candidate.id, beslissing, reasonCode, reden);
       await laadKandidaten();
       onGewijzigd?.();
+      setAfwijzen(null);
+      setAfwijsreden("");
+      setToelichting("");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -126,7 +132,7 @@ export function KandidatenPaneel({
               bezig={bezig}
               onBekijk={onSelecteerBron}
               onAccepteer={(item) => beoordeel(item, "accepteren")}
-              onWijsAf={(item) => beoordeel(item, "afwijzen")}
+              onWijsAf={setAfwijzen}
             />
           ))}
         </div>
@@ -179,6 +185,64 @@ export function KandidatenPaneel({
           >
             {bezig ? "Bezig…" : "Toevoegen"}
           </button>
+        </form>
+      ) : null}
+
+      {afwijzen ? (
+        <form
+          className="mt-4 rounded-md border border-line bg-panel p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            beoordeel(afwijzen, "afwijzen", afwijsreden, toelichting || null);
+          }}
+        >
+          <label className="block text-sm font-medium text-ink" htmlFor="afwijsreden">
+            Waarom wijs je deze bron af?
+          </label>
+          <select
+            id="afwijsreden"
+            required
+            value={afwijsreden}
+            onChange={(event) => setAfwijsreden(event.target.value)}
+            className="focus-ring mt-2 h-9 w-full rounded-md border border-line bg-white px-2 text-sm"
+          >
+            <option value="">Kies een reden</option>
+            <option value="verkeerde_organisatie">Verkeerde organisatie</option>
+            <option value="verkeerde_scope">Verkeerde scope</option>
+            <option value="verkeerd_jaar">Verkeerd jaar</option>
+            <option value="fte_geen_wp">FTE, geen WP</option>
+            <option value="onvoldoende_bewijs">Onvoldoende bewijs</option>
+            <option value="bron_niet_toegankelijk">Bron niet toegankelijk</option>
+            <option value="duplicaat">Duplicaat</option>
+            <option value="sterkere_bron_beschikbaar">Sterkere bron beschikbaar</option>
+            <option value="verouderde_bron">Verouderde bron</option>
+            <option value="anders">Anders</option>
+          </select>
+          {afwijsreden === "anders" ? (
+            <textarea
+              required
+              value={toelichting}
+              onChange={(event) => setToelichting(event.target.value)}
+              placeholder="Licht kort toe"
+              className="focus-ring mt-2 min-h-20 w-full rounded-md border border-line bg-white p-2 text-sm"
+            />
+          ) : null}
+          <div className="mt-3 flex gap-2">
+            <button
+              type="submit"
+              disabled={bezig || !afwijsreden}
+              className="focus-ring rounded-md bg-ink px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            >
+              Bron afwijzen
+            </button>
+            <button
+              type="button"
+              onClick={() => setAfwijzen(null)}
+              className="focus-ring rounded-md px-3 py-1.5 text-sm text-slate-500"
+            >
+              Annuleren
+            </button>
+          </div>
         </form>
       ) : null}
 
