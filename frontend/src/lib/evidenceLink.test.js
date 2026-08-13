@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {bewijsUrl} from "./evidenceLink.js";
+import {bekijkBewijs, bewijsUrl} from "./evidenceLink.js";
 
 describe("bewijsUrl", () => {
   it("geeft niets terug zonder bron", () => {
@@ -66,5 +66,37 @@ describe("bewijsUrl", () => {
     const resultaat = bewijsUrl({url: "https://example.test/over-ons"});
     expect(resultaat.soort).toBe("html");
     expect(resultaat.url).toBe("https://example.test/over-ons");
+  });
+});
+
+describe("bekijkBewijs", () => {
+  it("houdt een pdf in de werkbank", () => {
+    const getoond = [];
+    const geopend = [];
+    const kandidaat = {url: "https://example.test/verslag.pdf"};
+
+    expect(bekijkBewijs(kandidaat, (item) => getoond.push(item), (...args) => geopend.push(args)))
+      .toBe("pdf");
+    expect(getoond).toEqual([kandidaat]);
+    expect(geopend).toEqual([]);
+  });
+
+  it("opent een webpagina extern op de bewijsplek", () => {
+    const getoond = [];
+    const geopend = [];
+    const kandidaat = {
+      url: "https://example.test/team",
+      bewijsfragment: "Ons team bestaat uit 12 medewerkers",
+    };
+
+    expect(bekijkBewijs(kandidaat, (item) => getoond.push(item), (...args) => geopend.push(args)))
+      .toBe("extern");
+    expect(getoond).toEqual([]);
+    expect(geopend).toHaveLength(1);
+    expect(geopend[0]).toEqual([
+      expect.stringContaining("#:~:text="),
+      "_blank",
+      "noopener,noreferrer",
+    ]);
   });
 });

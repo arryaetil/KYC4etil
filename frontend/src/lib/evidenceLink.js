@@ -70,3 +70,14 @@ export function bewijsUrl(candidate, token) {
     kanInbedden: false,
   };
 }
+
+/** PDF blijft in de werkbank; een webpagina opent direct op de bewijsplek. */
+export function bekijkBewijs(candidate, toonInWerkbank, openNieuwTabblad = window.open) {
+  const bewijs = bewijsUrl(candidate);
+  if (bewijs.kanInbedden || !bewijs.url) {
+    toonInWerkbank(candidate);
+    return bewijs.soort;
+  }
+  openNieuwTabblad(bewijs.url, "_blank", "noopener,noreferrer");
+  return "extern";
+}

@@ -7,6 +7,7 @@ import {KandidatenPaneel} from "../components/onderzoek/KandidatenPaneel.jsx";
 import {MonitoringVondst} from "../components/onderzoek/MonitoringVondst.jsx";
 import {BewijsPaneel} from "../components/onderzoek/BewijsPaneel.jsx";
 import {monitoringStatus} from "../lib/onderzoekLabels.js";
+import {bekijkBewijs} from "../lib/evidenceLink.js";
 import {useIsXl} from "../lib/useBreakpoint.js";
 
 /**
@@ -118,7 +119,7 @@ export function MonitoringView({api}) {
                 key={`vondst-${geselecteerd.company_id}`}
                 company={geselecteerd}
                 geselecteerdeBronId={geselecteerdeBron?.id}
-                onSelecteerBron={setGeselecteerdeBron}
+                onSelecteerBron={(candidate) => bekijkBewijs(candidate, setGeselecteerdeBron)}
               />
               <KandidatenPaneel
                 key={geselecteerd.company_id}
@@ -126,7 +127,7 @@ export function MonitoringView({api}) {
                 company={geselecteerd}
                 batchJaar={batch.jaar}
                 geselecteerdeBronId={geselecteerdeBron?.id}
-                onSelecteerBron={setGeselecteerdeBron}
+                onSelecteerBron={(candidate) => bekijkBewijs(candidate, setGeselecteerdeBron)}
                 onGewijzigd={() => load().catch(() => {})}
               />
             </>
