@@ -1,5 +1,10 @@
 # Vestigingsregister AI Platform — Applicatie-spec
 
+> **Actieve stand sinds 13 augustus 2026:** KYC4etil is een bronnenwerkbank.
+> De canonieke stroom is `User → Batch → Company → ResearchRun → BronKandidaat
+> → reviewbeslissing`. De oude `Candidate`-, chat-, bellijst- en registerstroom
+> hieronder is alleen historische context en is niet meer actief.
+
 > Volledige beschrijving van hoe de applicatie op dit moment werkt: doel, architectuur,
 > authenticatie, pipeline, externe diensten, datamodel, scoring, review-UI en deployment.
 > Voor de historische bouwredenen en oorspronkelijke requirements blijft
@@ -33,9 +38,14 @@ resultaat aan een menselijke reviewer met een expliciete zekerheidsinschatting �
 beslist, het systeem doet het voorwerk.
 
 **Belangrijk ontwerpprincipe:** de AI-pipeline levert nooit rechtstreeks data aan het
-register. Alles loopt via een reviewer-wachtrij (`Candidate`-status, chat-antwoorden,
-bellijst-doorvoer) — een reviewer keurt expliciet goed, corrigeert, of stuurt door naar
-telefonische verificatie.
+register. Een reviewer beoordeelt bronnen en de kwaliteit van het geëxtraheerde WP.
+Het oorspronkelijke gevonden aantal blijft bij een menselijke correctie altijd bewaard.
+
+De actieve researchservice maakt vóór iedere run een klein routeplan op basis van
+de beschikbare SBI-context. Website en media zijn de basis; DUO, DigiMV,
+team-/afspraakonderzoek en formele documenten worden alleen toegevoegd wanneer
+het organisatieprofiel daar aanleiding toe geeft. Iedere route krijgt een eigen
+eindstatus, zodat `niet_gevonden` onderscheiden blijft van `technisch_onvolledig`.
 
 ## Architectuur op hoofdlijnen
 

@@ -1,5 +1,17 @@
 # Pipeline en agents
 
+> **Actieve bronnenwerkbank:** de hoofdregie staat in
+> `backend/app/research/service.py` en `supervisor.py`, niet meer in de historische
+> `pipeline/runner.py`. De supervisor gebruikt gewone async Python. LangGraph
+> blijft beperkt tot adaptief website- en jaarverslagonderzoek.
+
+Voor iedere organisatie maakt `query_planner.py` een deterministisch routeplan.
+De basis bestaat uit website en media. SBI-profielen voegen waar relevant DUO,
+DigiMV, team-/afspraakonderzoek of formele documenten toe. De supervisor bewaart
+per route `afgerond`, `overgeslagen` of `mislukt`, inclusief aantal queries en
+bruikbare bronnen. Een verplichte mislukte of wegens budget overgeslagen route
+maakt de inhoudelijke runstatus `technisch_onvolledig`.
+
 Elke `Company` in een `Batch` doorloopt dezelfde reeks stappen, gecoördineerd in
 `backend/app/pipeline/runner.py` (functie `verwerk_company`). Elke stap logt zijn
 tijdsduur en status (`ok`/`skipped`/`error`) naar de `PipelineRun`-tabel.

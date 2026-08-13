@@ -20,6 +20,83 @@ class QueryContext:
     website_url: str | None = None
     gemeente: str | None = None
     huidig_jaar: int | None = None
+    sbi_code: str | None = None
+    sbi_omschrijving: str | None = None
+
+
+def plan_routes(context: QueryContext) -> list[dict]:
+    """Kleine beslistabel voor redelijke onderzoeksroutes.
+
+    Dit is bewust geen AI-planner. SBI bepaalt alleen de drie profielen waar
+    nu een concrete sectorspecifieke route voor bekend is; onbekende bedrijven
+    houden het bestaande website/document/media-plan.
+    """
+    sbi = (context.sbi_code or "").replace(".", "").strip()
+    omschrijving = (context.sbi_omschrijving or "").lower()
+    onderwijs = sbi.startswith("85") or "onderwijs" in omschrijving
+    zorg = sbi.startswith(("86", "87", "88")) or any(
+        woord in omschrijving
+        for woord in ("zorg", "ziekenhuis", "verpleging", "welzijn")
+    )
+    lokale_zorgpraktijk = sbi.startswith(("862", "8691", "8692")) or any(
+        woord in omschrijving
+        for woord in ("tandarts", "huisarts", "fysiotherap", "verloskund")
+    )
+    institutionele_zorg = zorg and not lokale_zorgpraktijk
+    lokale_teamdienst = lokale_zorgpraktijk or sbi.startswith("9602") or any(
+        woord in omschrijving
+        for woord in ("kapper", "haarverzorging", "schoonheidsverzorging")
+    )
+
+    routes = [{
+        "route": "website",
+        "verplicht": True,
+        "status": "wachtend",
+        "reden": "officiële website en organisatiepagina's",
+    }]
+    if not lokale_teamdienst:
+        routes.append({
+            "route": "document",
+            "verplicht": onderwijs or institutionele_zorg,
+            "status": "wachtend",
+            "reden": (
+                "formele documenten zijn een kernbron voor dit profiel"
+                if onderwijs or institutionele_zorg
+                else "formele documenten onderzoeken wanneer beschikbaar"
+            ),
+        })
+    if onderwijs:
+        routes.append({
+            "route": "duo",
+            "verplicht": True,
+            "status": "wachtend",
+            "reden": "DUO publiceert instellings- en personeelsgegevens",
+        })
+    if zorg:
+        routes.append({
+            "route": "digimv",
+            "verplicht": institutionele_zorg,
+            "status": "wachtend",
+            "reden": (
+                "DigiMV is een kernbron voor institutionele zorg"
+                if institutionele_zorg
+                else "DigiMV onderzoeken wanneer de lokale zorgpraktijk erin voorkomt"
+            ),
+        })
+    if lokale_teamdienst:
+        routes.append({
+            "route": "team_afspraak",
+            "verplicht": True,
+            "status": "wachtend",
+            "reden": "team- en afspraakmodules tonen vaak de werkzame personen",
+        })
+    routes.append({
+        "route": "media",
+        "verplicht": True,
+        "status": "wachtend",
+        "reden": "aanvullende openbare context en personeelsinformatie",
+    })
+    return routes
 
 
 def _domein(url: str | None) -> str | None:
@@ -62,6 +139,7 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
     domein = _domein(context.website_url)
     huidig_jaar = context.huidig_jaar or datetime.now(timezone.utc).year
     queries: list[PlannedQuery] = []
+    actieve_routes = {item["route"] for item in plan_routes(context)}
 
     if domein:
         queries.extend([
@@ -77,6 +155,35 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
             ),
         ])
 
+    # Sectorspecifieke routes komen vóór de bredere documentqueries, zodat
+    # iedere verplichte route ook bij een klein querybudget minstens één kans
+    # krijgt.
+    if "duo" in actieve_routes:
+        queries.append(PlannedQuery(
+            "duo",
+            f"site:duo.nl/open_onderwijsdata {naam} personeel",
+            "DUO-instellings- en personeelsgegevens",
+        ))
+    if "digimv" in actieve_routes:
+        queries.append(PlannedQuery(
+            "digimv",
+            f"site:digimv13.desan.nl {naam}",
+            "DigiMV-archief en zorgverantwoording",
+        ))
+    if "team_afspraak" in actieve_routes:
+        if domein:
+            queries.append(PlannedQuery(
+                "team_afspraak",
+                f"site:{domein} team medewerkers afspraak boeken",
+                "team- of afspraakmodule op de officiële website",
+            ))
+        else:
+            queries.append(PlannedQuery(
+                "team_afspraak",
+                f"{naam}{gemeente} team afspraak medewerker kiezen",
+                "team- of afspraakmodule vinden",
+            ))
+
     queries.append(PlannedQuery(
         "website",
         f"{naam}{gemeente} medewerkers team",
@@ -90,7 +197,7 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
             "openbare bronnen onder de naam zonder administratieve code",
         ))
 
-    if context.gevraagd_jaar:
+    if context.gevraagd_jaar and "document" in actieve_routes:
         jaar = context.gevraagd_jaar
         publicatiejaar = jaar + 1
         if domein:
@@ -130,20 +237,32 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
                 "document gepubliceerd in jaar N+1 over verslagjaar N",
             ),
         ])
-    queries.extend([
-        PlannedQuery(
-            "media",
-            f"{naam} nieuws medewerkers {huidig_jaar}",
-            "recente media over organisatieomvang of veranderingen",
-        ),
-        PlannedQuery(
-            "media",
-            f"{naam} reorganisatie overname",
-            "recente gebeurtenissen die officiële cijfers kunnen hebben gewijzigd",
-        ),
-    ])
+    if "media" in actieve_routes:
+        queries.extend([
+            PlannedQuery(
+                "media",
+                f"{naam} nieuws medewerkers {huidig_jaar}",
+                "recente media over organisatieomvang of veranderingen",
+            ),
+            PlannedQuery(
+                "media",
+                f"{naam} reorganisatie overname",
+                "recente gebeurtenissen die officiële cijfers kunnen hebben gewijzigd",
+            ),
+        ])
 
     uniek: dict[str, PlannedQuery] = {}
     for query in queries:
         uniek.setdefault(query.query, query)
-    return list(uniek.values())
+    per_route: dict[str, list[PlannedQuery]] = {}
+    for query in uniek.values():
+        per_route.setdefault(query.pad, []).append(query)
+    routevolgorde = [item["route"] for item in plan_routes(context)]
+    geordend: list[PlannedQuery] = []
+    grootste_route = max((len(items) for items in per_route.values()), default=0)
+    for index in range(grootste_route):
+        for route in routevolgorde:
+            routequeries = per_route.get(route, [])
+            if index < len(routequeries):
+                geordend.append(routequeries[index])
+    return geordend

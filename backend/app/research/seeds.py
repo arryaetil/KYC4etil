@@ -29,8 +29,10 @@ def _is_volledige_match(document: SourceDocument | None, gevraagd_jaar: int | No
 async def verzamel_seed_documenten(
     tools: LiveResearchTools,
     context: QueryContext,
+    actieve_routes: set[str] | None = None,
 ) -> list[SourceDocument]:
     seed_documents: list[SourceDocument] = []
+    actieve_routes = actieve_routes or {"website", "document"}
 
     async def _veilig(coroutine):
         try:
@@ -40,14 +42,21 @@ async def verzamel_seed_documenten(
 
     officiele_website, nieuwste_document = await asyncio.gather(
         _veilig(tools.find_officiele_website(context)),
-        _veilig(tools.find_nieuwste_officiele_document(context)),
+        (
+            _veilig(tools.find_nieuwste_officiele_document(context))
+            if "document" in actieve_routes
+            else asyncio.sleep(0, result=None)
+        ),
     )
     if officiele_website is not None:
         seed_documents.append(officiele_website)
     if nieuwste_document is not None:
         seed_documents.append(nieuwste_document)
 
-    if not _is_volledige_match(nieuwste_document, context.gevraagd_jaar):
+    if (
+        "document" in actieve_routes
+        and not _is_volledige_match(nieuwste_document, context.gevraagd_jaar)
+    ):
         jaarverslag = await _veilig(tools.find_jaarverslag(context))
         if jaarverslag is not None:
             seed_documents.append(jaarverslag)

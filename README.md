@@ -63,9 +63,7 @@ flowchart LR
     C1 --> C2["Organisatie 2"]
     C2 --> C3["Organisatie 3"]
 
-    C1 -.->|intern parallel| W["website"]
-    C1 -.-> D["documenten"]
-    C1 -.-> M["media"]
+    C1 -.->|intern parallel| W["gekozen onderzoeksroutes"]
 ```
 
 Voor iedere organisatie ontstaat een `ResearchRun`. Bij registerjaar 2026 zoekt
@@ -80,6 +78,7 @@ De researchservice verzamelt:
 - gemeente;
 - gevraagd verslagjaar;
 - bekende officiële website.
+- SBI-code en SBI-omschrijving voor de minimale routeselectie.
 
 De website komt eerst uit `Company.website_url`, daarna uit `Enrichment`. Alleen
 in live-modus probeert `LivePlacesProvider` een ontbrekende website op te lossen.
@@ -91,7 +90,8 @@ daardoor niet minutenlang een SQLAlchemy-sessie bezet.
 ## 3. Officiële bronnen gaan voor
 
 `research/seeds.py` zoekt eerst naar bronnen die waarschijnlijk direct bruikbaar
-zijn:
+zijn. Formele documentseeds worden alleen gestart als de documentroute voor het
+organisatieprofiel is geselecteerd:
 
 ```mermaid
 flowchart TD
@@ -114,8 +114,12 @@ zoals `/jaarverslag`, `/jaarverslagen` en `/publicaties`.
 
 ## 4. De queryplanner maakt zoekopdrachten
 
-`research/query_planner.py` maakt maximaal twaalf korte, deterministische
-queries, verdeeld over websites, documenten en recente media.
+`research/query_planner.py` maakt eerst een klein, deterministisch routeplan en
+daarna maximaal twaalf korte queries. Iedereen krijgt website- en mediaonderzoek.
+Onderwijs krijgt een DUO-route, zorg een DigiMV-route en lokale praktijken of
+kappers een team-/afspraakroute. Formele documenten zijn verplicht voor
+onderwijs en institutionele zorg, voorwaardelijk voor een onbekend profiel en
+niet geselecteerd voor herkenbare lokale praktijken.
 
 Voor een fictieve organisatie `Voorbeeld Zorg Maastricht`, domein
 `voorbeeldzorg.nl`, verslagjaar 2025 ontstaan bijvoorbeeld:
@@ -158,32 +162,22 @@ cijfer aanvullende context nodig heeft.
 ## 5. De providers voeren de zoekopdrachten uit
 
 Alle geplande queries worden tegelijk uitgevoerd. In live-modus gebruikt de
-zoeklaag DuckDuckGo en, als er een key is, Serper. De zoeklaag voegt dubbele
-resultaten samen op basis van de canonieke URL. Trackingparameters en fragmenten
-tellen daarbij niet mee.
-
-Als die providers voor een onderzoekspad niets vinden, gebruikt
-`LiveResearchTools` OpenAI hosted web search. Het resultaat wordt per pad
-gecachet. Meerdere lege queries veroorzaken daardoor samen hoogstens één betaalde
-fallback.
+actieve zoeklaag uitsluitend Serper. De zoeklaag voegt dubbele resultaten samen
+op basis van de canonieke URL; trackingparameters en fragmenten tellen daarbij
+niet mee. OpenAI hosted web search staat hard uit in productie.
 
 ```mermaid
 flowchart TD
-    Q["Geplande query"] --> DDG["DuckDuckGo"]
-    Q --> S["Serper indien beschikbaar"]
-    DDG --> K{"Resultaten?"}
-    S --> K
-    K -- "ja" --> U["Samenvoegen + canonicaliseren"]
-    K -- "nee" --> O["OpenAI web search, max. eenmaal per pad"]
-    O --> U
+    Q["Geplande query"] --> S["Serper"]
+    S --> U["Canonicaliseren + dedupliceren"]
 ```
 
 ## 6. De supervisor verdeelt het paginabudget
 
 Een query kan meerdere resultaten leveren, maar de supervisor inspecteert
-standaard maximaal vijftien brede zoekresultaten. Bij een officiële bron uit het
-gevraagde jaar daalt dat budget momenteel naar acht. Seedbronnen vallen buiten
-dit brede inspectiebudget.
+standaard maximaal vijftien brede zoekresultaten. Een sterke eerste bron verlaagt
+dat budget niet: aanvullende relevante bronnen blijven onderdeel van het dossier.
+Seedbronnen vallen buiten dit brede inspectiebudget.
 
 De selectie gebeurt round-robin:
 
@@ -263,7 +257,7 @@ beslissing:     tonen_aan_reviewer | context_only | afwijzen
 concerncijfers kunnen hoogstens als context worden getoond. Externe tekst staat
 in de prompt expliciet als onbetrouwbare input om promptinjectie te begrenzen.
 
-## 9. Ranking maakt een gevarieerd bronportfolio
+## 9. Ranking ordent zonder relevante bronnen weg te filteren
 
 Alle overgebleven bronnen krijgen een verklaarbare score:
 
@@ -275,8 +269,8 @@ Alle overgebleven bronnen krijgen een verklaarbare score:
 | Actualiteit | 15% |
 | Concreet WP-bewijs | 10% |
 
-Daarna kiest `selecteer_bronportfolio()` maximaal acht kandidaten. De selectie
-kan bronnen met verschillende functies bevatten:
+Alle relevante bronnen blijven zichtbaar tot de eenvoudige bovengrens van acht.
+De score bepaalt alleen de volgorde. Bronnen kunnen verschillende functies hebben:
 
 - direct WP-bewijs;
 - formeel document;
@@ -288,7 +282,7 @@ kan bronnen met verschillende functies bevatten:
 Een mediabron met een lagere score kan naast een formeel jaarverslag blijven
 staan als die bron een andere vraag van de reviewer beantwoordt.
 
-## 10. De reviewer kiest de bron
+## 10. De reviewer beoordeelt bron én extractie
 
 De researchservice slaat iedere geselecteerde bron op als `BronKandidaat`, met:
 
@@ -310,6 +304,7 @@ zoekterm uitkomt. HTML-bronnen openen met een tekstfragmentlink wanneer mogelijk
 stateDiagram-v2
     [*] --> voorgesteld
     voorgesteld --> geaccepteerd: reviewer accepteert
+    voorgesteld --> alternatief: relevante ondersteunende bron
     voorgesteld --> afgewezen: reviewer wijst af
     geaccepteerd --> alternatief: reviewer kiest andere bron
     alternatief --> geaccepteerd: opnieuw kiezen
@@ -318,8 +313,12 @@ stateDiagram-v2
 Een handmatig ingevoerde bron wordt in een eigen afgeronde `ResearchRun` als
 geaccepteerde kandidaat opgeslagen.
 
-Acceptatie kiest de primaire bron. De researchflow stopt bij die reviewbeslissing
-en schrijft zelf geen definitieve registerwaarde.
+Acceptatie kiest de primaire bron; meerdere ondersteunende bronnen kunnen als
+`alternatief` relevant blijven. De reviewer legt daarnaast vast of het gevonden
+WP correct, te laag, te hoog of niet te bepalen is. Een correctie bewaart zowel
+het oorspronkelijke als het gecorrigeerde WP, plus oorzaak, toelichting en of de
+bron volledig was ingelezen. De researchflow schrijft zelf geen definitieve
+registerwaarde.
 
 ## LangGraph bestuurt alleen de jaarverslagagent
 
@@ -396,7 +395,7 @@ pending → running → completed
 `resultaat_status` beschrijft de inhoud:
 
 ```text
-review_nodig | niet_gevonden | error
+review_nodig | niet_gevonden | technisch_onvolledig | error
 ```
 
 Een technisch geslaagde run zonder kandidaten heeft dus `status=completed` en
@@ -410,6 +409,8 @@ De run bewaart ook:
 - tokens in/uit;
 - providercalls en geschatte kosten;
 - eventuele gedeeltelijke fouten.
+- per geplande route: verplicht/voorwaardelijk, status, reden, queries en aantal
+  bruikbare bronnen.
 
 Eén mislukte query of pagina beëindigt niet automatisch het hele onderzoek.
 
@@ -419,7 +420,6 @@ Eén mislukte query of pagina beëindigt niet automatisch het hele onderzoek.
 |---|---:|
 | Queries per organisatie | 12 |
 | Brede pagina-inspecties | 15 |
-| Inspecties na officiële bron uit gevraagd jaar | 8 |
 | Kandidaten voor de reviewer | 8 |
 | Gelijktijdige bronreviews binnen één run | 5 |
 | Gelijktijdige monitoringorganisaties | 8 |
@@ -444,8 +444,7 @@ researchcontract blijft hetzelfde.
 ### Livemodus
 
 - OpenAI voor extractie en bronreview;
-- DuckDuckGo en optioneel Serper voor search;
-- OpenAI hosted web search als begrensde fallback;
+- Serper als enige actieve webzoekprovider;
 - Google Places en websearch voor website/contactresolutie;
 - httpx/BeautifulSoup en optioneel crawl4ai/Playwright voor pagina's;
 - PyMuPDF voor PDF-tekst.
@@ -459,16 +458,16 @@ backend/app/
   routers/monitoring.py           monitoringdashboard en handmatige start
   research/
     service.py                    lifecycle, opslag, timeout en batchregie
-    query_planner.py              website-, document- en mediaqueries
+    query_planner.py              routeplan + website-, sector-, document- en mediaqueries
     seeds.py                      officiële seedbronnen
     supervisor.py                 parallel zoeken, inspecteren en selecteren
     live_tools.py                 adapter naar live search/fetch/agents
     validation.py                 deterministische bronvalidatie
     source_reviewer.py            fail-closed semantische bronreview
-    ranking.py                    score en divers bronportfolio
+    ranking.py                    verklaarbare bronvolgorde
     usage.py                      tokens, providercalls en kosten
   providers/
-    search.py                     DuckDuckGo, Serper en OpenAI web search
+    search.py                     Serper-search + uitgeschakelde compatibiliteitshelpers
     fetch.py                      HTML, PDF en crawl4ai-fallback
     llm.py                        extractie en JSON-herstel
     jaarverslag.py                LangGraph-regie en PDF-extractie

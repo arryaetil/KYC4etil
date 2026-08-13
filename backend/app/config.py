@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     research_media_venster_maanden: int = 18
     research_max_queries: int = 12
     research_max_pages: int = 15
-    research_max_pages_after_primary: int = 8
     research_max_rounds: int = 3
     research_max_kandidaten: int = 8
     # Indicatieve OpenAI-prijzen (cent per 1000 tokens) — controleer tegen de

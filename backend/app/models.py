@@ -204,6 +204,12 @@ class BronKandidaat(Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
     review_reason_code: Mapped[str | None] = mapped_column(String(50))
     review_reason: Mapped[str | None] = mapped_column(Text)
+    bron_relevant: Mapped[bool | None] = mapped_column(Boolean)
+    bron_volledig_ingelezen: Mapped[bool | None] = mapped_column(Boolean)
+    wp_oordeel: Mapped[str | None] = mapped_column(String(30))
+    gecorrigeerd_wp: Mapped[int | None] = mapped_column(Integer)
+    extractie_reason_code: Mapped[str | None] = mapped_column(String(50))
+    extractie_toelichting: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     research_run: Mapped[ResearchRun] = relationship(back_populates="bronkandidaten")

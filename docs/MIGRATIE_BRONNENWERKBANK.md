@@ -19,6 +19,12 @@ De canonieke gegevensstroom is:
   `AgentResult`.
 - Accepteren en afwijzen hebben vaste redencodes. Bij `anders` is toelichting
   verplicht.
+- Een reviewer kan één primaire en meerdere ondersteunende relevante bronnen
+  bewaren.
+- WP-extractiefeedback bewaart het oorspronkelijke en gecorrigeerde aantal,
+  afwijkingsreden en volledigheid van de ingelezen bron.
+- Research-runs bewaren een klein SBI-gestuurd routeplan met eindstatus per
+  route; DUO, DigiMV en team-/afspraakonderzoek zijn de eerste sectorroutes.
 
 ## Veilig teruggaan
 
@@ -32,7 +38,8 @@ toestemming.
 
 ## Productiedatabase
 
-Deze migratie voegt alleen `bron_kandidaten.review_reason_code` toe. Historische
+Deze migratie voegt review- en extractiefeedbackvelden toe aan
+`bron_kandidaten`. Historische
 tabellen worden bewust nog niet gedropt. Maak eerst een databaseback-up, rol de
 nieuwe versie uit en observeer minimaal één volledige gebruikscyclus. Verwijder
 oude tabellen pas in een afzonderlijke, expliciet goedgekeurde migratie nadat is

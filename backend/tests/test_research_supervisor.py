@@ -200,9 +200,8 @@ async def test_kandidaten_limiet_is_configureerbaar():
         website_url="https://voorbeeldzorg.nl",
         huidig_jaar=2026,
     ))
-    # De limiet is een bovengrens: per menselijke bronrol worden maximaal
-    # twee alternatieven getoond om handmatig dubbelwerk te voorkomen.
-    assert len(outcome_ruim.kandidaten) == 4
+    # Alle relevante bronnen blijven zichtbaar tot de eenvoudige bovengrens.
+    assert len(outcome_ruim.kandidaten) == 8
     assert len(outcome_ruim.kandidaten) <= 8
 
 

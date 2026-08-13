@@ -51,6 +51,7 @@ def test_start_research_maakt_run_en_plant_achtergrondtaak(
     assert run is not None
     assert run.gevraagd_jaar == 2025
     assert run.status == "pending"
+    assert data["onderzoekspaden"] == run.onderzoekspaden
     assert aangeroepen == [run.id]
 
 
@@ -105,6 +106,127 @@ def test_reviewer_kan_een_primaire_bron_per_run_accepteren(client, db_session):
     assert tweede.reviewed_by == "test-user-id"
     assert tweede.review_reason_code == "juiste_bron_bruikbaar_bewijs"
     assert tweede.review_reason == "actueler"
+
+
+def test_reviewer_bewaart_juiste_bron_met_te_lage_extractie(client, db_session):
+    company = _maak_company(db_session)
+    run = ResearchRun(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        doel="extractiereview",
+        status="completed",
+    )
+    db_session.add(run)
+    db_session.flush()
+    kandidaat = BronKandidaat(
+        research_run_id=run.id,
+        company_id=company.id,
+        url="https://voorbeeldzorg.nl/team",
+        canonical_url="https://voorbeeldzorg.nl/team",
+        brontype="officiele_website",
+        wp_gevonden=8,
+        status="voorgesteld",
+    )
+    db_session.add(kandidaat)
+    db_session.commit()
+
+    response = client.post(
+        f"/research/candidates/{kandidaat.id}/review",
+        json={
+            "beslissing": "accepteren",
+            "wp_oordeel": "te_laag",
+            "gecorrigeerd_wp": 10,
+            "bron_volledig_ingelezen": False,
+            "extractie_reason_code": "personen_gemist",
+            "reden": "Twee teamleden onderaan de pagina zijn gemist.",
+        },
+    )
+
+    assert response.status_code == 200
+    db_session.refresh(kandidaat)
+    assert kandidaat.bron_relevant is True
+    assert kandidaat.wp_oordeel == "te_laag"
+    assert kandidaat.gecorrigeerd_wp == 10
+    assert kandidaat.bron_volledig_ingelezen is False
+    assert kandidaat.extractie_reason_code == "personen_gemist"
+    assert kandidaat.wp_gevonden == 8
+
+
+def test_reviewer_kan_meerdere_relevante_bronnen_bewaren(client, db_session):
+    company = _maak_company(db_session)
+    run = ResearchRun(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        doel="meerdere bronnen",
+        status="completed",
+    )
+    db_session.add(run)
+    db_session.flush()
+    primair = BronKandidaat(
+        research_run_id=run.id,
+        company_id=company.id,
+        url="https://voorbeeldzorg.nl/team",
+        canonical_url="https://voorbeeldzorg.nl/team",
+        brontype="officiele_website",
+        status="geaccepteerd",
+    )
+    ondersteunend = BronKandidaat(
+        research_run_id=run.id,
+        company_id=company.id,
+        url="https://nieuws.test/voorbeeldzorg",
+        canonical_url="https://nieuws.test/voorbeeldzorg",
+        brontype="media",
+        status="voorgesteld",
+    )
+    db_session.add_all([primair, ondersteunend])
+    db_session.commit()
+
+    response = client.post(
+        f"/research/candidates/{ondersteunend.id}/review",
+        json={"beslissing": "ondersteunen", "wp_oordeel": "niet_te_bepalen"},
+    )
+
+    assert response.status_code == 200
+    db_session.refresh(primair)
+    db_session.refresh(ondersteunend)
+    assert primair.status == "geaccepteerd"
+    assert ondersteunend.status == "alternatief"
+    assert ondersteunend.bron_relevant is True
+
+
+def test_correctie_moet_passen_bij_het_wp_oordeel(client, db_session):
+    company = _maak_company(db_session)
+    run = ResearchRun(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        doel="ongeldige correctie",
+        status="completed",
+    )
+    db_session.add(run)
+    db_session.flush()
+    kandidaat = BronKandidaat(
+        research_run_id=run.id,
+        company_id=company.id,
+        url="https://voorbeeldzorg.nl/team-fout",
+        canonical_url="https://voorbeeldzorg.nl/team-fout",
+        brontype="officiele_website",
+        wp_gevonden=8,
+        status="voorgesteld",
+    )
+    db_session.add(kandidaat)
+    db_session.commit()
+
+    response = client.post(
+        f"/research/candidates/{kandidaat.id}/review",
+        json={
+            "beslissing": "accepteren",
+            "wp_oordeel": "te_laag",
+            "gecorrigeerd_wp": 6,
+            "extractie_reason_code": "personen_gemist",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_afwijzen_vereist_gestructureerde_reden(client, db_session):

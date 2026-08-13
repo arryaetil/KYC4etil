@@ -10,8 +10,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from .query_planner import QueryContext, plan_queries
-from .ranking import RankedBron, rank_bronnen, selecteer_bronportfolio
+from .query_planner import QueryContext, plan_queries, plan_routes
+from .ranking import RankedBron, rank_bronnen
 from .types import CombinedSearchResult, PlannedQuery
 from .validation import SourceDocument, valideer_bron
 
@@ -61,13 +61,16 @@ class ResearchSupervisor:
         context: QueryContext,
         seed_documents: list[SourceDocument] | None = None,
     ) -> ResearchOutcome:
+        route_plan = plan_routes(context)
         queries = plan_queries(context)[:self.max_queries]
+        query_aantallen = Counter(query.pad for query in queries)
         search_results = await asyncio.gather(*[
             self.tools.search(query, self.max_results_per_query)
             for query in queries
         ], return_exceptions=True)
 
         fouten: list[str] = []
+        zoekfouten_per_route: Counter = Counter()
         te_inspecteren: list[tuple[PlannedQuery, CombinedSearchResult]] = []
         seed_documents = seed_documents or []
         geziene_urls: set[str] = {
@@ -79,6 +82,7 @@ class ResearchSupervisor:
         for query, results in zip(queries, search_results):
             if isinstance(results, BaseException):
                 fouten.append(f"{query.pad}: {results}")
+                zoekfouten_per_route[query.pad] += 1
                 continue
             resultaten_per_pad.setdefault(query.pad, []).extend(
                 (query, result) for result in results
@@ -110,13 +114,26 @@ class ResearchSupervisor:
             self.tools.inspect(context, query, result)
             for query, result in te_inspecteren
         ], return_exceptions=True)
-        documenten_om_te_beoordelen = [
-            item for item in [*seed_documents, *inspected]
-            if item is not None and not isinstance(item, BaseException)
-        ]
-        for item in inspected:
+        inspectiefouten_per_route: Counter = Counter()
+        documenten_met_route: list[tuple[SourceDocument, str]] = []
+        for document in seed_documents:
+            route = (
+                "document"
+                if document.documenttype in {
+                    "jaarverslag", "jaarrekening", "bestuursverslag", "pdf_document",
+                }
+                else "website"
+            )
+            documenten_met_route.append((document, route))
+        for (query, _), item in zip(te_inspecteren, inspected):
             if isinstance(item, BaseException):
                 fouten.append(f"inspectie: {item}")
+                inspectiefouten_per_route[query.pad] += 1
+            elif item is not None:
+                documenten_met_route.append((item, query.pad))
+        documenten_om_te_beoordelen = [
+            document for document, _ in documenten_met_route
+        ]
 
         # Lokaal (per run) zodat gelijktijdige runs elkaar niet blokkeren; cap
         # voorkomt dat een rate-limit-fout een bron stil laat verdwijnen.
@@ -138,11 +155,14 @@ class ResearchSupervisor:
         validaties = []
         afwijzingen = []
         documenten = len(documenten_om_te_beoordelen)
-        for item, validatie in zip(documenten_om_te_beoordelen, beoordelingen):
+        bruikbaar_per_route: Counter = Counter()
+        for (item, route), validatie in zip(documenten_met_route, beoordelingen):
             if isinstance(validatie, BaseException):
                 fouten.append(f"bronreview: {validatie}")
                 continue
             validaties.append(validatie)
+            if not validatie.is_afgewezen:
+                bruikbaar_per_route[route] += 1
             if validatie.is_afgewezen and len(afwijzingen) < 12:
                 intelligente_review = validatie.validaties.get(
                     "intelligente_review", {}
@@ -155,18 +175,58 @@ class ResearchSupervisor:
                     "review_reden": intelligente_review.get("reden"),
                 })
 
-        ranked = selecteer_bronportfolio(
-            rank_bronnen(validaties),
-            self.max_kandidaten,
-        )
+        # Bewaar alle relevante kandidaten tot de eenvoudige harde bovengrens.
+        # Bij de gebruikelijke circa vijf bronnen is een diversiteitsfilter
+        # schadelijker dan behulpzaam: het kan een derde relevante team- of
+        # documentbron stil laten verdwijnen.
+        ranked = rank_bronnen(validaties)[:self.max_kandidaten]
         reden_teller = Counter(
             reden
             for validatie in validaties
             if validatie.is_afgewezen
             for reden in validatie.afwijsredenen
         )
+        route_statussen = []
+        for gepland in route_plan:
+            route = gepland["route"]
+            query_count = query_aantallen[route]
+            fout_count = (
+                zoekfouten_per_route[route] + inspectiefouten_per_route[route]
+            )
+            if query_count == 0 and bruikbaar_per_route[route] == 0:
+                status = "overgeslagen"
+                statusreden = "niet uitgevoerd binnen het querybudget"
+            elif query_count and zoekfouten_per_route[route] == query_count:
+                status = "mislukt"
+                statusreden = "alle zoekopdrachten voor deze route mislukten"
+            elif fout_count and bruikbaar_per_route[route] == 0:
+                status = "mislukt"
+                statusreden = "bronnen konden technisch niet worden verwerkt"
+            else:
+                status = "afgerond"
+                statusreden = (
+                    "bruikbare bronnen gevonden"
+                    if bruikbaar_per_route[route]
+                    else "geen bruikbare bron gevonden"
+                )
+            route_statussen.append({
+                **gepland,
+                "status": status,
+                "statusreden": statusreden,
+                "aantal_bronnen": bruikbaar_per_route[route],
+                "aantal_queries": query_count,
+            })
+        technisch_onvolledig = any(
+            item["verplicht"] and item["status"] in {"mislukt", "overgeslagen"}
+            for item in route_statussen
+        )
+        resultaat_status = (
+            "technisch_onvolledig"
+            if technisch_onvolledig
+            else "review_nodig" if ranked else "niet_gevonden"
+        )
         return ResearchOutcome(
-            status="review_nodig" if ranked else "niet_gevonden",
+            status=resultaat_status,
             kandidaten=ranked,
             onderzochte_queries=len(queries),
             onderzochte_paginas=len(te_inspecteren),
@@ -183,5 +243,6 @@ class ResearchSupervisor:
                 ),
                 "afwijsredenen": dict(reden_teller),
                 "afwijzingen": afwijzingen,
+                "route_statussen": route_statussen,
             },
         )

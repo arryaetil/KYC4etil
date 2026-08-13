@@ -1,5 +1,12 @@
 # Datamodel, reconciliatie en confidence scoring
 
+> **Actieve bronnenwerkbank:** `ResearchRun` en `BronKandidaat` zijn de actieve
+> gegevensstroom. `ResearchRun.onderzoekspaden` bewaart het routeplan en de
+> eindstatus per route. `BronKandidaat` bewaart naast bronreview ook
+> `bron_relevant`, `bron_volledig_ingelezen`, `wp_oordeel`, `gecorrigeerd_wp`,
+> `extractie_reason_code` en `extractie_toelichting`. De oorspronkelijke
+> `wp_gevonden` wordt nooit overschreven.
+
 ## Datamodel (`backend/app/models.py`)
 
 SQLAlchemy 2 (`Mapped`/`mapped_column`-stijl). Kolomwijzigingen lopen niet via Alembic

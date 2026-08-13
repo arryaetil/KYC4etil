@@ -112,13 +112,18 @@ def ensure_lightweight_migrations() -> None:
             col["name"] for col in inspector.get_columns("bron_kandidaten")
         }
         with engine.begin() as conn:
-            _add_column_if_missing(
-                conn,
-                "bron_kandidaten",
-                existing_bronnen,
-                "review_reason_code",
-                "VARCHAR(50)",
-            )
+            for name, ddl_type in [
+                ("review_reason_code", "VARCHAR(50)"),
+                ("bron_relevant", "BOOLEAN"),
+                ("bron_volledig_ingelezen", "BOOLEAN"),
+                ("wp_oordeel", "VARCHAR(30)"),
+                ("gecorrigeerd_wp", "INTEGER"),
+                ("extractie_reason_code", "VARCHAR(50)"),
+                ("extractie_toelichting", "TEXT"),
+            ]:
+                _add_column_if_missing(
+                    conn, "bron_kandidaten", existing_bronnen, name, ddl_type,
+                )
 
     if "jaarverslag_monitoring" in tables:
         existing_monitoring = {
