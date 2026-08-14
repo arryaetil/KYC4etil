@@ -1,8 +1,11 @@
-"""Per-run OpenAI-tokenverbruik bijhouden, correct over concurrente
+"""Per-run providerverbruik bijhouden, correct over concurrente
 asyncio-taken heen via contextvars (nodig sinds seed-stappen en
 bronreview-calls parallel lopen — zie Task 2/3)."""
+import asyncio
+from copy import deepcopy
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from typing import Awaitable, Callable, TypeVar
 
 from ..config import get_settings
 
@@ -13,6 +16,8 @@ class _UsageTotalen:
     tokens_out: int = 0
     provider_calls: dict[str, int] = field(default_factory=dict)
     provider_kosten_micro_usd: dict[str, int] = field(default_factory=dict)
+    provider_responses: dict[tuple, object] = field(default_factory=dict)
+    provider_inflight: dict[tuple, asyncio.Task] = field(default_factory=dict)
 
 
 _huidige_totalen: ContextVar["_UsageTotalen | None"] = ContextVar(
@@ -69,6 +74,51 @@ def record_provider_call(
         totalen.provider_kosten_micro_usd.get(provider, 0)
         + kosten_micro_usd
     )
+
+
+T = TypeVar("T")
+
+
+async def cached_provider_call(
+    provider: str,
+    cache_key: tuple,
+    call: Callable[[], Awaitable[T]],
+) -> T:
+    """Voer een identieke betaalde call hoogstens één keer per researchrun uit.
+
+    Alleen geslaagde calls komen in de cache: exceptions blijven retrybaar. De
+    cache leeft in dezelfde ContextVar als de kostenteller en kan dus nooit
+    resultaten tussen afzonderlijke organisaties of researchruns vermengen.
+    """
+    totalen = _huidige_totalen.get()
+    if totalen is None:
+        return await call()
+
+    key = (provider, *cache_key)
+    if key in totalen.provider_responses:
+        record_provider_call(f"{provider}_cache_hit")
+        return deepcopy(totalen.provider_responses[key])
+
+    taak = totalen.provider_inflight.get(key)
+    is_eigenaar = taak is None
+    if taak is None:
+        taak = asyncio.create_task(call())
+        totalen.provider_inflight[key] = taak
+    else:
+        record_provider_call(f"{provider}_cache_hit")
+
+    try:
+        resultaat = (
+            await taak
+            if is_eigenaar
+            else await asyncio.shield(taak)
+        )
+        if is_eigenaar:
+            totalen.provider_responses[key] = deepcopy(resultaat)
+        return deepcopy(resultaat)
+    finally:
+        if is_eigenaar:
+            totalen.provider_inflight.pop(key, None)
 
 
 def get_usage_totals() -> tuple[int, int]:

@@ -1,10 +1,10 @@
 """Contactgegevens en locatietelling.
 
-Serper Places gaat voor op Google Places (32x duurder); levert geen van beide
+Serper Places gaat voor op Google Places (20-32x duurder); levert geen van beide
 een bruikbare site op, dan volgt een zoekfallback. De landelijke locatietelling
 blijft op Google Places aangewezen totdat de KvK-koppeling er is (doc §3)."""
 import re
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -17,6 +17,7 @@ from .naam_matching import _naam_tokens, _tekst_lijkt_bij_bedrijf_te_horen
 settings = get_settings()
 
 PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
+PLACES_DETAILS_URL = "https://places.googleapis.com/v1/places"
 
 
 def _is_directory_result(url: str) -> bool:
@@ -145,28 +146,47 @@ class LivePlacesProvider:
             )
         if not settings.google_places_api_key:
             return await _contact_fallback(naam, gemeente)
-        record_provider_call("google_places_text_search", kosten_micro_usd=32_000)
         try:
             async with httpx.AsyncClient(timeout=20) as client:
-                r = await client.post(
+                zoekrespons = await client.post(
                     PLACES_SEARCH_URL,
                     headers={
                         "X-Goog-Api-Key": settings.google_places_api_key,
-                        "X-Goog-FieldMask": "places.websiteUri,places.nationalPhoneNumber,places.formattedAddress",
+                        # IDs-only is gratis; de gerangschikte eerste match
+                        # blijft gelijk aan de oude Enterprise Text Search.
+                        "X-Goog-FieldMask": "places.id",
                     },
                     json={"textQuery": f"{naam} {gemeente or ''}".strip(), "languageCode": "nl"},
                 )
-                r.raise_for_status()
-                places = r.json().get("places") or []
+                zoekrespons.raise_for_status()
+                record_provider_call("google_places_text_search_ids_only")
+                gevonden = zoekrespons.json().get("places") or []
+                place_id = gevonden[0].get("id") if gevonden else None
+                if not place_id:
+                    return await _contact_fallback(naam, gemeente)
+                detailrespons = await client.get(
+                    f"{PLACES_DETAILS_URL}/{quote(place_id, safe='')}",
+                    headers={
+                        "X-Goog-Api-Key": settings.google_places_api_key,
+                        "X-Goog-FieldMask": (
+                            "websiteUri,nationalPhoneNumber,formattedAddress"
+                        ),
+                    },
+                    params={"languageCode": "nl"},
+                )
+                detailrespons.raise_for_status()
+                record_provider_call(
+                    "google_places_details_enterprise",
+                    kosten_micro_usd=20_000,
+                )
+                p = detailrespons.json()
         except httpx.HTTPError:
             return await _contact_fallback(naam, gemeente)
-        if not places:
-            return await _contact_fallback(naam, gemeente)
-        p = places[0]
         if not p.get("websiteUri"):
             return await _contact_fallback(naam, gemeente)
         return PlacesResult(website=p.get("websiteUri"), phone=p.get("nationalPhoneNumber"),
-                            adres=p.get("formattedAddress"), raw=p)
+                            adres=p.get("formattedAddress"),
+                            raw={"bron": "google_places_details", **p})
 
     async def scrape_email(self, website_url: str | None) -> str | None:
         if not website_url:
@@ -179,7 +199,6 @@ class LivePlacesProvider:
     async def locations(self, naam: str, kvk_nummer: str | None) -> LocationInfo:
         if not settings.google_places_api_key:
             return LocationInfo(count_nl=None, count_lb=None, bron="web_search")
-        record_provider_call("google_places_text_search", kosten_micro_usd=32_000)
         try:
             async with httpx.AsyncClient(timeout=20) as client:
                 r = await client.post(
@@ -193,6 +212,9 @@ class LivePlacesProvider:
                 )
                 r.raise_for_status()
                 places = r.json().get("places") or []
+                record_provider_call(
+                    "google_places_text_search", kosten_micro_usd=32_000,
+                )
         except httpx.HTTPError:
             return LocationInfo(count_nl=None, count_lb=None, bron="web_search")
         lb = sum(1 for p in places if "Limburg" in (p.get("formattedAddress") or ""))
