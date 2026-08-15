@@ -121,6 +121,44 @@ class EmptyResearchTools(FakeResearchTools):
         return []
 
 
+class TweeUniekeResultatenTools(FakeResearchTools):
+    async def search(self, query: PlannedQuery, max_results: int):
+        self.paden.append(query.pad)
+        domein = (
+            "voorbeeldzorg.nl" if query.pad in {"website", "document"}
+            else "limburgnieuws.nl"
+        )
+        return [
+            CombinedSearchResult(
+                title=f"{query.pad} {index}",
+                url=f"https://{domein}/{query.pad}/{index}",
+                canonical_url=f"https://{domein}/{query.pad}/{index}",
+                providers=["serper"], queries=[query.query],
+            )
+            for index in range(2)
+        ]
+
+
+@pytest.mark.asyncio
+async def test_fallbackqueries_stoppen_na_twee_unieke_resultaten():
+    tools = TweeUniekeResultatenTools()
+    outcome = await ResearchSupervisor(
+        tools, max_queries=10, max_pages=6,
+    ).run(QueryContext(
+        naam="Voorbeeld Zorg", gevraagd_jaar=2025,
+        website_url="https://voorbeeldzorg.nl", huidig_jaar=2026,
+    ))
+
+    assert tools.paden.count("website") == 1
+    assert tools.paden.count("document") == 1
+    assert tools.paden.count("media") == 1
+    assert outcome.onderzochte_queries == 3
+    assert all(
+        reden == "bruikbaar bewijs gevonden"
+        for reden in outcome.diagnostiek["adaptief_stoppen"].values()
+    )
+
+
 class ManyResultsResearchTools(FakeResearchTools):
     def __init__(self):
         super().__init__()

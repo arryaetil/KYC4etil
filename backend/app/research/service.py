@@ -9,6 +9,7 @@ from ..database import SessionLocal
 from ..models import Batch, BronKandidaat, Company, Enrichment, ResearchRun
 from .live_tools import LiveResearchTools
 from .mock_tools import MockResearchTools
+from .organizations import koppel_organisatie, vind_bestaande_bronnen
 from .query_planner import QueryContext, plan_routes
 from .seeds import verzamel_seed_documenten
 from .source_reviewer import IntelligentSourceReviewer
@@ -60,6 +61,14 @@ def maak_research_run(
         adres=company.adres,
         sbi_code=company.sbi_code,
         sbi_omschrijving=company.sbi_omschrijving,
+        kvk_nummer=company.kvk_nummer,
+    )
+    koppel_organisatie(
+        db,
+        company,
+        company.website_url or (
+            company.enrichment.website_url if company.enrichment else None
+        ),
     )
     run = ResearchRun(
         company_id=company.id,
@@ -114,6 +123,7 @@ async def _run_research_run(run_id: str) -> None:
             company_adres = company.adres
             company_sbi_code = company.sbi_code
             company_sbi_omschrijving = company.sbi_omschrijving
+            company_kvk_nummer = company.kvk_nummer
             gevraagd_jaar = run.gevraagd_jaar
             website_url = company.website_url or enrichment_website
             if website_url:
@@ -186,7 +196,16 @@ async def _run_research_run(run_id: str) -> None:
             adres=company_adres,
             sbi_code=company_sbi_code,
             sbi_omschrijving=company_sbi_omschrijving,
+            kvk_nummer=company_kvk_nummer,
         )
+        with SessionLocal() as db:
+            company = db.get(Company, company_id)
+            if company is None:
+                return
+            koppel_organisatie(db, company, website_url)
+            db.flush()
+            bestaande_bronnen = vind_bestaande_bronnen(db, company)
+            db.commit()
         tools = (
             LiveResearchTools()
             if settings.provider_mode == "live"
@@ -197,6 +216,7 @@ async def _run_research_run(run_id: str) -> None:
                 tools,
                 context,
                 {item["route"] for item in plan_routes(context)},
+                bestaande_bronnen=bestaande_bronnen,
             )
             if settings.provider_mode == "live"
             else []

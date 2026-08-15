@@ -63,21 +63,6 @@ class ResearchSupervisor:
     ) -> ResearchOutcome:
         route_plan = plan_routes(context)
         seed_documents = seed_documents or []
-        directe_routes = {
-            document.research_route
-            for document in seed_documents
-            if document.research_route
-        }
-        queries = [
-            query for query in plan_queries(context)
-            if query.pad not in directe_routes
-        ][:self.max_queries]
-        query_aantallen = Counter(query.pad for query in queries)
-        search_results = await asyncio.gather(*[
-            self.tools.search(query, self.max_results_per_query)
-            for query in queries
-        ], return_exceptions=True)
-
         fouten: list[str] = []
         zoekfouten_per_route: Counter = Counter()
         te_inspecteren: list[tuple[PlannedQuery, CombinedSearchResult]] = []
@@ -87,14 +72,178 @@ class ResearchSupervisor:
         resultaten_per_pad: dict[
             str, list[tuple[PlannedQuery, CombinedSearchResult]]
         ] = {}
-        for query, results in zip(queries, search_results):
-            if isinstance(results, BaseException):
-                fouten.append(f"{query.pad}: {results}")
-                zoekfouten_per_route[query.pad] += 1
-                continue
-            resultaten_per_pad.setdefault(query.pad, []).extend(
-                (query, result) for result in results
+
+        def _route_van_document(document: SourceDocument) -> str:
+            if document.research_route:
+                return document.research_route
+            if document.documenttype in {
+                "jaarverslag", "jaarrekening", "bestuursverslag", "pdf_document",
+            }:
+                return "document"
+            return "website"
+
+        # DUO/DigiMV kunnen een route rechtstreeks en controleerbaar invullen.
+        # Een oude of gedeelde bron telt wel mee voor adaptief stoppen, maar
+        # vervangt nooit de primaire jaarlijkse zoekopdracht van die route.
+        directe_routes = {
+            document.research_route
+            for document in seed_documents
+            if (
+                document.research_route
+                and (
+                    (document.raw_data or {}).get("route_sufficient") is True
+                    or (
+                        document.research_route in {"duo", "digimv"}
+                        and (document.raw_data or {}).get("seed_origin")
+                        not in {"existing_source", "organization_source"}
+                    )
+                )
             )
+        }
+        route_urls: dict[str, set[str]] = {}
+        bruikbaar_bij_stopbesluit: Counter = Counter()
+        wp_bewijs_bij_stopbesluit: set[str] = set()
+        for document in seed_documents:
+            route = _route_van_document(document)
+            route_urls.setdefault(route, set()).add(document.url)
+            validatie = valideer_bron(document)
+            if not validatie.is_afgewezen:
+                bruikbaar_bij_stopbesluit[route] += 1
+                if document.wp_gevonden is not None and document.bewijsfragment:
+                    wp_bewijs_bij_stopbesluit.add(route)
+
+        per_route_queries: dict[str, list[PlannedQuery]] = {}
+        for query in plan_queries(context):
+            if query.pad not in directe_routes:
+                per_route_queries.setdefault(query.pad, []).append(query)
+        routevolgorde = [item["route"] for item in route_plan]
+        queries: list[PlannedQuery] = []
+        vervolgindex = {route: 0 for route in per_route_queries}
+        geen_nieuwe_resultaten: Counter = Counter()
+        stopredenen: dict[str, str] = {
+            route: "rechtstreekse sectorspecifieke bron gevonden"
+            for route in directe_routes
+        }
+        vooraf_geinspecteerd: dict[
+            str, SourceDocument | BaseException | None
+        ] = {}
+
+        def _route_voldoende(route: str) -> bool:
+            return (
+                route in wp_bewijs_bij_stopbesluit
+                or bruikbaar_bij_stopbesluit[route] >= 2
+            )
+
+        async def _zoekronde(ronde_queries: list[PlannedQuery]) -> None:
+            if not ronde_queries:
+                return
+            responses = await asyncio.gather(*[
+                self.tools.search(query, self.max_results_per_query)
+                for query in ronde_queries
+            ], return_exceptions=True)
+            queries.extend(ronde_queries)
+            vooraf_te_inspecteren: list[
+                tuple[PlannedQuery, CombinedSearchResult]
+            ] = []
+            vooraf_per_route: dict[
+                str, list[tuple[PlannedQuery, CombinedSearchResult]]
+            ] = {}
+            for query, results in zip(ronde_queries, responses):
+                if isinstance(results, BaseException):
+                    fouten.append(f"{query.pad}: {results}")
+                    zoekfouten_per_route[query.pad] += 1
+                    geen_nieuwe_resultaten[query.pad] += 1
+                    continue
+                voor = len(route_urls.setdefault(query.pad, set()))
+                route_urls[query.pad].update(
+                    result.canonical_url for result in results
+                )
+                if len(route_urls[query.pad]) == voor:
+                    geen_nieuwe_resultaten[query.pad] += 1
+                else:
+                    geen_nieuwe_resultaten[query.pad] = 0
+                resultaten_per_pad.setdefault(query.pad, []).extend(
+                    (query, result) for result in results
+                )
+                for result in results:
+                    if result.canonical_url in vooraf_geinspecteerd:
+                        continue
+                    kandidaten = vooraf_per_route.setdefault(query.pad, [])
+                    if len(kandidaten) >= 2:
+                        break
+                    kandidaten.append((query, result))
+
+            # Lees maximaal twee nieuwe hits per route vóór het stopbesluit.
+            # Round-robin voorkomt dat een klein paginabudget volledig door
+            # de eerste (meestal website-)route wordt opgebruikt.
+            for index in range(2):
+                for query in ronde_queries:
+                    kandidaten = vooraf_per_route.get(query.pad, [])
+                    if index >= len(kandidaten):
+                        continue
+                    if len(vooraf_geinspecteerd) + len(vooraf_te_inspecteren) >= self.max_pages:
+                        break
+                    vooraf_te_inspecteren.append(kandidaten[index])
+
+            vooraf_resultaten = await asyncio.gather(*[
+                self.tools.inspect(context, query, result)
+                for query, result in vooraf_te_inspecteren
+            ], return_exceptions=True)
+            for (query, result), document in zip(
+                vooraf_te_inspecteren, vooraf_resultaten,
+            ):
+                vooraf_geinspecteerd[result.canonical_url] = document
+                if isinstance(document, BaseException) or document is None:
+                    continue
+                validatie = valideer_bron(document)
+                if validatie.is_afgewezen:
+                    continue
+                bruikbaar_bij_stopbesluit[query.pad] += 1
+                if document.wp_gevonden is not None and document.bewijsfragment:
+                    wp_bewijs_bij_stopbesluit.add(query.pad)
+
+        # Iedere route krijgt eerst precies één kans, parallel. Daarna worden
+        # alleen routes met minder dan twee unieke bronnen aangevuld.
+        primaire_queries: list[PlannedQuery] = []
+        for route in routevolgorde:
+            routequeries = per_route_queries.get(route, [])
+            if routequeries and len(primaire_queries) < self.max_queries:
+                primaire_queries.append(routequeries[0])
+                vervolgindex[route] = 1
+        await _zoekronde(primaire_queries)
+
+        while len(queries) < self.max_queries:
+            ronde_queries = []
+            for route in routevolgorde:
+                routequeries = per_route_queries.get(route, [])
+                index = vervolgindex.get(route, 0)
+                if index >= len(routequeries):
+                    continue
+                if _route_voldoende(route):
+                    stopredenen.setdefault(route, "bruikbaar bewijs gevonden")
+                    continue
+                if geen_nieuwe_resultaten[route] >= 2:
+                    stopredenen.setdefault(route, "twee varianten leverden niets nieuws op")
+                    continue
+                if len(queries) + len(ronde_queries) >= self.max_queries:
+                    break
+                ronde_queries.append(routequeries[index])
+                vervolgindex[route] = index + 1
+            if not ronde_queries:
+                break
+            await _zoekronde(ronde_queries)
+
+        for route, routequeries in per_route_queries.items():
+            if route in stopredenen:
+                continue
+            if _route_voldoende(route):
+                stopredenen[route] = "bruikbaar bewijs gevonden"
+            elif vervolgindex.get(route, 0) >= len(routequeries):
+                stopredenen[route] = "alleen beschikbare varianten uitgevoerd"
+            elif len(queries) >= self.max_queries:
+                stopredenen[route] = "centraal querybudget bereikt"
+
+        query_aantallen = Counter(query.pad for query in queries)
 
         # Verdeel het paginabudget over alle zoekpaden. De oude sequentiële
         # selectie kon het hele budget vullen met de eerste websitequery,
@@ -118,22 +267,25 @@ class ResearchSupervisor:
             if len(te_inspecteren) >= self.max_pages:
                 break
 
-        inspected = await asyncio.gather(*[
+        nog_te_inspecteren = [
+            (query, result) for query, result in te_inspecteren
+            if result.canonical_url not in vooraf_geinspecteerd
+        ]
+        nieuwe_inspecties = await asyncio.gather(*[
             self.tools.inspect(context, query, result)
-            for query, result in te_inspecteren
+            for query, result in nog_te_inspecteren
         ], return_exceptions=True)
+        nieuwe_inspecties_iter = iter(nieuwe_inspecties)
+        inspected = [
+            vooraf_geinspecteerd[result.canonical_url]
+            if result.canonical_url in vooraf_geinspecteerd
+            else next(nieuwe_inspecties_iter)
+            for _, result in te_inspecteren
+        ]
         inspectiefouten_per_route: Counter = Counter()
         documenten_met_route: list[tuple[SourceDocument, str]] = []
         for document in seed_documents:
-            if document.research_route:
-                route = document.research_route
-            elif document.documenttype in {
-                    "jaarverslag", "jaarrekening", "bestuursverslag", "pdf_document",
-            }:
-                route = "document"
-            else:
-                route = "website"
-            documenten_met_route.append((document, route))
+            documenten_met_route.append((document, _route_van_document(document)))
         for (query, _), item in zip(te_inspecteren, inspected):
             if isinstance(item, BaseException):
                 fouten.append(f"inspectie: {item}")
@@ -251,6 +403,7 @@ class ResearchSupervisor:
                 ),
                 "afwijsredenen": dict(reden_teller),
                 "afwijzingen": afwijzingen,
+                "adaptief_stoppen": stopredenen,
                 "route_statussen": route_statussen,
             },
         )

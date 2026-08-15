@@ -44,11 +44,32 @@ class Batch(Base):
     companies: Mapped[list["Company"]] = relationship(back_populates="batch")
 
 
+class Organization(Base):
+    """Deterministische bovenlaag voor vestigingen van dezelfde organisatie.
+
+    Alleen een exact KvK-nummer of een bevestigd websitedomein mag vestigingen
+    koppelen. Naamgelijkenis is bewust geen identiteitssleutel.
+    """
+
+    __tablename__ = "organizations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    identity_key: Mapped[str] = mapped_column(String(300), unique=True, index=True)
+    naam: Mapped[str] = mapped_column(String(255))
+    kvk_nummer: Mapped[str | None] = mapped_column(String(20), index=True)
+    website_domain: Mapped[str | None] = mapped_column(String(255), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    companies: Mapped[list["Company"]] = relationship(back_populates="organization")
+
+
 class Company(Base):
     __tablename__ = "companies"
     __table_args__ = (UniqueConstraint("batch_id", "vestigingsnummer"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     batch_id: Mapped[str] = mapped_column(ForeignKey("batches.id"), index=True)
+    organization_id: Mapped[str | None] = mapped_column(
+        ForeignKey("organizations.id"), index=True,
+    )
     vestigingsnummer: Mapped[str | None] = mapped_column(String(20))
     naam: Mapped[str] = mapped_column(String(255))
     cb_er: Mapped[str | None] = mapped_column(String(20))
@@ -63,6 +84,7 @@ class Company(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     batch: Mapped[Batch] = relationship(back_populates="companies")
+    organization: Mapped[Organization | None] = relationship(back_populates="companies")
     enrichment: Mapped["Enrichment | None"] = relationship(back_populates="company", uselist=False)
     agent_results: Mapped[list["AgentResult"]] = relationship(back_populates="company")
     research_runs: Mapped[list["ResearchRun"]] = relationship(

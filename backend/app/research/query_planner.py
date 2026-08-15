@@ -23,6 +23,7 @@ class QueryContext:
     huidig_jaar: int | None = None
     sbi_code: str | None = None
     sbi_omschrijving: str | None = None
+    kvk_nummer: str | None = None
 
 
 def plan_routes(context: QueryContext) -> list[dict]:
@@ -146,12 +147,12 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
         queries.extend([
             PlannedQuery(
                 "website",
-                f"site:{domein} medewerkers team",
+                f"site:{domein} {naam} medewerkers team",
                 "officiële websitepagina's met expliciet WP-bewijs",
             ),
             PlannedQuery(
                 "website",
-                f"site:{domein} over ons organisatie",
+                f"site:{domein} {naam} over ons organisatie",
                 "officiële organisatiepagina",
             ),
         ])
@@ -207,7 +208,7 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
             # algemene hits het paginabudget.
             queries.append(PlannedQuery(
                 "document",
-                f"site:{domein} jaarverslag {jaar}",
+                f"site:{domein} {naam} jaarverslag {jaar}",
                 "nieuwste formele document op het officiële domein",
             ))
         queries.extend([

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     max_website_pages: int = 3                 # max pagina's per bedrijf voor website-agent (kostenbeheersing)
     extra_bronnen_aantal: int = 2               # extra publieke media-bronnen naast website/jaarverslag (human-in-the-loop; 0 = uit)
     research_media_venster_maanden: int = 18
-    research_max_queries: int = 12
+    research_max_queries: int = 10
     research_max_pages: int = 15
     research_max_rounds: int = 3
     research_max_kandidaten: int = 8
