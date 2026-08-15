@@ -61,3 +61,51 @@ def test_onbekend_profiel_houdt_het_bestaande_basisplan():
 
     assert set(routes) == {"website", "document", "media"}
     assert routes["document"]["verplicht"] is False
+
+
+def test_zorgnaam_krijgt_digimv_ook_zonder_sbi_code():
+    """
+    Regressie: KvK-verrijking levert niet altijd een SBI-code op. Een
+    bedrijfsnaam als "Hospice de Ark" is ook zonder sbi_code herkenbaar als
+    Wlz-zorgaanbieder — jaarverantwoordingzorg.nl is wettelijk verplicht voor
+    elke Wlz/Zvw-zorgaanbieder, ongeacht grootte of SBI-registratie.
+    """
+    for naam in (
+        "Hospice de Ark",
+        "Woonzorgcentrum Amaliahof",
+        "Groene Kruis Kraamzorg - Regio Westelijke Mijnstreek",
+        "Groene Kruis Wijkverpleging, Team Echt Zuid",
+        "Groepswoningen Eldershof",
+        "Revalidatiekliniek Noord-Limburg - Venray",
+        "Integr. Expert.centr. Psychogeriatrie Venray",
+        "Stichting Punt Welzijn",
+    ):
+        routes = _routes(QueryContext(naam=naam))
+        assert "digimv" in routes, f"{naam} zou digimv moeten krijgen"
+
+
+def test_onderwijsnaam_krijgt_duo_ook_zonder_sbi_code():
+    for naam in ("Zuyd Hogeschool", "Open Universiteit"):
+        routes = _routes(QueryContext(naam=naam))
+        assert routes["duo"]["verplicht"] is True, f"{naam} zou duo moeten krijgen"
+
+
+def test_sbi_code_blijft_leidend_ook_als_naam_neutraal_is():
+    """Een sbi-treffer werkt onafhankelijk van wat de naam wel of niet bevat."""
+    routes = _routes(QueryContext(
+        naam="Okechamp B.V.", sbi_code="1039", sbi_omschrijving="Groente verwerken",
+    ))
+
+    assert "digimv" not in routes
+    assert "duo" not in routes
+
+
+def test_merknaam_zonder_sectorwoord_wordt_niet_geforceerd():
+    """
+    Een generieke merknaam zonder sbi-code en zonder sectorwoord in de naam
+    (zoals "Stichting Philadelphia") wordt terecht niet herkend — de fallback
+    raadt niet, hij herkent alleen expliciete sectorwoorden.
+    """
+    routes = _routes(QueryContext(naam="Stichting Philadelphia"))
+
+    assert "digimv" not in routes

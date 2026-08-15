@@ -145,7 +145,7 @@ async def test_fallbackqueries_stoppen_na_twee_unieke_resultaten():
     outcome = await ResearchSupervisor(
         tools, max_queries=10, max_pages=6,
     ).run(QueryContext(
-        naam="Voorbeeld Zorg", gevraagd_jaar=2025,
+        naam="Voorbeeld B.V.", gevraagd_jaar=2025,
         website_url="https://voorbeeldzorg.nl", huidig_jaar=2026,
     ))
 
@@ -250,7 +250,7 @@ async def test_klein_paginabudget_wordt_over_onderzoekspaden_verdeeld():
     outcome = await ResearchSupervisor(
         tools, max_queries=12, max_pages=3,
     ).run(QueryContext(
-        naam="Voorbeeld Zorg",
+        naam="Voorbeeld B.V.",
         gevraagd_jaar=2025,
         website_url="https://voorbeeldzorg.nl",
         huidig_jaar=2026,
@@ -291,7 +291,7 @@ async def test_supervisor_neemt_gespecialiseerd_jaarverslag_als_seed_mee():
         EmptyResearchTools(), max_queries=3, max_pages=5,
     ).run(
         QueryContext(
-            naam="Voorbeeld Zorg",
+            naam="Voorbeeld B.V.",
             gevraagd_jaar=2025,
             website_url="https://voorbeeldzorg.nl",
         ),

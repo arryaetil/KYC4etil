@@ -29,24 +29,48 @@ class QueryContext:
 def plan_routes(context: QueryContext) -> list[dict]:
     """Kleine beslistabel voor redelijke onderzoeksroutes.
 
-    Dit is bewust geen AI-planner. SBI bepaalt alleen de drie profielen waar
-    nu een concrete sectorspecifieke route voor bekend is; onbekende bedrijven
+    Dit is bewust geen AI-planner. SBI bepaalt de drie profielen waar nu een
+    concrete sectorspecifieke route voor bekend is; onbekende bedrijven
     houden het bestaande website/document/media-plan.
+
+    KvK-verrijking levert niet altijd een SBI-code op (mislukte lookup,
+    net ingeschreven bedrijf, handmatig aangeleverde testrijen). Daarom
+    kijken de trefwoorden hieronder zowel naar `sbi_omschrijving` als naar de
+    bedrijfsnaam zelf — een "Hospice de Ark" of "Woonzorgcentrum Amaliahof"
+    is ook zonder SBI-code herkenbaar als zorgaanbieder. Dit is een fallback,
+    geen vervanging: een SBI-treffer blijft leidend, en een generieke naam
+    zonder sectorwoord (bijvoorbeeld een merknaam) wordt terecht niet
+    herkend — dat is dan aan de reviewer.
     """
     sbi = (context.sbi_code or "").replace(".", "").strip()
-    omschrijving = (context.sbi_omschrijving or "").lower()
-    onderwijs = sbi.startswith("85") or "onderwijs" in omschrijving
+    naam_en_omschrijving = (
+        f"{context.sbi_omschrijving or ''} {context.naam}"
+    ).lower()
+    onderwijs = sbi.startswith("85") or any(
+        woord in naam_en_omschrijving
+        for woord in (
+            "onderwijs", "school", "college", "universiteit", "hogeschool",
+            "opleiding",
+        )
+    )
     zorg = sbi.startswith(("86", "87", "88")) or any(
-        woord in omschrijving
-        for woord in ("zorg", "ziekenhuis", "verpleging", "welzijn")
+        woord in naam_en_omschrijving
+        for woord in (
+            "zorg", "ziekenhuis", "verpleging", "welzijn", "hospice",
+            "kliniek", "revalidatie", "psychogeriatrie", "gehandicapt",
+            "groepswoning",
+        )
     )
     lokale_zorgpraktijk = sbi.startswith(("862", "8691", "8692")) or any(
-        woord in omschrijving
-        for woord in ("tandarts", "huisarts", "fysiotherap", "verloskund")
+        woord in naam_en_omschrijving
+        for woord in (
+            "tandarts", "huisarts", "fysiotherap", "verloskund",
+            "podotherap", "orthodont",
+        )
     )
     institutionele_zorg = zorg and not lokale_zorgpraktijk
     lokale_teamdienst = lokale_zorgpraktijk or sbi.startswith("9602") or any(
-        woord in omschrijving
+        woord in naam_en_omschrijving
         for woord in ("kapper", "haarverzorging", "schoonheidsverzorging")
     )
 
