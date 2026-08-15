@@ -57,3 +57,20 @@ def test_bevat_altijd_een_link_naar_het_origineel():
     )
     assert 'href="https://example.nl/pagina"' in html
     assert 'target="_blank"' in html
+
+
+def test_negeert_kale_taalwisselaars_als_navigatieruis():
+    """
+    Regressie: Aviko Lomm's JS-zware corporate homepage leverde in productie
+    regels als "nl"/"en" op tussen de echte inhoud — puur navigatieruis.
+    """
+    html = render_bewijspagina(
+        url="https://corporate.aviko.com/",
+        titel="Aviko",
+        tekst="Aviko brengt joy aan tafels.\nnl\nen\nContact",
+        citaat=None,
+    )
+    assert "<p>nl</p>" not in html
+    assert "<p>en</p>" not in html
+    assert "<p>Aviko brengt joy aan tafels.</p>" in html
+    assert "<p>Contact</p>" in html

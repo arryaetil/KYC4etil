@@ -111,8 +111,16 @@ _PAGINA_TEMPLATE = """<!doctype html>
 
 
 def render_bewijspagina(*, url: str, titel: str, tekst: str, citaat: str | None) -> str:
-    """Bouwt de leesweergave-HTML. Puur (geen I/O), dus makkelijk te testen."""
-    paragrafen = [regel for regel in tekst.split("\n") if regel.strip()]
+    """Bouwt de leesweergave-HTML. Puur (geen I/O), dus makkelijk te testen.
+
+    Regels van 2 tekens of minder (taalwisselaars als "nl"/"en") worden
+    genegeerd: dat is vrijwel altijd navigatie-ruis, nooit een bewijszin. Een
+    JS-zware site zonder echte hoofdtekst (bv. alleen knoppen als "Bekijk")
+    blijft daarna nog steeds schraal — dat is geen weergavefout, maar precies
+    wat de extractor zag; zie research/urls.py en de Aviko-observatie in
+    docs/OPENSTAANDE_OBSERVATIES_RESEARCH_EN_UI.md §4.
+    """
+    paragrafen = [regel for regel in tekst.split("\n") if len(regel.strip()) > 2]
 
     if not paragrafen:
         inhoud = (
