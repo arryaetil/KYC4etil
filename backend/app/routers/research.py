@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -15,9 +15,7 @@ from ..models import (
     BronKandidaat, Company, JaarverslagMonitoring, ResearchRun, User,
 )
 from ..research.service import maak_research_run, run_research_run
-from ..providers.fetch import _haal_pagina_op
 from ..providers.live import USER_AGENT
-from ..research.bewijspagina import render_bewijspagina
 from ..research.urls import canonicaliseer_url
 
 router = APIRouter(
@@ -552,45 +550,4 @@ async def bron_pdf(
         doorgeven(),
         media_type=response.headers.get("content-type", "application/pdf"),
         headers={"Content-Disposition": "inline"},
-    )
-
-
-@bron_router.get("/bron-pagina")
-async def bron_pagina(
-    url: str,
-    citaat: str | None = None,
-    titel: str | None = None,
-    _gebruiker=Depends(get_current_user_of_querytoken),
-    db: Session = Depends(get_db),
-):
-    """Toont een webbron als geëscapete leesweergave, met het bewijsfragment
-    gemarkeerd — het website-equivalent van de PDF-modal (zie bron_pdf).
-
-    Andere aanpak dan bron_pdf: hier geven we niet de originele HTML door,
-    maar een eigen, geschoonde pagina (zie research/bewijspagina.py). Reden:
-    de browser past de tekstfragment-highlight (`#:~:text=`) sowieso niet toe
-    binnen een iframe, dus doorgeven van de kale HTML zou geen markering
-    opleveren. Door zelf de al-opgehaalde/gerenderde tekst te markeren werkt
-    highlighten wél, en bijkomend voordeel: X-Frame-Options/CSP-headers van de
-    bronsite spelen geen rol meer, want de browser laadt deze pagina, niet die
-    van de bron.
-    """
-    if not url.startswith(("http://", "https://")):
-        raise HTTPException(400, "alleen http(s)-bronnen worden ondersteund")
-    if not _is_bekende_bron(db, url):
-        raise HTTPException(404, "onbekende bron")
-
-    try:
-        pagina = await _haal_pagina_op(url)
-        tekst = pagina.get("tekst", "")
-    except Exception:
-        tekst = ""
-
-    html_document = render_bewijspagina(
-        url=url, titel=titel or url, tekst=tekst, citaat=citaat,
-    )
-    return Response(
-        content=html_document,
-        media_type="text/html",
-        headers={"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"},
     )

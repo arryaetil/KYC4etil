@@ -18,22 +18,6 @@ export function buildBronProxyUrl(bronUrl, token) {
   return `${API_URL}/research/bron-pdf?${params.toString()}`;
 }
 
-/**
- * Bouwt de URL voor de interne leesweergave van een webbron (het
- * website-equivalent van de PDF-modal, zie backend research/bewijspagina.py).
- * Het `#citaat`-anker laat de browser vanzelf naar de markering scrollen,
- * zonder dat daar JavaScript voor nodig is.
- */
-export function buildBronPaginaUrl({bronUrl, titel, citaat, token}) {
-  if (!bronUrl) return null;
-  const params = new URLSearchParams({url: bronUrl});
-  if (titel) params.set("titel", titel);
-  if (citaat) params.set("citaat", citaat);
-  if (token) params.set("token", token);
-  const hash = citaat ? "#citaat" : "";
-  return `${API_URL}/research/bron-pagina?${params.toString()}${hash}`;
-}
-
 export function buildPdfViewerUrl({bronUrl, pagina, citaat, token}) {
   if (!bronUrl) return null;
   const params = new URLSearchParams();
