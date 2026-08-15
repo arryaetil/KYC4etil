@@ -27,44 +27,23 @@ describe("bewijsUrl", () => {
       .toBe("pdf");
   });
 
-  it("bouwt voor html een tekstfragment dat niet insluitbaar is", () => {
+  it("bouwt voor html een insluitbare leesweergave-URL met citaat en anker", () => {
     const resultaat = bewijsUrl({
       url: "https://example.test/over-ons",
       bewijsfragment: "47 medewerkers in dienst",
-    });
+    }, "mijn-token");
     expect(resultaat.soort).toBe("html");
-    expect(resultaat.kanInbedden).toBe(false);
-    expect(resultaat.url).toContain("#:~:text=");
+    expect(resultaat.kanInbedden).toBe(true);
+    expect(resultaat.url).toContain("/research/bron-pagina");
+    expect(resultaat.url).toContain("citaat=47");
+    expect(resultaat.url).toContain("token=mijn-token");
+    expect(resultaat.url).toContain("#citaat");
   });
 
-  it("codeert koppeltekens en kommas die het tekstfragment zouden breken", () => {
-    const resultaat = bewijsUrl({
-      url: "https://example.test/over-ons",
-      bewijsfragment: "ruim 47 medewerkers, full-time in dienst",
-    });
-    expect(resultaat.url).not.toMatch(/text=[^#]*[,-]/);
-    expect(resultaat.url).toContain("%2D");
-    expect(resultaat.url).toContain("%2C");
-  });
-
-  it("kort een lang citaat in op een woordgrens", () => {
-    const lang = "Wij zijn een organisatie die inmiddels is uitgegroeid tot een "
-      + "van de grootste werkgevers van de regio met veel medewerkers";
-    const resultaat = bewijsUrl({
-      url: "https://example.test/over-ons",
-      bewijsfragment: lang,
-    });
-    const fragment = decodeURIComponent(
-      resultaat.url.split("#:~:text=")[1].replaceAll("%2D", "-"),
-    );
-    expect(fragment.length).toBeLessThanOrEqual(60);
-    expect(lang.startsWith(fragment)).toBe(true);
-    expect(fragment.endsWith(" ")).toBe(false);
-  });
-
-  it("valt zonder citaat terug op de kale bron-URL", () => {
+  it("bouwt voor html zonder citaat toch een insluitbare URL, zonder anker", () => {
     const resultaat = bewijsUrl({url: "https://example.test/over-ons"});
     expect(resultaat.soort).toBe("html");
-    expect(resultaat.url).toBe("https://example.test/over-ons");
+    expect(resultaat.kanInbedden).toBe(true);
+    expect(resultaat.url).not.toContain("#citaat");
   });
 });
