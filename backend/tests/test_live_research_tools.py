@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -11,11 +12,11 @@ from app.research.validation import SourceDocument
 
 @pytest.mark.asyncio
 async def test_opgeloste_officiele_website_wordt_altijd_seed(monkeypatch):
-    async def fake_fetch_text(url):
-        return "OKECHAMP B.V. verwerkt champignons in Velden."
+    async def fake_haal_pagina_op(url):
+        return {"tekst": "OKECHAMP B.V. verwerkt champignons in Velden.", "links": []}
 
     monkeypatch.setattr(live.settings, "openai_api_key", "")
-    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(fetch, "_haal_pagina_op", fake_haal_pagina_op)
 
     document = await LiveResearchTools().find_officiele_website(QueryContext(
         naam="Okechamp B.V.",
@@ -27,6 +28,107 @@ async def test_opgeloste_officiele_website_wordt_altijd_seed(monkeypatch):
     assert document is not None
     assert document.url == "https://www.okechamp.eu/"
     assert document.brontype == "officiele_website"
+
+
+@pytest.mark.asyncio
+async def test_inspect_gebruikt_crawl4ai_fallback_voor_js_zware_paginas(
+    monkeypatch,
+):
+    """
+    Regressie: Aviko Lomm leverde in de VR-testbatch (batch f575fc9c) een
+    relevant nieuwsartikel op zonder medewerkerstal/bewijsfragment, omdat
+    inspect() een platte HTTP-poging (_fetch_text) gebruikte die bij een
+    JS-zware pagina alleen de lege paginaschil oplevert. _haal_pagina_op valt
+    bij te weinig platte tekst zelf terug op Crawl4AI's browser-rendering.
+    """
+    aangeroepen_met = []
+
+    async def fake_haal_pagina_op(url):
+        aangeroepen_met.append(url)
+        return {
+            "tekst": "Aviko Lomm telt momenteel 400 medewerkers, aldus de directie.",
+            "links": [],
+        }
+
+    monkeypatch.setattr(live.settings, "openai_api_key", "")
+    monkeypatch.setattr(fetch, "_haal_pagina_op", fake_haal_pagina_op)
+    monkeypatch.setattr(
+        fetch, "_fetch_text",
+        AsyncMock(side_effect=AssertionError(
+            "inspect() moet _haal_pagina_op gebruiken, niet _fetch_text",
+        )),
+    )
+
+    document = await LiveResearchTools().inspect(
+        QueryContext(naam="Aviko Lomm", gemeente="Lomm", gevraagd_jaar=2025),
+        PlannedQuery("media", "Aviko Lomm medewerkers nieuws", "reden"),
+        CombinedSearchResult(
+            title="Aviko Lomm nieuws",
+            url="https://www.omroepvenlo.nl/nieuws/aviko-lomm",
+            canonical_url="https://omroepvenlo.nl/nieuws/aviko-lomm",
+            snippets=["Aviko Lomm in het nieuws"],
+            providers=["serper"],
+            queries=["Aviko Lomm medewerkers nieuws"],
+        ),
+    )
+
+    assert aangeroepen_met == ["https://www.omroepvenlo.nl/nieuws/aviko-lomm"]
+    assert document is not None
+    assert document.tekst == (
+        "Aviko Lomm telt momenteel 400 medewerkers, aldus de directie."
+    )
+
+
+@pytest.mark.asyncio
+async def test_inspect_geeft_naamlijst_telling_door_in_raw_data(monkeypatch):
+    """
+    Regressie: Dreessen Advocaten en Poulissen noemen medewerkers bij naam
+    zonder los getal. EXTRACT_PROMPT laat het model die lijst tellen; inspect()
+    moet die telling en de gevonden namen doorgeven zodat de reviewer ziet dat
+    het aantal is afgeleid, niet letterlijk genoemd.
+    """
+    async def fake_haal_pagina_op(url):
+        return {"tekst": "Vier advocaten: Jan, Marie, Piet en Anna.", "links": []}
+
+    async def fake_llm_extract(naam, gemeente, tekst):
+        return {
+            "wp_gevonden": 4,
+            "context": "Vier advocaten: Jan, Marie, Piet en Anna.",
+            "is_fte": False,
+            "wp_afgeleid_uit_naamlijst": True,
+            "genoemde_namen": ["Jan", "Marie", "Piet", "Anna"],
+        }
+
+    from app.providers import llm as llm_module
+    from app.research import live_tools as live_tools_module
+
+    # Rechtstreeks live_tools.get_settings monkeypatchen (i.p.v. het gedeelde
+    # settings-singleton) maakt deze test onafhankelijk van of een andere test
+    # get_settings.cache_clear() aanriep vóór deze draait.
+    monkeypatch.setattr(
+        live_tools_module, "get_settings",
+        lambda: SimpleNamespace(openai_api_key="dummy"),
+    )
+    monkeypatch.setattr(fetch, "_haal_pagina_op", fake_haal_pagina_op)
+    monkeypatch.setattr(llm_module, "_llm_extract", fake_llm_extract)
+
+    document = await LiveResearchTools().inspect(
+        QueryContext(naam="Dreessen Advocaten", gevraagd_jaar=2025),
+        PlannedQuery("website", "Dreessen Advocaten team", "reden"),
+        CombinedSearchResult(
+            title="Onze advocaten",
+            url="https://dreessenadvocaten.nl/advocaten",
+            canonical_url="https://dreessenadvocaten.nl/advocaten",
+            snippets=[],
+            providers=["serper"],
+            queries=["Dreessen Advocaten team"],
+        ),
+    )
+
+    assert document is not None
+    assert document.wp_gevonden == 4
+    assert document.raw_data["wp_afgeleid_uit_naamlijst"] is True
+    assert document.raw_data["genoemde_namen"] == ["Jan", "Marie", "Piet", "Anna"]
 
 
 @pytest.mark.asyncio
@@ -106,11 +208,14 @@ async def test_nieuwste_officiele_document_krijgt_eigen_site_search(
 
 @pytest.mark.asyncio
 async def test_documentjaar_mag_uit_zoeksnippet_komen(monkeypatch):
-    async def fake_fetch_text(url):
-        return "Navigatie en algemene informatie zonder zichtbaar jaartal."
+    async def fake_haal_pagina_op(url):
+        return {
+            "tekst": "Navigatie en algemene informatie zonder zichtbaar jaartal.",
+            "links": [],
+        }
 
     monkeypatch.setattr(live.settings, "openai_api_key", "")
-    monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
+    monkeypatch.setattr(fetch, "_haal_pagina_op", fake_haal_pagina_op)
 
     document = await LiveResearchTools().inspect(
         QueryContext(

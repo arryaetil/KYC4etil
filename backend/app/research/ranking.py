@@ -185,6 +185,38 @@ def rank_bronnen(
     return sorted(ranked, key=lambda item: item.ranking_score, reverse=True)
 
 
+def _is_vestigingsanker(kandidaat: RankedBron) -> bool:
+    document = kandidaat.document
+    return (
+        document.scope_class == "vestiging"
+        and document.wp_gevonden is not None
+        and bool(document.bewijsfragment)
+    )
+
+
+def behoud_vestigingsanker(
+    ranked: list[RankedBron], maximum: int,
+) -> list[RankedBron]:
+    """Verdringt nooit een bevestigde vestigingsbron door een zwakkere,
+    algemenere kandidaat bij het afkappen op `maximum`.
+
+    Regressie: de researchflow vond bij Hallux Podotherapie de juiste
+    vestigingspagina (vier met naam genoemde medewerkers), maar de
+    uiteindelijke top-3 bevatte toch de algemene teampagina in plaats daarvan
+    — de ranking beloont autoriteit/actualiteit/bewijs, maar niet of een
+    kandidaat expliciet over déze vestiging gaat. Zodra een kandidaat met
+    vestigingsscope én concreet WP-bewijs bestaat, blijft die in de top ook
+    als de kale score lager uitvalt dan een generieke concernpagina.
+    """
+    top = ranked[:maximum]
+    if not top or any(_is_vestigingsanker(kandidaat) for kandidaat in top):
+        return top
+    for kandidaat in ranked[maximum:]:
+        if _is_vestigingsanker(kandidaat):
+            return top[:-1] + [kandidaat]
+    return top
+
+
 def selecteer_bronportfolio(
     ranked: list[RankedBron],
     maximum: int,

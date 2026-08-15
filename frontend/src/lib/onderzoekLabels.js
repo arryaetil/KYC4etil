@@ -53,6 +53,9 @@ const WAARSCHUWING = {
   duo_definitie_wijkt_af_van_wp: {
     label: "DUO-definitie — controleer tegen WP", toon: "aandacht",
   },
+  wp_afgeleid_uit_naamlijst: {
+    label: "Geteld uit namenlijst", toon: "aandacht",
+  },
 };
 
 const BRONTYPE = {

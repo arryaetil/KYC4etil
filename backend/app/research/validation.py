@@ -82,6 +82,8 @@ def valideer_bron(document: SourceDocument) -> BronValidatie:
         waarschuwingen.append("scope_breder_dan_vestiging")
     if not document.bewijsfragment and document.wp_gevonden is not None:
         waarschuwingen.append("getal_zonder_bewijsfragment")
+    if (document.raw_data or {}).get("wp_afgeleid_uit_naamlijst"):
+        waarschuwingen.append("wp_afgeleid_uit_naamlijst")
 
     validaties = {
         "domein_match": domein_match,

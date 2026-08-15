@@ -26,8 +26,25 @@ nooit en leid niets af.
 - voltijd (≥12 uur/week), deeltijd (<12 uur/week): aantal medewerkers per dienstverbandomvang
 - pct_op_locatie: percentage (0-100) van de medewerkers werkzaam op déze locatie
 
+Een expliciete NAMENLIJST (bijvoorbeeld een team- of over-ons-pagina die
+meerdere medewerkers apart bij naam noemt, met of zonder functie) is ook
+telbaar bewijs, ook als er nergens een los getal staat:
+- Tel het aantal duidelijk onderscheiden, bij naam genoemde personen die
+  overduidelijk bij {naam} werken (geen klanten, bestuursleden van een andere
+  organisatie of losse vermeldingen). Dat aantal wordt het gevonden getal;
+  markeer het veld dat aangeeft dat het uit een naamlijst is afgeleid.
+- Zo'n telling is nooit het hoogste zekerheidsniveau (het is afgeleid, geen
+  letterlijk genoemd getal) — het middelste niveau is het hoogst haalbare,
+  en het laagste niveau past beter als de lijst onvolledig kan zijn
+  (bijvoorbeeld door lazy-loading, "toon meer" of afgesneden kaarten).
+  Bewaar de gevonden namen (en functie, indien vermeld) als losse strings,
+  bijvoorbeeld Jan Jansen (advocaat), Marie de Vries.
+- Staat er wél al een los, letterlijk genoemd totaalgetal? Gebruik dat getal
+  in plaats van de telling en laat het naamlijst-veld op false staan.
+
 Werk in deze volgorde en schrijf je afweging in "redenering" (max 3 zinnen):
 1. Welk getal in de tekst gaat over medewerkers, en welke zin noemt het letterlijk?
+   Ontbreekt een los getal? Kijk dan of er een namenlijst te tellen is.
 2. Is dat een headcount of een FTE-getal? Bij twijfel: is_fte=false en zekerheid lager.
 3. Geldt het voor déze vestiging ({adres}) of voor een groter geheel?
 Vul de overige velden pas in nadat je die drie vragen hebt beantwoord.
@@ -38,6 +55,7 @@ Antwoord uitsluitend met JSON:
   "zekerheid": "hoog" (getal staat letterlijk vermeld voor déze vestiging) | "middel" (aannemelijk maar afgeleid of niet 100% zeker) | "laag" (getal ontbreekt of is onzeker), "reden": "<uitleg>",
   "is_totaal_meerdere_vestigingen": <bool>, "is_limburg_specifiek": <bool>,
   "is_fte": <bool>, "peilmoment": "<jaar of null>",
+  "wp_afgeleid_uit_naamlijst": <bool>, "genoemde_namen": <["naam (functie)", ...]|null>,
   "eigen_personeel": <int|null>, "uitzend": <int|null>, "detachering": <int|null>, "wsw": <int|null>,
   "man": <int|null>, "vrouw": <int|null>, "voltijd": <int|null>, "deeltijd": <int|null>,
   "pct_op_locatie": <int|null>}}

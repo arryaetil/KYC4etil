@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from .query_planner import QueryContext, plan_queries, plan_routes
-from .ranking import RankedBron, rank_bronnen
+from .ranking import RankedBron, behoud_vestigingsanker, rank_bronnen
 from .types import CombinedSearchResult, PlannedQuery
 from .validation import SourceDocument, valideer_bron
 
@@ -340,7 +340,9 @@ class ResearchSupervisor:
         # Bij de gebruikelijke circa vijf bronnen is een diversiteitsfilter
         # schadelijker dan behulpzaam: het kan een derde relevante team- of
         # documentbron stil laten verdwijnen.
-        ranked = rank_bronnen(validaties)[:self.max_kandidaten]
+        ranked = behoud_vestigingsanker(
+            rank_bronnen(validaties), self.max_kandidaten,
+        )
         reden_teller = Counter(
             reden
             for validatie in validaties

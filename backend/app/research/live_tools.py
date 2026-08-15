@@ -405,7 +405,12 @@ class LiveResearchTools:
             )
 
         try:
-            tekst = await fetch._fetch_text(result.url)
+            # _haal_pagina_op (i.p.v. _fetch_text) valt terug op Crawl4AI's
+            # browser-rendering zodra de platte HTTP-poging te weinig tekst
+            # oplevert (<500 tekens) — nodig voor JS-zware pagina's die anders
+            # alleen hun lege paginaschil prijsgeven (zie de Aviko-observatie
+            # in docs/OPENSTAANDE_OBSERVATIES_RESEARCH_EN_UI.md §4).
+            tekst = (await fetch._haal_pagina_op(result.url)).get("tekst", "")
         except Exception:
             tekst = " ".join(result.snippets)
         if not tekst.strip():
@@ -463,6 +468,8 @@ class LiveResearchTools:
             raw_data={
                 "providers": result.providers,
                 "queries": result.queries,
+                "wp_afgeleid_uit_naamlijst": data.get("wp_afgeleid_uit_naamlijst", False),
+                "genoemde_namen": data.get("genoemde_namen"),
             },
         )
 

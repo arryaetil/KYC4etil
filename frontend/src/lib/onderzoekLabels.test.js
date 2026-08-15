@@ -176,6 +176,15 @@ describe("bronwaarschuwingen", () => {
     expect(labels).toContain("DUO-definitie — controleer tegen WP");
   });
 
+  it("maakt zichtbaar dat een WP-getal uit een namenlijst is geteld, niet letterlijk genoemd", () => {
+    const labels = bronwaarschuwingen({
+      wp_gevonden: 4,
+      eenheid: "werkzame_personen",
+      waarschuwingen: ["wp_afgeleid_uit_naamlijst"],
+    }).map((item) => item.label);
+    expect(labels).toContain("Geteld uit namenlijst");
+  });
+
   it("waarschuwt bij een afwijkend verslagjaar", () => {
     const labels = bronwaarschuwingen({verslagjaar: 2024, gevraagd_jaar: 2025})
       .map((item) => item.label);
