@@ -39,37 +39,38 @@ het vervangt de jaarverslagagent niet.
 
 ## DUO Open Onderwijsdata
 
-**Vindplaats.** `duo.nl/open_onderwijsdata`, plus een open REST/JSON-LD API op
-`api.duo.nl` zonder sleutel, doorzoekbaar op onder meer `brin`, `bevoegd_gezag`,
-`instellingsnaam`, `vestigingsnaam`, `vestigingsnummer` en `gemeentenaam`.
+**Vindplaats.** `duo.nl/open_onderwijsdata`. De actieve koppeling leest de
+officiële maandelijkse adresbestanden en jaarlijkse personeelsbestanden voor
+PO, VO en MBO rechtstreeks in, zonder API-sleutel.
 
 **Wat er in zit.** Onderwijspersoneel per bevoegd gezag en per instellingscode
-(BRIN), in **fte** — nooit in aantal personen. Peildatum 1 oktober, publicatie in
-april daarna. Historie 2011–2025. Voor po ook man/vrouw, leeftijd en vast/tijdelijk.
+(BRIN), zowel in fte als in **aantal personen**. De bronnenwerkbank gebruikt
+uitsluitend het personenbestand. Peildatum 1 oktober, publicatie in april
+daarna. Historie 2011–2025. Voor po ook man/vrouw, leeftijd en vast/tijdelijk.
 Let op: de totalen tussen tabbladen verschillen door weegfactoren die corrigeren
 voor instellingen die niet volledig aanleveren.
 
 **Wat er níet in zit.** Geen uitsplitsing per vestiging — alleen bevoegd gezag en
 instelling.
 
-**Twee mismatches met ons register.** fte is geen WP (harde domeinregel: nooit
-stilzwijgend omrekenen), en instelling/bestuur is geen vestiging. Van "fte bij
-bestuur X" naar "wp bij vestiging Y" vergt zowel omrekenen als proportioneel
-verdelen — twee lagen benadering op elkaar, en dat mag volgens de domeinregels
-nooit 🟢 worden.
+**Mismatch met ons register.** DUO-personen zijn niet automatisch hetzelfde als
+WP: onder meer gastdocenten, stagiairs, uitzendkrachten en vervangers kunnen
+buiten de DUO-definitie vallen. Bovendien is instelling/bestuur niet altijd een
+vestiging. Daarom bewaart de koppeling de eenheid als
+`onderwijspersoneel_personen` en toont de UI een expliciete waarschuwing.
 
-**Conclusie.** Als bron om aan een reviewer te tónen is DUO prima: gezaghebbend,
-gratis en zonder sleutel. Als automatische WP-bron niet. De sterkste toepassing is
-de **vestigingstelling voor onderwijs**: via de API is exact vast te stellen welke
-vestigingen onder een bestuur vallen en hoeveel daarvan in Limburg liggen — precies
-waar `locations()` nu 3,2 ct per organisatie voor betaalt aan Google Places, met
-een telling die op 20 wordt afgekapt.
+**Actieve toepassing.** Naam, gemeente en adres worden aan de DUO-adresrij en
+instellingscode gekoppeld. Bij één instelling wordt het personengetal als
+controleerbare bron voorgesteld. Bij een groep met meerdere instellingscodes
+worden de deelwaarden getoond maar niet opgeteld, omdat dezelfde persoon bij
+meerdere instellingen kan voorkomen. Hoger onderwijs heeft in deze eerste
+versie geen vergelijkbaar direct personeelsbestand.
 
 ## Openstaand
 
-- Of DUO's `vestigingsnummer` (RIO) hetzelfde is als het vestigingsnummer in ons
-  register. Zo niet, dan moet de koppeling via adres/postcode en is die
-  foutgevoelig.
+- Of een structurele BRIN/RIO-code aan de aangeleverde registerdata kan worden
+  toegevoegd. Dat zou de huidige conservatieve naam-/gemeente-/adresmatch verder
+  versterken.
 - Of de niet-openbare personeelsaantallen uit DigiMV op aanvraag beschikbaar zijn.
   Eén bron meldde dat personeelsinformatie alleen na toetsing door
   brancheorganisaties vrijkomt; dat is niet op de primaire pagina's bevestigd.

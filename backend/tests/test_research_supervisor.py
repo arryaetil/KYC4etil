@@ -121,6 +121,44 @@ class EmptyResearchTools(FakeResearchTools):
         return []
 
 
+class TweeUniekeResultatenTools(FakeResearchTools):
+    async def search(self, query: PlannedQuery, max_results: int):
+        self.paden.append(query.pad)
+        domein = (
+            "voorbeeldzorg.nl" if query.pad in {"website", "document"}
+            else "limburgnieuws.nl"
+        )
+        return [
+            CombinedSearchResult(
+                title=f"{query.pad} {index}",
+                url=f"https://{domein}/{query.pad}/{index}",
+                canonical_url=f"https://{domein}/{query.pad}/{index}",
+                providers=["serper"], queries=[query.query],
+            )
+            for index in range(2)
+        ]
+
+
+@pytest.mark.asyncio
+async def test_fallbackqueries_stoppen_na_twee_unieke_resultaten():
+    tools = TweeUniekeResultatenTools()
+    outcome = await ResearchSupervisor(
+        tools, max_queries=10, max_pages=6,
+    ).run(QueryContext(
+        naam="Voorbeeld Zorg", gevraagd_jaar=2025,
+        website_url="https://voorbeeldzorg.nl", huidig_jaar=2026,
+    ))
+
+    assert tools.paden.count("website") == 1
+    assert tools.paden.count("document") == 1
+    assert tools.paden.count("media") == 1
+    assert outcome.onderzochte_queries == 3
+    assert all(
+        reden == "bruikbaar bewijs gevonden"
+        for reden in outcome.diagnostiek["adaptief_stoppen"].values()
+    )
+
+
 class ManyResultsResearchTools(FakeResearchTools):
     def __init__(self):
         super().__init__()
@@ -200,9 +238,8 @@ async def test_kandidaten_limiet_is_configureerbaar():
         website_url="https://voorbeeldzorg.nl",
         huidig_jaar=2026,
     ))
-    # De limiet is een bovengrens: per menselijke bronrol worden maximaal
-    # twee alternatieven getoond om handmatig dubbelwerk te voorkomen.
-    assert len(outcome_ruim.kandidaten) == 4
+    # Alle relevante bronnen blijven zichtbaar tot de eenvoudige bovengrens.
+    assert len(outcome_ruim.kandidaten) == 8
     assert len(outcome_ruim.kandidaten) <= 8
 
 
@@ -264,6 +301,43 @@ async def test_supervisor_neemt_gespecialiseerd_jaarverslag_als_seed_mee():
     assert outcome.status == "review_nodig"
     assert [item.document.url for item in outcome.kandidaten] == [seed.url]
     assert outcome.diagnostiek["gelezen_documenten"] == 1
+
+
+@pytest.mark.asyncio
+async def test_supervisor_boekt_directe_duo_seed_op_duo_route():
+    seed = SourceDocument(
+        naam="Praktijkonderwijs Roermond",
+        company_website_url=None,
+        url="https://duo.nl/personeel-vo.xlsx",
+        titel="DUO onderwijspersoneel — Praktijkonderwijs Roermond",
+        brontype="overheid",
+        documenttype="duo_personeel_personen",
+        gevraagd_jaar=2025,
+        verslagjaar=2025,
+        wp_gevonden=35,
+        eenheid="onderwijspersoneel_personen",
+        bewijsfragment="DUO registreert 35 personen bij instellingscode 23HH.",
+        scope_class="vestiging",
+        research_route="duo",
+    )
+    outcome = await ResearchSupervisor(
+        EmptyResearchTools(), max_queries=6, max_pages=5,
+    ).run(
+        QueryContext(
+            naam="Praktijkonderwijs Roermond",
+            gevraagd_jaar=2025,
+            sbi_code="85311",
+        ),
+        seed_documents=[seed],
+    )
+
+    duo_status = next(
+        item for item in outcome.diagnostiek["route_statussen"]
+        if item["route"] == "duo"
+    )
+    assert duo_status["status"] == "afgerond"
+    assert duo_status["aantal_bronnen"] == 1
+    assert duo_status["aantal_queries"] == 0
 
 
 class TrageReviewTools(FakeResearchTools):

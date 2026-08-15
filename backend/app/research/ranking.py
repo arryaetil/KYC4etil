@@ -44,6 +44,7 @@ def _relevance_score(bron: BronValidatie) -> float:
     if document.documenttype in {
         "jaarverslag", "jaarrekening", "bestuursverslag",
         "teampagina", "organisatiepagina", "nieuwsartikel",
+        "duo_personeel_personen",
     }:
         score += 0.25
     if document.gevraagd_jaar is not None and document.verslagjaar == document.gevraagd_jaar:

@@ -26,6 +26,8 @@ class SourceDocument:
     bewijsfragment: str | None = None
     bron_pagina: int | None = None
     scope_class: str | None = None
+    research_route: str | None = None
+    raw_data: dict | None = None
 
 
 @dataclass
@@ -72,6 +74,8 @@ def valideer_bron(document: SourceDocument) -> BronValidatie:
         afwijsredenen.append("verkeerd verslagjaar")
     if document.eenheid == "fte":
         waarschuwingen.append("fte_geen_wp")
+    if document.documenttype == "duo_personeel_personen":
+        waarschuwingen.append("duo_definitie_wijkt_af_van_wp")
     if document.brontype == "media" and document.publicatiedatum:
         waarschuwingen.append("recent_actualiteitssignaal")
     if document.scope_class in {"nederland", "concern"}:

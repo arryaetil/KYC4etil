@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..database import SessionLocal
 from ..models import Batch, BronKandidaat, Company, Enrichment, ResearchRun
-from ..pipeline.identity_scope import domain_matches_company
 from .live_tools import LiveResearchTools
 from .mock_tools import MockResearchTools
-from .query_planner import QueryContext
+from .organizations import koppel_organisatie, vind_bestaande_bronnen
+from .query_planner import QueryContext, plan_routes
 from .seeds import verzamel_seed_documenten
 from .source_reviewer import IntelligentSourceReviewer
 from .supervisor import ResearchSupervisor
@@ -53,13 +53,30 @@ def maak_research_run(
     gevraagd_jaar: int | None,
 ) -> ResearchRun:
     settings = get_settings()
+    context = QueryContext(
+        naam=company.naam,
+        gevraagd_jaar=gevraagd_jaar,
+        website_url=company.website_url,
+        gemeente=company.gemeente,
+        adres=company.adres,
+        sbi_code=company.sbi_code,
+        sbi_omschrijving=company.sbi_omschrijving,
+        kvk_nummer=company.kvk_nummer,
+    )
+    koppel_organisatie(
+        db,
+        company,
+        company.website_url or (
+            company.enrichment.website_url if company.enrichment else None
+        ),
+    )
     run = ResearchRun(
         company_id=company.id,
         batch_id=company.batch_id,
         doel="actuele en relevante openbare WP-bronnen vinden",
         gevraagd_jaar=gevraagd_jaar,
         status="pending",
-        onderzoekspaden=["website", "document", "media"],
+        onderzoekspaden=plan_routes(context),
         configuratie={
             "max_queries": settings.research_max_queries,
             "max_pages": settings.research_max_pages,
@@ -103,6 +120,10 @@ async def _run_research_run(run_id: str) -> None:
             company_id = company.id
             company_naam = company.naam
             company_gemeente = company.gemeente
+            company_adres = company.adres
+            company_sbi_code = company.sbi_code
+            company_sbi_omschrijving = company.sbi_omschrijving
+            company_kvk_nummer = company.kvk_nummer
             gevraagd_jaar = run.gevraagd_jaar
             website_url = company.website_url or enrichment_website
             if website_url:
@@ -116,6 +137,10 @@ async def _run_research_run(run_id: str) -> None:
                     ),
                 }
             run.status = "running"
+            run.onderzoekspaden = [
+                {**item, "status": "bezig"}
+                for item in (run.onderzoekspaden or [])
+            ]
             run.started_at = _now()
             db.commit()
 
@@ -168,36 +193,38 @@ async def _run_research_run(run_id: str) -> None:
             gevraagd_jaar=gevraagd_jaar,
             website_url=website_url,
             gemeente=company_gemeente,
+            adres=company_adres,
+            sbi_code=company_sbi_code,
+            sbi_omschrijving=company_sbi_omschrijving,
+            kvk_nummer=company_kvk_nummer,
         )
+        with SessionLocal() as db:
+            company = db.get(Company, company_id)
+            if company is None:
+                return
+            koppel_organisatie(db, company, website_url)
+            db.flush()
+            bestaande_bronnen = vind_bestaande_bronnen(db, company)
+            db.commit()
         tools = (
             LiveResearchTools()
             if settings.provider_mode == "live"
             else MockResearchTools()
         )
         seed_documents = (
-            await verzamel_seed_documenten(tools, context)
+            await verzamel_seed_documenten(
+                tools,
+                context,
+                {item["route"] for item in plan_routes(context)},
+                bestaande_bronnen=bestaande_bronnen,
+            )
             if settings.provider_mode == "live"
             else []
-        )
-        heeft_exacte_officiele_primaire_bron = any(
-            document.verslagjaar == gevraagd_jaar
-            and domain_matches_company(
-                document.url, document.company_website_url,
-            ) is True
-            for document in seed_documents
-        )
-        effectief_max_paginas = (
-            min(
-                settings.research_max_pages,
-                settings.research_max_pages_after_primary,
-            )
-            if heeft_exacte_officiele_primaire_bron
-            else settings.research_max_pages
         )
         outcome = await ResearchSupervisor(
             tools,
             max_queries=settings.research_max_queries,
-            max_pages=effectief_max_paginas,
+            max_pages=settings.research_max_pages,
             max_kandidaten=settings.research_max_kandidaten,
             reviewer=(
                 IntelligentSourceReviewer()
@@ -240,20 +267,21 @@ async def _run_research_run(run_id: str) -> None:
                     score_breakdown=ranked.score_breakdown,
                     validaties=ranked.validaties,
                     waarschuwingen=ranked.waarschuwingen,
+                    raw_data=document.raw_data,
                     status="voorgesteld",
                     rang=rang,
                 ))
 
             run.status = "completed"
             run.resultaat_status = outcome.status
+            run.onderzoekspaden = outcome.diagnostiek.get(
+                "route_statussen",
+                run.onderzoekspaden,
+            )
             run.completed_at = _now()
             _sla_kosten_op(run)
             run.configuratie = {
                 **(run.configuratie or {}),
-                "effectief_max_paginas": effectief_max_paginas,
-                "exacte_officiele_primaire_bron": (
-                    heeft_exacte_officiele_primaire_bron
-                ),
                 "diagnostiek": outcome.diagnostiek,
             }
             run.configuratie["diagnostiek"]["website_resolution"] = (

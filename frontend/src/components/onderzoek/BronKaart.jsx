@@ -66,14 +66,14 @@ export function BronKaart({
   const identiteit = identiteitLabel(candidate.identity_class);
   const bereik = bereikLabel(candidate.scope_class);
   const waarschuwingen = bronwaarschuwingen({...candidate, gevraagd_jaar: gevraagdJaar});
-  const beoordeeld = ["geaccepteerd", "afgewezen"].includes(candidate.status);
+  const beoordeeld = ["geaccepteerd", "alternatief", "afgewezen"].includes(candidate.status);
 
   return (
     <article className={classNames(
-      "border-l-2 py-5 pl-4 pr-1 transition",
+      "px-4 py-5 transition",
       candidate.status === "geaccepteerd"
-        ? "border-l-emerald-500"
-        : isGeselecteerd ? "border-l-etil" : "border-l-transparent",
+        ? "bg-emerald-50/60"
+        : isGeselecteerd ? "bg-panel" : "bg-transparent",
       candidate.status === "afgewezen" && "opacity-50",
     )}>
       <div className="flex items-baseline gap-2">
@@ -87,6 +87,10 @@ export function BronKaart({
         {candidate.status === "geaccepteerd" ? (
           <span className="ml-auto inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-900">
             <Check size={11} />Gekozen
+          </span>
+        ) : candidate.status === "alternatief" ? (
+          <span className="ml-auto rounded border border-line bg-white px-1.5 py-0.5 text-xs text-slate-700">
+            Relevante bron
           </span>
         ) : null}
       </div>
@@ -143,7 +147,7 @@ export function BronKaart({
               disabled={bezig}
               className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-ink px-2.5 py-1.5 text-sm text-white transition hover:opacity-90 disabled:opacity-50"
             >
-              <Check size={14} />Accepteren
+              <Check size={14} />Beoordelen
             </button>
             <button
               type="button"
@@ -173,7 +177,16 @@ export function BronKaart({
             <Signaal {...bereik} />
             {candidate.wp_gevonden != null ? (
               <span className="tabular-nums text-slate-600">
-                {candidate.wp_gevonden} {candidate.eenheid === "fte" ? "FTE" : "WP"}
+                {candidate.wp_gevonden} {
+                  candidate.eenheid === "fte"
+                    ? "FTE"
+                    : candidate.eenheid === "onderwijspersoneel_personen"
+                      ? "onderwijspersoneel"
+                      : "WP"
+                }
+                {candidate.gecorrigeerd_wp != null
+                  ? ` → ${candidate.gecorrigeerd_wp} gecorrigeerd`
+                  : ""}
               </span>
             ) : null}
             {candidate.verslagjaar ? (

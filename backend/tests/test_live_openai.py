@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -109,6 +110,7 @@ async def test_openai_web_search_parseert_bronnen_en_citaties(monkeypatch):
 
     import openai
     monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "openai_web_search_enabled", True)
     monkeypatch.setattr(live.settings, "openai_web_search_model", "gpt-test")
     monkeypatch.setattr(openai, "AsyncOpenAI", SearchOpenAI)
 
@@ -191,7 +193,7 @@ async def test_web_search_contact_geeft_none_als_geen_zoekresultaten(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_web_search_combineert_duckduckgo_en_serper(monkeypatch):
+async def test_web_search_gebruikt_uitsluitend_serper(monkeypatch):
     async def fake_duckduckgo(query, max_results=5):
         return [
             {"title": "Team", "url": "https://example.test/team?utm_source=ddg",
@@ -212,8 +214,15 @@ async def test_web_search_combineert_duckduckgo_en_serper(monkeypatch):
     results = await search._web_search("Example medewerkers", max_results=5)
 
     assert len(results) == 2
-    assert results[0]["bronnen"] == ["duckduckgo", "serper"]
-    assert results[0]["bron"] == "duckduckgo+serper"
+    assert all(item["bron"] == "serper" for item in results)
+
+
+@pytest.mark.asyncio
+async def test_openai_web_search_is_standaard_hard_uitgeschakeld(monkeypatch):
+    monkeypatch.setattr(live.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(live.settings, "openai_web_search_enabled", False)
+
+    assert await search._openai_web_search("Example jaarverslag") == []
 
 
 @pytest.mark.asyncio
@@ -869,6 +878,113 @@ async def test_serper_succes_registreert_wel_kosten(monkeypatch):
 
     assert len(resultaten) == 1
     assert usage.get_cost_summary()["providers"]["serper_search"]["calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_serper_hergebruikt_identieke_call_binnen_researchrun(monkeypatch):
+    """Seed- en hoofdonderzoek mogen dezelfde betaalde query delen zonder
+    bronnen te verliezen of een tweede credit te verbruiken."""
+    from app.research import usage
+
+    class _CountingClient:
+        calls = 0
+
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, *args, **kwargs):
+            self.__class__.calls += 1
+            return httpx.Response(
+                200,
+                json={"organic": [{
+                    "title": "Bron",
+                    "link": "https://voorbeeld.test/bron",
+                    "snippet": "bewijs",
+                }]},
+                request=httpx.Request("POST", "https://google.serper.dev/search"),
+            )
+
+    monkeypatch.setattr(live.settings, "serper_api_key", "test-key")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _CountingClient())
+    usage.start_usage_tracking()
+
+    eerste, tweede = await asyncio.gather(
+        search._serper_search("Testbedrijf medewerkers", max_results=5),
+        search._serper_search("Testbedrijf medewerkers", max_results=5),
+    )
+
+    assert eerste == tweede
+    assert eerste is not tweede
+    assert _CountingClient.calls == 1
+    assert usage.get_cost_summary()["providers"]["serper_search"]["calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_google_lookup_haalt_dezelfde_velden_via_gratis_ids_en_details(
+    monkeypatch,
+):
+    """Text Search met website/telefoon kost Enterprise-tarief. Een gratis
+    ID-zoekactie plus één Enterprise-detailcall levert dezelfde velden goedkoper."""
+    from app.research import usage
+
+    calls = []
+
+    class _GoogleClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+        async def post(self, url, **kwargs):
+            calls.append(("POST", url, kwargs["headers"]["X-Goog-FieldMask"]))
+            return httpx.Response(
+                200,
+                json={"places": [{"id": "place-123"}]},
+                request=httpx.Request("POST", url),
+            )
+
+        async def get(self, url, **kwargs):
+            calls.append(("GET", url, kwargs["headers"]["X-Goog-FieldMask"]))
+            return httpx.Response(
+                200,
+                json={
+                    "websiteUri": "https://testbedrijf.test",
+                    "nationalPhoneNumber": "043-1234567",
+                    "formattedAddress": "Markt 1, Maastricht",
+                },
+                request=httpx.Request("GET", url),
+            )
+
+    async def geen_serper_resultaat(query):
+        return None
+
+    monkeypatch.setattr(live.settings, "google_places_api_key", "test-key")
+    monkeypatch.setattr(search, "_serper_places", geen_serper_resultaat)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _GoogleClient())
+    usage.start_usage_tracking()
+
+    result = await places.LivePlacesProvider().lookup(
+        "Testbedrijf", "Maastricht",
+    )
+
+    assert result.website == "https://testbedrijf.test"
+    assert result.phone == "043-1234567"
+    assert calls == [
+        ("POST", places.PLACES_SEARCH_URL, "places.id"),
+        (
+            "GET",
+            f"{places.PLACES_DETAILS_URL}/place-123",
+            "websiteUri,nationalPhoneNumber,formattedAddress",
+        ),
+    ]
+    assert usage.get_cost_summary()["providers"] == {
+        "google_places_details_enterprise": {
+            "calls": 1,
+            "kosten_usd": 0.02,
+        },
+        "google_places_text_search_ids_only": {
+            "calls": 1,
+            "kosten_usd": 0.0,
+        },
+        "openai_tokens": {"calls": 0, "kosten_usd": 0.0},
+    }
 
 
 @pytest.mark.asyncio

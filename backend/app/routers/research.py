@@ -43,9 +43,14 @@ class ReviewBody(BaseModel):
     beslissing: str
     reason_code: str | None = Field(default=None, max_length=50)
     reden: str | None = Field(default=None, max_length=2000)
+    wp_oordeel: str | None = Field(default=None, max_length=30)
+    gecorrigeerd_wp: int | None = Field(default=None, ge=0)
+    bron_volledig_ingelezen: bool | None = None
+    extractie_reason_code: str | None = Field(default=None, max_length=50)
 
 
 ACCEPT_REASON = "juiste_bron_bruikbaar_bewijs"
+SUPPORT_REASON = "juiste_bron_relevante_context"
 REJECT_REASONS = {
     "verkeerde_organisatie",
     "verkeerde_scope",
@@ -56,6 +61,19 @@ REJECT_REASONS = {
     "duplicaat",
     "sterkere_bron_beschikbaar",
     "verouderde_bron",
+    "anders",
+}
+WP_OORDELEN = {"correct", "te_laag", "te_hoog", "niet_te_bepalen", "geen_getal"}
+EXTRACTIE_REASONS = {
+    "personen_gemist",
+    "personen_onterecht_meegeteld",
+    "pagina_onvolledig_geladen",
+    "informatie_in_afbeelding",
+    "verkeerde_scope",
+    "verkeerde_eenheid",
+    "verouderde_informatie",
+    "interpretatiefout",
+    "afwijkende_definitie",
     "anders",
 }
 
@@ -93,10 +111,17 @@ def _candidate_dict(
         "score_breakdown": candidate.score_breakdown,
         "validaties": candidate.validaties,
         "waarschuwingen": candidate.waarschuwingen,
+        "raw_data": candidate.raw_data,
         "status": candidate.status,
         "rang": candidate.rang,
         "review_reason_code": candidate.review_reason_code,
         "review_reason": candidate.review_reason,
+        "bron_relevant": candidate.bron_relevant,
+        "bron_volledig_ingelezen": candidate.bron_volledig_ingelezen,
+        "wp_oordeel": candidate.wp_oordeel,
+        "gecorrigeerd_wp": candidate.gecorrigeerd_wp,
+        "extractie_reason_code": candidate.extractie_reason_code,
+        "extractie_toelichting": candidate.extractie_toelichting,
         "gedeeld_met_vestigingen": gedeeld_met_vestigingen,
     }
 
@@ -107,6 +132,30 @@ def _run_diagnostiek(run: ResearchRun) -> dict:
 
 def _run_kosten(run: ResearchRun) -> dict:
     return (run.configuratie or {}).get("kosten") or {}
+
+
+def _onderzoekspaden(run: ResearchRun) -> list[dict]:
+    """Houd oude runs met tekstpaden compatibel met het huidige API-contract."""
+    legacy_status = {
+        "pending": "wachtend",
+        "running": "bezig",
+        "completed": "afgerond",
+        "error": "mislukt",
+    }.get(run.status, "onbekend")
+    return [
+        {
+            "route": item,
+            "verplicht": True,
+            "status": legacy_status,
+            "reden": "route uit eerdere onderzoeksrun",
+        }
+        if isinstance(item, str) else item
+        for item in (run.onderzoekspaden or [])
+        if (
+            (isinstance(item, str) and item)
+            or (isinstance(item, dict) and item.get("route"))
+        )
+    ]
 
 
 def _gedeelde_bronnen(
@@ -221,7 +270,11 @@ def start_research(
         raise HTTPException(404, "company niet gevonden")
     run = maak_research_run(db, company, body.gevraagd_jaar)
     background_tasks.add_task(run_research_run, run.id)
-    return {"run_id": run.id, "status": run.status}
+    return {
+        "run_id": run.id,
+        "status": run.status,
+        "onderzoekspaden": _onderzoekspaden(run),
+    }
 
 
 @router.get("/runs/{run_id}")
@@ -242,6 +295,7 @@ def get_research_run(run_id: str, db: Session = Depends(get_db)):
         "status": run.status,
         "resultaat_status": run.resultaat_status,
         "gevraagd_jaar": run.gevraagd_jaar,
+        "onderzoekspaden": _onderzoekspaden(run),
         "fout": run.fout,
         "kosten": _run_kosten(run),
         "diagnostiek": _run_diagnostiek(run),
@@ -266,7 +320,7 @@ def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
         .first()
     )
     if laatste_run is None:
-        return {"items": [], "diagnostiek": {}, "kosten": {}}
+        return {"items": [], "diagnostiek": {}, "kosten": {}, "onderzoekspaden": []}
     kandidaten = (
         db.query(BronKandidaat)
         .filter_by(research_run_id=laatste_run.id)
@@ -284,6 +338,7 @@ def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
         ],
         "kosten": _run_kosten(laatste_run),
         "diagnostiek": _run_diagnostiek(laatste_run),
+        "onderzoekspaden": _onderzoekspaden(laatste_run),
     }
 
 
@@ -294,18 +349,41 @@ def review_candidate(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if body.beslissing not in {"accepteren", "afwijzen"}:
-        raise HTTPException(422, "beslissing moet accepteren of afwijzen zijn")
+    if body.beslissing not in {"accepteren", "ondersteunen", "afwijzen"}:
+        raise HTTPException(
+            422,
+            "beslissing moet accepteren, ondersteunen of afwijzen zijn",
+        )
+    candidate = db.get(BronKandidaat, candidate_id)
+    if candidate is None:
+        raise HTTPException(404, "bronkandidaat niet gevonden")
     if body.beslissing == "afwijzen":
         if body.reason_code not in REJECT_REASONS:
             raise HTTPException(422, "kies een geldige afwijsreden")
         if body.reason_code == "anders" and not (body.reden or "").strip():
             raise HTTPException(422, "een toelichting is verplicht bij 'anders'")
-    elif body.reason_code not in {None, ACCEPT_REASON}:
-        raise HTTPException(422, "deze reden hoort niet bij accepteren")
-    candidate = db.get(BronKandidaat, candidate_id)
-    if candidate is None:
-        raise HTTPException(404, "bronkandidaat niet gevonden")
+    elif body.reason_code not in {None, ACCEPT_REASON, SUPPORT_REASON}:
+        raise HTTPException(422, "deze reden hoort niet bij een positieve beoordeling")
+    if body.wp_oordeel not in WP_OORDELEN | {None}:
+        raise HTTPException(422, "kies een geldig oordeel over het gevonden WP")
+    if body.extractie_reason_code not in EXTRACTIE_REASONS | {None}:
+        raise HTTPException(422, "kies een geldige extractiereden")
+    if body.wp_oordeel in {"te_laag", "te_hoog"}:
+        if candidate.wp_gevonden is None or body.gecorrigeerd_wp is None:
+            raise HTTPException(422, "een WP-correctie vereist beide aantallen")
+        if body.extractie_reason_code is None:
+            raise HTTPException(422, "kies waarom het gevonden WP afwijkt")
+        if body.wp_oordeel == "te_laag" and body.gecorrigeerd_wp <= candidate.wp_gevonden:
+            raise HTTPException(422, "het gecorrigeerde WP moet hoger zijn")
+        if body.wp_oordeel == "te_hoog" and body.gecorrigeerd_wp >= candidate.wp_gevonden:
+            raise HTTPException(422, "het gecorrigeerde WP moet lager zijn")
+    elif body.gecorrigeerd_wp is not None:
+        raise HTTPException(422, "een correctie hoort alleen bij te laag of te hoog")
+    if (
+        body.extractie_reason_code == "anders"
+        and not (body.reden or "").strip()
+    ):
+        raise HTTPException(422, "een toelichting is verplicht bij 'anders'")
 
     if body.beslissing == "accepteren":
         andere = (
@@ -321,13 +399,33 @@ def review_candidate(
             item.status = "alternatief"
         candidate.status = "geaccepteerd"
         candidate.review_reason_code = ACCEPT_REASON
+        candidate.bron_relevant = True
+    elif body.beslissing == "ondersteunen":
+        candidate.status = "alternatief"
+        candidate.review_reason_code = SUPPORT_REASON
+        candidate.bron_relevant = True
     else:
         candidate.status = "afgewezen"
         candidate.review_reason_code = body.reason_code
+        candidate.bron_relevant = False
 
     candidate.reviewed_by = current_user.id
     candidate.reviewed_at = _now()
     candidate.review_reason = body.reden
+    if body.beslissing != "afwijzen":
+        candidate.wp_oordeel = body.wp_oordeel or (
+            "correct" if candidate.wp_gevonden is not None else "geen_getal"
+        )
+        candidate.gecorrigeerd_wp = body.gecorrigeerd_wp
+        candidate.bron_volledig_ingelezen = body.bron_volledig_ingelezen
+        candidate.extractie_reason_code = body.extractie_reason_code
+        candidate.extractie_toelichting = body.reden
+    else:
+        candidate.wp_oordeel = None
+        candidate.gecorrigeerd_wp = None
+        candidate.bron_volledig_ingelezen = None
+        candidate.extractie_reason_code = None
+        candidate.extractie_toelichting = None
     db.commit()
     return _candidate_dict(candidate)
 
@@ -369,6 +467,7 @@ def add_manual_source(
         reviewed_at=_now(),
         review_reason_code=ACCEPT_REASON,
         review_reason=body.reden,
+        bron_relevant=True,
         validaties={"handmatig_toegevoegd": True},
     )
     db.add(candidate)

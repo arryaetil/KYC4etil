@@ -5,6 +5,7 @@ import {BatchesView} from "./BatchesView.jsx";
 import {OrganisatieLijst} from "../components/onderzoek/OrganisatieLijst.jsx";
 import {KandidatenPaneel} from "../components/onderzoek/KandidatenPaneel.jsx";
 import {BewijsPaneel} from "../components/onderzoek/BewijsPaneel.jsx";
+import {bekijkBewijs} from "../lib/evidenceLink.js";
 import {useIsXl} from "../lib/useBreakpoint.js";
 
 export function OnderzoekView({api}) {
@@ -85,7 +86,7 @@ export function OnderzoekView({api}) {
               company={geselecteerd}
               batchJaar={batch?.jaar}
               geselecteerdeBronId={geselecteerdeBron?.id}
-              onSelecteerBron={setGeselecteerdeBron}
+              onSelecteerBron={(candidate) => bekijkBewijs(candidate, setGeselecteerdeBron)}
               onGewijzigd={() => load(batchId).catch(() => {})}
             />
           ) : (

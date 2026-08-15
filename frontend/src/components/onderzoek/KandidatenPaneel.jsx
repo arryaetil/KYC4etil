@@ -9,12 +9,19 @@ export function KandidatenPaneel({
 }) {
   const [items, setItems] = useState([]);
   const [diagnostiek, setDiagnostiek] = useState({});
+  const [onderzoekspaden, setOnderzoekspaden] = useState([]);
   const [run, setRun] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [bezig, setBezig] = useState(false);
   const [handmatigOpen, setHandmatigOpen] = useState(false);
   const [handmatigUrl, setHandmatigUrl] = useState("");
+  const [beoordelen, setBeoordelen] = useState(null);
+  const [bronrol, setBronrol] = useState("accepteren");
+  const [wpOordeel, setWpOordeel] = useState("correct");
+  const [gecorrigeerdWp, setGecorrigeerdWp] = useState("");
+  const [volledigIngelezen, setVolledigIngelezen] = useState("");
+  const [extractieReden, setExtractieReden] = useState("");
   const [afwijzen, setAfwijzen] = useState(null);
   const [afwijsreden, setAfwijsreden] = useState("");
   const [toelichting, setToelichting] = useState("");
@@ -25,6 +32,7 @@ export function KandidatenPaneel({
     const data = await api.researchCandidates(company.company_id);
     setItems(data.items || []);
     setDiagnostiek(data.diagnostiek || {});
+    setOnderzoekspaden(data.onderzoekspaden || []);
   }
 
   useEffect(() => {
@@ -42,6 +50,7 @@ export function KandidatenPaneel({
         if (["completed", "error"].includes(volgende.status)) {
           setItems(volgende.kandidaten || []);
           setDiagnostiek(volgende.diagnostiek || {});
+          setOnderzoekspaden(volgende.onderzoekspaden || []);
           // De organisatielijst kent nu een andere status: laat die verversen.
           onGewijzigd?.();
         }
@@ -62,6 +71,7 @@ export function KandidatenPaneel({
       setRun({id: gestart.run_id, status: gestart.status});
       setItems([]);
       setDiagnostiek({});
+      setOnderzoekspaden(gestart.onderzoekspaden || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -71,17 +81,21 @@ export function KandidatenPaneel({
 
   // `bezig` voorkomt dat een dubbelklik twee beoordelingen verstuurt; dat racet
   // met de demotie-logica in de backend.
-  async function beoordeel(candidate, beslissing, reasonCode = null, reden = null) {
+  async function beoordeel(candidate, body) {
     if (bezig) return;
     setBezig(true);
     setError("");
     try {
-      await api.reviewResearchCandidate(candidate.id, beslissing, reasonCode, reden);
+      await api.reviewResearchCandidate(candidate.id, body);
       await laadKandidaten();
       onGewijzigd?.();
       setAfwijzen(null);
+      setBeoordelen(null);
       setAfwijsreden("");
       setToelichting("");
+      setGecorrigeerdWp("");
+      setVolledigIngelezen("");
+      setExtractieReden("");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -120,6 +134,25 @@ export function KandidatenPaneel({
 
       {error ? <Alert message={error} /> : null}
 
+      {onderzoekspaden.length ? (
+        <details className="mb-4 border-y border-line bg-panel px-3 py-2 text-sm">
+          <summary className="focus-ring cursor-pointer rounded font-medium text-ink">
+            Onderzoeksroutes · {onderzoekspaden.filter((item) => item.status === "afgerond").length}
+            /{onderzoekspaden.length} afgerond
+          </summary>
+          <ul className="mt-2 space-y-1 text-xs text-slate-700">
+            {onderzoekspaden.map((item) => (
+              <li key={item.route} className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                <span>{item.route.replaceAll("_", " ")} · {item.reden}</span>
+                <span className="tabular-nums text-slate-500">
+                  {item.status}{item.aantal_bronnen != null ? ` · ${item.aantal_bronnen} bronnen` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
       {items.length ? (
         <div className="divide-y divide-line border-y border-line">
           {items.map((candidate, index) => (
@@ -131,7 +164,16 @@ export function KandidatenPaneel({
               isGeselecteerd={candidate.id === geselecteerdeBronId}
               bezig={bezig}
               onBekijk={onSelecteerBron}
-              onAccepteer={(item) => beoordeel(item, "accepteren")}
+              onAccepteer={(item) => {
+                setBeoordelen(item);
+                setBronrol("accepteren");
+                setWpOordeel(item.wp_gevonden == null ? "geen_getal" : "correct");
+                setGecorrigeerdWp("");
+                setVolledigIngelezen("");
+                setExtractieReden("");
+                setToelichting("");
+                setAfwijzen(null);
+              }}
               onWijsAf={setAfwijzen}
             />
           ))}
@@ -188,12 +230,145 @@ export function KandidatenPaneel({
         </form>
       ) : null}
 
+      {beoordelen ? (
+        <form
+          className="mt-4 border-y border-line bg-panel px-3 py-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            beoordeel(beoordelen, {
+              beslissing: bronrol,
+              wp_oordeel: wpOordeel,
+              gecorrigeerd_wp: ["te_laag", "te_hoog"].includes(wpOordeel)
+                ? Number(gecorrigeerdWp) : null,
+              bron_volledig_ingelezen: volledigIngelezen === ""
+                ? null : volledigIngelezen === "ja",
+              extractie_reason_code: extractieReden || null,
+              reden: toelichting || null,
+            });
+          }}
+        >
+          <h3 className="text-sm font-semibold text-ink">Bron beoordelen</h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-sm text-ink">
+              Rol van deze bron
+              <select
+                value={bronrol}
+                onChange={(event) => setBronrol(event.target.value)}
+                className="focus-ring mt-1 h-10 w-full rounded-md border border-line bg-white px-2"
+              >
+                <option value="accepteren">Primair bewijs</option>
+                <option value="ondersteunen">Ondersteunende relevante bron</option>
+              </select>
+            </label>
+            <label className="text-sm text-ink">
+              Klopt het gevonden aantal?
+              <select
+                value={wpOordeel}
+                onChange={(event) => {
+                  setWpOordeel(event.target.value);
+                  if (!["te_laag", "te_hoog"].includes(event.target.value)) {
+                    setGecorrigeerdWp("");
+                    setExtractieReden("");
+                  }
+                }}
+                className="focus-ring mt-1 h-10 w-full rounded-md border border-line bg-white px-2"
+              >
+                <option value="correct">Ja, het klopt</option>
+                <option value="te_laag">Nee, het is te laag</option>
+                <option value="te_hoog">Nee, het is te hoog</option>
+                <option value="niet_te_bepalen">Niet te bepalen</option>
+                <option value="geen_getal">Geen getal gevonden</option>
+              </select>
+            </label>
+          </div>
+
+          {["te_laag", "te_hoog"].includes(wpOordeel) ? (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm text-ink">
+                Correct aantal werkzame personen
+                <input
+                  type="number"
+                  min="0"
+                  required
+                  value={gecorrigeerdWp}
+                  onChange={(event) => setGecorrigeerdWp(event.target.value)}
+                  className="focus-ring mt-1 h-10 w-full rounded-md border border-line bg-white px-2"
+                />
+              </label>
+              <label className="text-sm text-ink">
+                Waarom wijkt het af?
+                <select
+                  required
+                  value={extractieReden}
+                  onChange={(event) => setExtractieReden(event.target.value)}
+                  className="focus-ring mt-1 h-10 w-full rounded-md border border-line bg-white px-2"
+                >
+                  <option value="">Kies een reden</option>
+                  <option value="personen_gemist">Personen of elementen gemist</option>
+                  <option value="personen_onterecht_meegeteld">Personen onterecht meegeteld</option>
+                  <option value="pagina_onvolledig_geladen">Pagina onvolledig geladen</option>
+                  <option value="informatie_in_afbeelding">Informatie stond in een afbeelding</option>
+                  <option value="verkeerde_scope">Verkeerde vestiging of scope</option>
+                  <option value="verkeerde_eenheid">Verkeerde eenheid</option>
+                  <option value="verouderde_informatie">Verouderde informatie</option>
+                  <option value="interpretatiefout">Interpretatiefout</option>
+                  <option value="afwijkende_definitie">Afwijkende definitie van medewerker</option>
+                  <option value="anders">Anders</option>
+                </select>
+              </label>
+              <label className="text-sm text-ink sm:col-span-2">
+                Was de bron volledig ingelezen?
+                <select
+                  value={volledigIngelezen}
+                  onChange={(event) => setVolledigIngelezen(event.target.value)}
+                  className="focus-ring mt-1 h-10 w-full rounded-md border border-line bg-white px-2 sm:max-w-xs"
+                >
+                  <option value="">Onbekend</option>
+                  <option value="ja">Ja</option>
+                  <option value="nee">Nee</option>
+                </select>
+              </label>
+            </div>
+          ) : null}
+
+          {(["te_laag", "te_hoog"].includes(wpOordeel) || extractieReden === "anders") ? (
+            <textarea
+              required={extractieReden === "anders"}
+              value={toelichting}
+              onChange={(event) => setToelichting(event.target.value)}
+              placeholder="Korte toelichting, bijvoorbeeld: twee teamleden onderaan de pagina gemist"
+              className="focus-ring mt-3 min-h-20 w-full rounded-md border border-line bg-white p-2 text-sm"
+            />
+          ) : null}
+          <div className="mt-3 flex gap-2">
+            <button
+              type="submit"
+              disabled={bezig}
+              className="focus-ring rounded-md bg-etil px-3 py-2 text-sm text-white disabled:opacity-50"
+            >
+              Beoordeling opslaan
+            </button>
+            <button
+              type="button"
+              onClick={() => setBeoordelen(null)}
+              className="focus-ring rounded-md px-3 py-2 text-sm text-slate-600"
+            >
+              Annuleren
+            </button>
+          </div>
+        </form>
+      ) : null}
+
       {afwijzen ? (
         <form
           className="mt-4 rounded-md border border-line bg-panel p-3"
           onSubmit={(event) => {
             event.preventDefault();
-            beoordeel(afwijzen, "afwijzen", afwijsreden, toelichting || null);
+            beoordeel(afwijzen, {
+              beslissing: "afwijzen",
+              reason_code: afwijsreden,
+              reden: toelichting || null,
+            });
           }}
         >
           <label className="block text-sm font-medium text-ink" htmlFor="afwijsreden">

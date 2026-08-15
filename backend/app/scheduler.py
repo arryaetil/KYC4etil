@@ -1,5 +1,6 @@
 """Wekelijkse achtergrondplanning voor jaarverslag-monitoring."""
 import logging
+import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -9,8 +10,17 @@ _log = logging.getLogger("scheduler")
 _scheduler = AsyncIOScheduler(timezone="Europe/Amsterdam")
 
 
+def _scheduler_enabled() -> bool:
+    return os.getenv("MONITORING_SCHEDULER_ENABLED", "true").lower() not in {
+        "0", "false", "no",
+    }
+
+
 def start_scheduler() -> None:
     """Start de wekelijkse jaarverslag-monitoring-taak, idempotent."""
+    if not _scheduler_enabled():
+        _log.warning("Wekelijkse jaarverslagmonitoring staat gepauzeerd")
+        return
     if _scheduler.running:
         return
     try:

@@ -44,3 +44,14 @@ export function bewijsUrl(candidate, token) {
     kanInbedden: true,
   };
 }
+
+/** Elke insluitbare bron (PDF én webpagina) blijft in de werkbank. */
+export function bekijkBewijs(candidate, toonInWerkbank, openNieuwTabblad = window.open) {
+  const bewijs = bewijsUrl(candidate);
+  if (bewijs.kanInbedden || !bewijs.url) {
+    toonInWerkbank(candidate);
+    return bewijs.soort;
+  }
+  openNieuwTabblad(bewijs.url, "_blank", "noopener,noreferrer");
+  return "extern";
+}

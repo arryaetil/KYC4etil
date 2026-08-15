@@ -61,9 +61,9 @@ export function createApi(token, onUnauthorized) {
     }),
     researchRun: (runId) => request(`/research/runs/${runId}`),
     researchCandidates: (companyId) => request(`/research/companies/${companyId}/candidates`),
-    reviewResearchCandidate: (candidateId, beslissing, reasonCode = null, reden = null) => request(`/research/candidates/${candidateId}/review`, {
+    reviewResearchCandidate: (candidateId, body) => request(`/research/candidates/${candidateId}/review`, {
       method: "POST",
-      json: {beslissing, reason_code: reasonCode, reden},
+      json: body,
     }),
     addManualResearchSource: (companyId, body) => request(`/research/companies/${companyId}/manual-source`, {
       method: "POST",

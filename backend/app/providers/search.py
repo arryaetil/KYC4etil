@@ -1,17 +1,15 @@
-"""Zoekindexen: DuckDuckGo, Serper en OpenAI's hosted web_search.
+"""Zoekfunctionaliteit voor de bronnenwerkbank.
 
-De ketting is bewust getrapt op kosten: Serper ($1/1000) en DuckDuckGo (gratis)
-lopen parallel, de veel duurdere hosted search van OpenAI ($10/1000) is alleen
-een laatste redmiddel. Valt Serper uit, dan wordt dat luid gelogd — zie
-_log_zoekprovider_fout."""
-import asyncio
+Alle actieve zoekroutes gebruiken uitsluitend Serper. De oudere helpers blijven
+tijdelijk bestaan voor compatibiliteit, maar worden niet door de zoekketen gebruikt.
+"""
 import logging
 from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 
 from ..config import get_settings
-from ..research.usage import record_provider_call
+from ..research.usage import cached_provider_call, record_provider_call
 from . import llm
 
 logger = logging.getLogger(__name__)
@@ -62,14 +60,15 @@ def _normaliseer_duckduckgo_url(href: str) -> str:
 
 async def _serper_places(query: str) -> dict | None:
     """Lokale Google Maps-achtige resultaten voor contactgegevens — veel
-    goedkoper dan Google Places Text Search ($1/1000 i.p.v. $32-35/1000).
+    goedkoper dan Google Places ($1/1000 i.p.v. $20-35/1000).
     NB: dit endpoint geeft alleen resultaten bij een plaatsnaam in de query
     en is daarom ONGESCHIKT voor de landelijke locatie-telling in
     LivePlacesProvider.locations() (doc §7); daar blijft Google Places nodig
     totdat de KvK-koppeling er is."""
     if not settings.serper_api_key:
         return None
-    try:
+
+    async def _request() -> dict | None:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(
                 "https://google.serper.dev/places",
@@ -78,11 +77,16 @@ async def _serper_places(query: str) -> dict | None:
             )
             r.raise_for_status()
             places = r.json().get("places") or []
+        record_provider_call("serper_places", kosten_micro_usd=1_000)
+        return places[0] if places else None
+
+    try:
+        return await cached_provider_call(
+            "serper_places", (query,), _request,
+        )
     except httpx.HTTPError as fout:
         _log_zoekprovider_fout("serper_places", fout)
         return None
-    record_provider_call("serper_places", kosten_micro_usd=1_000)
-    return places[0] if places else None
 
 
 async def _duckduckgo_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
@@ -132,7 +136,8 @@ async def _serper_search(query: str, max_results: int = 5) -> list[dict[str, str
     goedkoper dan OpenAI's ingebouwde web_search-tool."""
     if not settings.serper_api_key:
         return []
-    try:
+
+    async def _request() -> list[dict[str, str]]:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(
                 "https://google.serper.dev/search",
@@ -141,71 +146,42 @@ async def _serper_search(query: str, max_results: int = 5) -> list[dict[str, str
             )
             r.raise_for_status()
             data = r.json()
+        record_provider_call("serper_search", kosten_micro_usd=1_000)
+        results: list[dict[str, str]] = []
+        for item in (data.get("organic") or [])[:max_results]:
+            url = item.get("link")
+            if not url:
+                continue
+            results.append({
+                "title": item.get("title", ""),
+                "url": url,
+                "snippet": item.get("snippet", ""),
+                "bron": "serper",
+            })
+        return results
+
+    try:
+        return await cached_provider_call(
+            "serper_search", (query, max_results), _request,
+        )
     except httpx.HTTPError as fout:
         # Pas registreren na een geslaagde call: een mislukte call kost niets en
         # mag de kostenrapportage niet vullen met calls die nooit gelukt zijn.
         _log_zoekprovider_fout("serper_search", fout)
         return []
-    record_provider_call("serper_search", kosten_micro_usd=1_000)
-    results: list[dict[str, str]] = []
-    for item in (data.get("organic") or [])[:max_results]:
-        url = item.get("link")
-        if not url:
-            continue
-        results.append({
-            "title": item.get("title", ""),
-            "url": url,
-            "snippet": item.get("snippet", ""),
-            "bron": "serper",
-        })
-    return results
 
 
 async def _web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
-    """Combineer beschikbare zoekindexen en dedupliceer per canonieke URL.
-
-    DuckDuckGo en Serper vullen elkaar aan: een matig DuckDuckGo-resultaat mag
-    niet langer verhinderen dat sterkere Google/Serper-resultaten worden gezien.
-    Eén falende provider blokkeert de andere niet.
-    """
-    from ..research.urls import canonicaliseer_url
-
-    provider_results = await asyncio.gather(
-        _duckduckgo_search(query, max_results=max_results),
-        _serper_search(query, max_results=max_results),
-        return_exceptions=True,
-    )
-    combined: dict[str, dict] = {}
-    for results in provider_results:
-        if isinstance(results, BaseException):
-            continue
-        for result in results:
-            canonical = canonicaliseer_url(result["url"])
-            bestaand = combined.get(canonical)
-            bron = result.get("bron", "web_search")
-            if bestaand is None:
-                combined[canonical] = {
-                    **result,
-                    "bronnen": [bron],
-                    "snippets": [result.get("snippet", "")] if result.get("snippet") else [],
-                }
-                continue
-            if bron not in bestaand["bronnen"]:
-                bestaand["bronnen"].append(bron)
-            snippet = result.get("snippet", "")
-            if snippet and snippet not in bestaand["snippets"]:
-                bestaand["snippets"].append(snippet)
-            bestaand["bron"] = "+".join(bestaand["bronnen"])
-            bestaand["snippet"] = " ".join(bestaand["snippets"])
-    return list(combined.values())[:max_results]
+    """Zoek uitsluitend via Serper."""
+    return await _serper_search(query, max_results=max_results)
 
 
 async def _openai_web_search(
     query: str,
     max_results: int = 5,
 ) -> list[dict[str, str]]:
-    """Begrensde hosted-searchfallback wanneer beide klassieke indexen leeg zijn."""
-    if not settings.openai_api_key:
+    """Uitgeschakelde compatibiliteitshelper voor oudere aanroepplaatsen."""
+    if not settings.openai_web_search_enabled or not settings.openai_api_key:
         return []
     from openai import AsyncOpenAI
 

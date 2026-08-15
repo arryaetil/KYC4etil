@@ -167,6 +167,15 @@ describe("bronwaarschuwingen", () => {
     expect(labels).toEqual([]);
   });
 
+  it("maakt zichtbaar dat DUO-personen niet automatisch de WP-definitie zijn", () => {
+    const labels = bronwaarschuwingen({
+      eenheid: "onderwijspersoneel_personen",
+      wp_gevonden: 35,
+      waarschuwingen: ["duo_definitie_wijkt_af_van_wp"],
+    }).map((item) => item.label);
+    expect(labels).toContain("DUO-definitie — controleer tegen WP");
+  });
+
   it("waarschuwt bij een afwijkend verslagjaar", () => {
     const labels = bronwaarschuwingen({verslagjaar: 2024, gevraagd_jaar: 2025})
       .map((item) => item.label);

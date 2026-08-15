@@ -64,8 +64,13 @@ def ensure_lightweight_migrations() -> None:
         for name, ddl_type in [
             ("website_url", "TEXT"), ("telefoonnummer", "VARCHAR(50)"),
             ("afgewerkt", "BOOLEAN DEFAULT FALSE"),
+            ("organization_id", "VARCHAR(36)"),
         ]:
             _add_column_if_missing(conn, "companies", existing_companies, name, ddl_type)
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_companies_organization_id "
+            "ON companies (organization_id)"
+        ))
 
     if "enrichments" in tables:
         existing_enr = {col["name"] for col in inspector.get_columns("enrichments")}
@@ -112,13 +117,18 @@ def ensure_lightweight_migrations() -> None:
             col["name"] for col in inspector.get_columns("bron_kandidaten")
         }
         with engine.begin() as conn:
-            _add_column_if_missing(
-                conn,
-                "bron_kandidaten",
-                existing_bronnen,
-                "review_reason_code",
-                "VARCHAR(50)",
-            )
+            for name, ddl_type in [
+                ("review_reason_code", "VARCHAR(50)"),
+                ("bron_relevant", "BOOLEAN"),
+                ("bron_volledig_ingelezen", "BOOLEAN"),
+                ("wp_oordeel", "VARCHAR(30)"),
+                ("gecorrigeerd_wp", "INTEGER"),
+                ("extractie_reason_code", "VARCHAR(50)"),
+                ("extractie_toelichting", "TEXT"),
+            ]:
+                _add_column_if_missing(
+                    conn, "bron_kandidaten", existing_bronnen, name, ddl_type,
+                )
 
     if "jaarverslag_monitoring" in tables:
         existing_monitoring = {

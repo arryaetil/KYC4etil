@@ -1,0 +1,67 @@
+source_id,case_id,source_role,url,brontype_hint,wp_hint,unit_hint,scope_hint,expected_usable,verification_status,rejection_reason,notes
+src-001,legacy-v001,candidate_seed,https://www.mondriaan.eu,officiele_website,,,,,pending_review,,Startpunt; zoek actuele onderliggende bron
+src-002,legacy-v002,candidate_seed,https://www.okechamp.nl,officiele_website,,,,,pending_review,,Startpunt; zoek actuele onderliggende bron
+src-003,legacy-v003,candidate_seed,https://www.jumbo.com,officiele_website,,,,,pending_review,,Controleer filiaalniveau
+src-004,legacy-v004,candidate_seed,https://www.pergamijn.org,officiele_website,,,,,pending_review,,Controleer locatiescope
+src-005,legacy-v005,candidate_seed,https://www.ns.nl,officiele_website,,,,,pending_review,,Controleer stationsscope
+src-006,legacy-v006,candidate_seed,https://www.vrln.nl,officiele_website,,,,,pending_review,,Zoek jaarstukken en personeelsparagraaf
+src-007,legacy-v007,candidate_seed,https://www.zuyderland.nl,officiele_website,,,,,pending_review,,Combineer niet blind met DigiMV-entiteiten
+src-008,legacy-v008,candidate_seed,https://www.dsm-firmenich.com,officiele_website,,,,,pending_review,,Controleer Limburgse scope
+src-009,legacy-v009,candidate_seed,https://www.bam.com,officiele_website,,,,,pending_review,,Controleer vestigingsidentiteit
+src-010,legacy-v010,candidate_seed,https://www.halluxpodotherapie.nl,officiele_website,,,,,pending_review,,Team- en afspraakroute controleren
+src-011,legacy-v011,candidate_seed,https://www.salonhandmade.nl,officiele_website,,,,,pending_review,,Team- en boekingsroute controleren
+src-012,legacy-v012,candidate_seed,https://www.orthodontieaandemaas.nl,officiele_website,,,,,pending_review,,Teamfoto's en onderste paginadelen controleren
+src-013,legacy-v013,candidate_seed,https://www.huisartsenpraktijkhoensbroek.nl,officiele_website,,,,,pending_review,,Adres en telefoon onafhankelijk bevestigen
+src-014,legacy-v014,candidate_seed,https://www.verloskundigenlimburg.nl,officiele_website,,,,,pending_review,,Verdeling over locaties controleren
+src-015,legacy-v015,candidate_seed,https://www.dreessenadvocaten.nl,officiele_website,,,,,pending_review,,Partners en medewerkers apart beoordelen
+src-016,legacy-v016,candidate_seed,https://www.fysiosittard.nl,officiele_website,,,,,pending_review,,Zelfstandigen niet automatisch meetellen
+src-017,legacy-v017,candidate_seed,https://www.philipse-accountancy.nl,officiele_website,,,,,pending_review,,Klein team handmatig tellen
+src-018,legacy-v018,candidate_seed,https://www.maasstreek.nl,officiele_website,,,,,pending_review,,Aangesloten makelaars beoordelen
+src-019,legacy-v019,candidate_seed,https://www.poulissen.nl,officiele_website,,,,,pending_review,,Vestiging versus groep controleren
+src-020,legacy-v020,candidate_seed,https://www.ikea.com/nl,officiele_website,,,,,pending_review,,Zoek vestigingsspecifiek nieuws
+src-021,edu-po-enkel,official_candidate,https://duo.nl/open_onderwijsdata/primair-onderwijs/personeel/onderwijspersoneel-po-in-aantal-personen.jsp,duo_personeel,29,onderwijspersoneel_personen,vestiging,,pending_review,,Officiële DUO-bron; definitie bevestigen
+src-022,edu-po-enkel,identity_candidate,https://www.duo.nl/open_onderwijsdata/images/02.-alle-schoolvestigingen-basisonderwijs.csv,duo_adressen,,,,,pending_review,,Identiteit via instellingscode 03HL
+src-023,edu-vo-enkel,official_candidate,https://duo.nl/open_onderwijsdata/voortgezet-onderwijs/personeel/in-aantal-personen.jsp,duo_personeel,35,onderwijspersoneel_personen,vestiging,,pending_review,,Officiële DUO-bron; definitie bevestigen
+src-024,edu-vo-enkel,identity_candidate,https://duo.nl/open_onderwijsdata/images/02.-alle-vestigingen-vo.csv,duo_adressen,,,,,pending_review,,Identiteit via instellingscode 23HH
+src-025,edu-vo-meervestiging,official_candidate,https://duo.nl/open_onderwijsdata/voortgezet-onderwijs/personeel/in-aantal-personen.jsp,duo_personeel,338,onderwijspersoneel_personen,limburg,,pending_review,,Instellingscijfer voor meerdere vestigingen
+src-026,edu-vo-meervestiging,identity_candidate,https://duo.nl/open_onderwijsdata/images/02.-alle-vestigingen-vo.csv,duo_adressen,,,,,pending_review,,Identiteit via instellingscode 03XF
+src-027,edu-vo-groep,official_candidate,https://duo.nl/open_onderwijsdata/voortgezet-onderwijs/personeel/in-aantal-personen.jsp,duo_personeel,,onderwijspersoneel_personen,limburg,,pending_review,,Meerdere instellingscodes; geen optelling zonder bewijs
+src-028,edu-vo-groep,identity_candidate,https://duo.nl/open_onderwijsdata/images/02.-alle-vestigingen-vo.csv,duo_adressen,,,,,pending_review,,Identiteit via 01MO 04DS 07BQ
+src-029,edu-mbo-vista,official_candidate,https://duo.nl/open_onderwijsdata/middelbaar-beroepsonderwijs/personeel/onderwijspersoneel-mbo-in-aantal-personen.jsp,duo_personeel,1370,onderwijspersoneel_personen,instelling,,pending_review,,Niet per leslocatie gebruiken
+src-030,edu-mbo-vista,identity_candidate,https://duo.nl/open_onderwijsdata/images/01.-adressen-mbo-instellingen.csv,duo_adressen,,,,,pending_review,,Identiteit via instellingscode 25PL
+src-031,edu-mbo-gilde,official_candidate,https://duo.nl/open_onderwijsdata/middelbaar-beroepsonderwijs/personeel/onderwijspersoneel-mbo-in-aantal-personen.jsp,duo_personeel,1023,onderwijspersoneel_personen,instelling,,pending_review,,Niet per leslocatie gebruiken
+src-032,edu-mbo-gilde,identity_candidate,https://duo.nl/open_onderwijsdata/images/01.-adressen-mbo-instellingen.csv,duo_adressen,,,,,pending_review,,Identiteit via instellingscode 25LT
+src-033,formal-ou,gold_candidate,https://www.ou.nl/documents/40554/55499/20250604_U2025_02964_OU_Jaarverslag_en_jaarrekening_2024.pdf,jaarverslag,,,concern,,pending_review,,Verslagjaar 2024 bevestigen
+src-034,formal-servatius,gold_candidate,https://www.servatius.nl/media/02B82AD6-38A7-47B6-B6F2-651469EADB8F/Jaarverslag%202025.pdf,jaarverslag,,,concern,,pending_review,,Bron en scope bevestigen
+src-035,formal-um,gold_candidate,https://www.maastrichtuniversity.nl/sites/default/files/2025-06/UM%20Jaarverslag%202024.pdf,jaarverslag,,,concern,,pending_review,,Publicatiejaar 2025 versus verslagjaar 2024
+src-036,formal-zuyd,gold_candidate,https://www.zuyd.nl/binaries/content/assets/zuyd/over-zuyd/jaarverslagen/zuyd-jaarverslag-2024.pdf,jaarverslag,,,concern,,pending_review,,Bron en instellingsscope bevestigen
+src-037,formal-puntwelzijn,gold_candidate,https://www.puntwelzijn.nl/wp-content/uploads/2025/06/punt-welzijn-2024-jaarverslag-inclusief-controle-verklaring-was-getekend-gewaarmerkt.pdf,jaarverslag,,,concern,,pending_review,,Kleine organisatie met formeel document
+src-038,formal-dynagroup,gold_candidate,https://www.dynagroup.nl/csr-jaarverslag-dynagroup-2023/,jaarverslag_html,,,concern,,pending_review,,HTML-documentcase
+src-039,formal-aviko,gold_candidate,https://www.cosun.nl/nieuws/cosun-publiceert-jaarverslag-2025/,officiele_publicatiepagina,,,concern,,pending_review,,Groepsscope bevestigen
+src-040,formal-philadelphia,gold_candidate,https://www.philadelphia.nl/assets/uploads/Philadelphia.nl/4-Over-ons/1-Over-Philadelphia/Onze-jaarplannen-en-jaarverslagen/Jaarverslag-2025.pdf,jaarverslag,,,concern,,pending_review,,Bron en scope bevestigen
+src-041,care-kraamzorg-west,system_candidate,https://www.kraamzorghetgroenekruis.nl/ons/onze-teams/,teampagina,,,unknown,,pending_review,,Mogelijk relevante regioteams
+src-042,care-kraamzorg-west,system_candidate,https://www.kraamzorghetgroenekruis.nl/ons/,officiele_website,,,unknown,,pending_review,,Organisatiecontext
+src-043,care-eldershof,system_candidate,https://www.dichterbij.nl/assets/uploads/bestanden/Jaarstukken-Dichterbij-2024-compleet.pdf,jaarverslag,2763,werkzame_personen,concern,,pending_review,,Getal is waarschijnlijk concernbreed
+src-044,care-eldershof,system_candidate,https://www.dichterbij.nl/locaties/well/eldershof-1,locatiepagina,,,,,pending_review,,Vestigingsidentiteit
+src-045,care-amaliahof,system_candidate,https://www.dezorggroep.nl/over-de-zorggroep/jaarverslagen,jaarverslag_overzicht,4934,werkzame_personen,concern,,pending_review,,Niet als locatiegetal gebruiken zonder verdeling
+src-046,care-amaliahof,system_candidate,https://www.dezorggroep.nl/zorgvragers/wonen-bij-de-zorggroep/zorglocaties/amaliahof,locatiepagina,,,,,pending_review,,Vestigingsidentiteit
+src-047,care-zorghotel-roermond,system_candidate,https://www.dezorggroep.nl/over-de-zorggroep/jaarverslagen,jaarverslag_overzicht,4934,werkzame_personen,concern,,pending_review,,Peilmoment en scope controleren
+src-048,care-zorghotel-roermond,system_candidate,https://www.dezorggroep.nl/assets/folders-flyers/dzbestuursverslag2024.pdf,bestuursverslag,5150,werkzame_personen,concern,,pending_review,,Afwijkend concerngetal
+src-049,care-witte-steen,system_candidate,https://www.dezorggroep.nl/witte-steen,locatiepagina,,,,,pending_review,,Locatiepagina zonder expliciet getal
+src-050,care-witte-steen,system_candidate,https://www.dezorggroep.nl/over-de-zorggroep/jaarverslagen,jaarverslag_overzicht,4934,werkzame_personen,concern,,pending_review,,Concerncontext
+src-051,care-revalidatie-venray,system_candidate,https://www.viecuri.nl/media/kucjp24f/jaardocument-2025-viecuri-medisch-centrum.pdf,jaarverslag,2900,werkzame_personen,concern,,pending_review,,Instellingsgetal versus revalidatievestiging
+src-052,care-revalidatie-venray,system_candidate,https://www.viecuri.nl/media/rsyn3wtr/jaardocument-viecuri-2024.pdf,jaarverslag,2875,werkzame_personen,concern,,pending_review,,Oudere instellingsbron
+src-053,care-revalidatie-venray,known_false_positive,https://www.viecuri.nl/media/anhf2ova/webversie-def-viecuri_hartslag_najaar-2025_web.pdf,overige_pdf,11,werkzame_personen,unknown,false,pending_review,verkeerde_context,Expliciete extractievalkuil
+src-054,care-zorggroep-concern,system_candidate,https://www.dezorggroep.nl/over-de-zorggroep/jaarverslagen,jaarverslag_overzicht,4934,werkzame_personen,concern,,pending_review,,Concerncase
+src-055,care-zorggroep-concern,system_candidate,https://www.dezorggroep.nl/assets/folders-flyers/bestuursverslag-2023---raad-van-bestuur.pdf,bestuursverslag,5000,werkzame_personen,concern,,pending_review,,Ouder concerngetal
+src-056,care-groenling,system_candidate,https://primenius.nl/locaties/de-groenling/kinderopvang/,teampagina,7,werkzame_personen,unknown,,pending_review,,Mogelijk lokale medewerkers
+src-057,care-groenling,system_candidate,https://primenius.nl/wp-content/uploads/2025/06/566654500-RJ-1416-Stichting-Primenius-Onderwijs-jaarverslag-2024.pdf,jaarverslag,,,concern,,pending_review,,Onderwijsconcern versus kinderopvanglocatie
+src-058,care-hospice-ark,system_candidate,https://www.dezorggroep.nl/zorgvragers/wonen-bij-de-zorggroep/zorglocaties/de-ark,locatiepagina,,,,,pending_review,,Vestigingsidentiteit
+src-059,care-hospice-ark,system_candidate,https://www.dezorggroep.nl/over-de-zorggroep/jaarverslagen,jaarverslag_overzicht,4934,werkzame_personen,concern,,pending_review,,Concerngetal niet lokaal
+src-060,care-hospice-mariaweide,system_candidate,https://hospicevenlo.nl/wp-content/uploads/2025/06/Mariaweide_Jaarverslag_2024_web-1.pdf,jaarverslag,145,werkzame_personen,limburg,,pending_review,,Controleer medewerkers versus vrijwilligers en scope
+src-061,care-hospice-mariaweide,known_false_positive,https://www.hospicevenlo.nl/wp-content/uploads/2024/12/Mariaweide_Nieuwsbrief_2021_voorjaar_web.pdf,nieuwsbrief,2,werkzame_personen,unknown,false,pending_review,verouderde_deelcontext,Oud klein getal is geen actuele vestigingsomvang
+src-062,care-team-echt-zuid,system_candidate,https://www.dezorggroep.nl/zorgvragers/thuis-wonen/thuiszorg,teampagina,,,unknown,,pending_review,,Teamverdeling zoeken
+src-063,care-team-echt-zuid,system_candidate,https://www.dezorggroep.nl/over-de-zorggroep/jaarverslagen,jaarverslag_overzicht,4934,werkzame_personen,concern,,pending_review,,Concerngetal niet als teamgetal gebruiken
+src-064,care-valdere,system_candidate,https://www.vredenoord.nl/wp-content/uploads/2026/05/2026-05-01-64384-org-Landelijke-Stichting-Vredenoord-JR-2025-DEFINITIEF.pdf,jaarrekening,141,werkzame_personen,concern,,pending_review,,Stichtingsscope bevestigen
+src-065,care-valdere,system_candidate,https://www.vredenoord.nl/,officiele_website,,,,,pending_review,,Vestigingsidentiteit zoeken
+src-066,care-psychogeriatrie-venray,system_candidate,http://www.cvneuropsychiatrie.nl/,officiele_website,,,unknown,,pending_review,,Oude website en afkortingsmatch controleren

@@ -5,6 +5,7 @@ import pytest
 
 from app.research.query_planner import QueryContext
 from app.research.seeds import verzamel_seed_documenten
+from app.research.types import CombinedSearchResult
 from app.research.validation import SourceDocument
 
 
@@ -169,3 +170,70 @@ async def test_uitzonderingen_per_stap_worden_genegeerd():
     documenten = await verzamel_seed_documenten(tools, context)
 
     assert len(documenten) == 1
+
+
+@pytest.mark.asyncio
+async def test_duo_wordt_alleen_als_directe_seed_op_de_duo_route_opgehaald(
+    monkeypatch,
+):
+    duo_bron = _document(
+        url="https://duo.nl/personeel-vo.xlsx",
+        brontype="overheid",
+        documenttype="duo_personeel_personen",
+        eenheid="onderwijspersoneel_personen",
+        research_route="duo",
+    )
+
+    async def fake_duo(context):
+        return duo_bron
+
+    monkeypatch.setattr(
+        "app.research.seeds.vind_duo_personeelsbron", fake_duo,
+    )
+    documenten = await verzamel_seed_documenten(
+        TragereTraceerTools(),
+        QueryContext(naam="Voorbeeldschool", sbi_code="85311"),
+        {"website", "duo", "media"},
+    )
+
+    assert documenten == [duo_bron]
+
+
+@pytest.mark.asyncio
+async def test_direct_digimv_document_voorkomt_dubbele_jaarverslag_fallback(
+    monkeypatch,
+):
+    result = CombinedSearchResult(
+        title="Bestuursverslag 2025.pdf",
+        url="https://digimv13.desan.nl/api/ArchiveSearch/GetDocument?documentId=1&year=2025",
+        canonical_url="https://digimv13.desan.nl/api/ArchiveSearch/GetDocument?documentId=1&year=2025",
+        providers=["digimv_direct"], queries=["DigiMV direct"],
+    )
+
+    async def fake_digimv(context):
+        return [result]
+
+    class DigiMVTools(TragereTraceerTools):
+        async def inspect(self, context, query, found):
+            return _document(
+                url=found.url, brontype="digimv",
+                research_route="digimv", scope_class="concern",
+            )
+
+    monkeypatch.setattr(
+        "app.research.seeds.zoek_digimv_documenten", fake_digimv,
+    )
+    tools = DigiMVTools()
+    documenten = await verzamel_seed_documenten(
+        tools,
+        QueryContext(
+            naam="Stichting Voorbeeldzorg", gevraagd_jaar=2025,
+            sbi_code="86101",
+        ),
+        {"website", "document", "digimv", "media"},
+    )
+
+    assert tools.jaarverslag_aangeroepen is False
+    assert len(documenten) == 1
+    assert documenten[0].research_route == "digimv"
+    assert documenten[0].raw_data["route_sufficient"] is True

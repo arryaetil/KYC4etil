@@ -1,5 +1,13 @@
 # Review-UI en bronnenpresentatie
 
+> **Actieve bronnenwerkbank:** `OnderzoekView` en `MonitoringView` gebruiken
+> dezelfde bronreview. De reviewer kan één primaire bron en meerdere relevante
+> ondersteunende bronnen bewaren. Bij een bron met een WP-getal wordt apart
+> vastgelegd of de extractie correct, te laag, te hoog of niet te bepalen is.
+> Alleen bij een afwijking verschijnen correctie, oorzaak, volledigheid en
+> toelichting. Het ingeklapte routeoverzicht toont waarom routes zijn gekozen en
+> of het online onderzoek technisch volledig was.
+
 React 19 + Vite + Tailwind CSS (puur utility-classes, `classNames()`-helper uit
 `frontend/src/lib/format.js`, lucide-react-iconen — geen aparte component-/styling-library).
 

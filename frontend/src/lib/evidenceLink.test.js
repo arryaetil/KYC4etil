@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {bewijsUrl} from "./evidenceLink.js";
+import {bekijkBewijs, bewijsUrl} from "./evidenceLink.js";
 
 describe("bewijsUrl", () => {
   it("geeft niets terug zonder bron", () => {
@@ -45,5 +45,32 @@ describe("bewijsUrl", () => {
     expect(resultaat.soort).toBe("html");
     expect(resultaat.kanInbedden).toBe(true);
     expect(resultaat.url).not.toContain("#citaat");
+  });
+});
+
+describe("bekijkBewijs", () => {
+  it("houdt een pdf in de werkbank", () => {
+    const getoond = [];
+    const geopend = [];
+    const kandidaat = {url: "https://example.test/verslag.pdf"};
+
+    expect(bekijkBewijs(kandidaat, (item) => getoond.push(item), (...args) => geopend.push(args)))
+      .toBe("pdf");
+    expect(getoond).toEqual([kandidaat]);
+    expect(geopend).toEqual([]);
+  });
+
+  it("houdt ook een webpagina in de werkbank — de leesweergave lost highlighten binnen een iframe op", () => {
+    const getoond = [];
+    const geopend = [];
+    const kandidaat = {
+      url: "https://example.test/team",
+      bewijsfragment: "Ons team bestaat uit 12 medewerkers",
+    };
+
+    expect(bekijkBewijs(kandidaat, (item) => getoond.push(item), (...args) => geopend.push(args)))
+      .toBe("html");
+    expect(getoond).toEqual([kandidaat]);
+    expect(geopend).toEqual([]);
   });
 });

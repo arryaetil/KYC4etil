@@ -1,5 +1,10 @@
 """Tests voor de wekelijkse jaarverslag-monitoring-scheduler."""
-from app.scheduler import _scheduler, start_scheduler
+from app.scheduler import _scheduler, _scheduler_enabled, start_scheduler
+
+
+def test_scheduler_kan_met_omgevingsvariabele_worden_gepauzeerd(monkeypatch):
+    monkeypatch.setenv("MONITORING_SCHEDULER_ENABLED", "false")
+    assert _scheduler_enabled() is False
 
 
 def test_start_scheduler_registreert_wekelijkse_taak():

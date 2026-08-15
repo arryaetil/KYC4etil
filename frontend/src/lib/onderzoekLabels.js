@@ -26,6 +26,7 @@ const IDENTITEIT = {
 const BEREIK = {
   vestiging: {label: "Deze vestiging", toon: "neutraal"},
   limburg: {label: "Limburg", toon: "neutraal"},
+  instelling: {label: "Onderwijsinstelling", toon: "aandacht"},
   nederland: {label: "Heel Nederland", toon: "aandacht"},
   concern: {label: "Hele concern", toon: "aandacht"},
   unknown: {label: "Onbekend bereik", toon: "aandacht"},
@@ -49,6 +50,9 @@ const WAARSCHUWING = {
   getal_zonder_bewijsfragment: null,
   geen_concreet_wp_bewijs: null,
   alleen_context_geen_wp_voorstel: null,
+  duo_definitie_wijkt_af_van_wp: {
+    label: "DUO-definitie — controleer tegen WP", toon: "aandacht",
+  },
 };
 
 const BRONTYPE = {
@@ -146,7 +150,7 @@ export function bereikRelatie(scopeClass) {
   if (scopeClass === "limburg") {
     return {label: "Vastgesteld — Limburg", toon: "neutraal"};
   }
-  if (scopeClass === "nederland" || scopeClass === "concern") {
+  if (scopeClass === "nederland" || scopeClass === "concern" || scopeClass === "instelling") {
     return {label: "Breder dan deze vestiging", toon: "aandacht"};
   }
   return {label: "Nog niet vastgesteld", toon: "aandacht"};
@@ -167,6 +171,12 @@ export function bewijsRelatie(candidate) {
   }
   if (heeftGetal && candidate.eenheid === "fte") {
     return {label: `${candidate.wp_gevonden} FTE — geen WP-getal`, toon: "aandacht"};
+  }
+  if (heeftGetal && candidate.eenheid === "onderwijspersoneel_personen") {
+    return {
+      label: `${candidate.wp_gevonden} onderwijspersoneel — DUO-definitie, controleer tegen WP`,
+      toon: "aandacht",
+    };
   }
   if (candidate?.documenttype === "teampagina") {
     return {label: "Teamoverzicht gevonden, nog niet geteld", toon: "aandacht"};
@@ -199,6 +209,10 @@ export function primaireConclusie(candidate) {
     hoofd = "WP-getal gevonden, maar zonder citaat ter onderbouwing.";
   } else if (candidate?.eenheid === "fte" && candidate?.wp_gevonden != null) {
     hoofd = "Alleen een FTE-cijfer gevonden — dat is geen WP-getal.";
+  } else if (candidate?.eenheid === "onderwijspersoneel_personen" && candidate?.wp_gevonden != null) {
+    hoofd = "Alleen een DUO-personeelscijfer gevonden — controleer dit tegen de WP-definitie.";
+  } else if (candidate?.documenttype === "duo_personeel_personen") {
+    hoofd = "DUO-personeelscijfer gevonden, nog niet herleid naar deze vestiging.";
   } else if (candidate?.documenttype === "teampagina") {
     hoofd = "Teampagina gevonden, medewerkers nog niet geteld.";
   } else if (juisteIdentiteit) {
@@ -210,6 +224,8 @@ export function primaireConclusie(candidate) {
   let vervolg = null;
   if (bereik === "unknown") {
     vervolg = "De locatie waarop deze informatie betrekking heeft is nog niet vastgesteld.";
+  } else if (bereik === "instelling") {
+    vervolg = "Dit cijfer geldt voor de hele onderwijsinstelling, niet per se voor deze vestiging.";
   } else if (bereik === "nederland" || bereik === "concern") {
     vervolg = "Dit cijfer geldt breder dan alleen deze vestiging.";
   }
@@ -224,6 +240,15 @@ export function brontypeLabel(brontype) {
 export function menselijkeWaarde(candidate) {
   const vastgelegd = candidate?.validaties?.menselijke_waarde;
   if (vastgelegd?.label && vastgelegd?.actie) return vastgelegd;
+  if (candidate?.documenttype === "duo_personeel_personen") {
+    return {
+      rol: "duo_personeelsbron",
+      label: "DUO-personeelscijfer",
+      actie: candidate.wp_gevonden == null
+        ? "Controleer de deelinstellingen; DUO-waarden zijn bewust niet opgeteld."
+        : "Controleer of de DUO-instelling en het bereik overeenkomen met de registratievestiging.",
+    };
+  }
   if (
     candidate?.wp_gevonden != null
     && candidate?.eenheid === "werkzame_personen"

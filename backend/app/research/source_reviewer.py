@@ -152,6 +152,16 @@ class IntelligentSourceReviewer:
         document: SourceDocument,
     ) -> BronValidatie:
         validatie = valideer_bron(document)
+        if document.documenttype == "duo_personeel_personen":
+            codes = (document.raw_data or {}).get("instellingscodes") or []
+            validatie.identity_class = (
+                "exact_entity" if len(codes) == 1 else "same_brand_or_group"
+            )
+            validatie.is_officieel = True
+            validatie.is_afgewezen = False
+            validatie.afwijsredenen = []
+            validatie.validaties["gestructureerde_duo_bron"] = True
+            return validatie
         domein = _domain(document.url)
         if domein in _SOCIAL_DOMAINS or any(
             domein.endswith(f".{social}") for social in _SOCIAL_DOMAINS

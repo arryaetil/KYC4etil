@@ -359,7 +359,11 @@ class LiveResearchTools:
     ) -> SourceDocument | None:
         from ..providers import fetch, jaarverslag, llm
 
-        is_pdf = ".pdf" in urlsplit(result.url).path.lower()
+        is_pdf = (
+            ".pdf" in urlsplit(result.url).path.lower()
+            or "digimv_direct" in result.providers
+            or "/api/archivesearch/getdocument" in result.url.lower()
+        )
         if is_pdf:
             try:
                 finding = await jaarverslag.LiveJaarverslagAgent().run_with_pdf(
@@ -392,6 +396,12 @@ class LiveResearchTools:
                 ),
                 bewijsfragment=finding.context if finding else None,
                 bron_pagina=finding.bron_pagina if finding else None,
+                scope_class="concern" if query.pad == "digimv" else None,
+                research_route=query.pad,
+                raw_data={
+                    "providers": result.providers,
+                    "queries": result.queries,
+                },
             )
 
         try:
@@ -449,6 +459,11 @@ class LiveResearchTools:
             ),
             bewijsfragment=data.get("context"),
             scope_class=data.get("scope_class"),
+            research_route=query.pad,
+            raw_data={
+                "providers": result.providers,
+                "queries": result.queries,
+            },
         )
 
 
