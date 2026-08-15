@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+import app.research.source_reviewer as source_reviewer
 from app.research.query_planner import QueryContext
 from app.research.source_reviewer import IntelligentSourceReviewer
 from app.research.validation import SourceDocument
@@ -272,6 +273,78 @@ async def test_exacte_bekende_locatiepagina_blijft_exacte_entiteit():
     assert reviewed.identity_class == "exact_entity"
     assert reviewed.validaties["intelligente_review"]["beslissing"] == "context_only"
     reviewer._llm_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_vestigingspagina_op_eigen_domein_wordt_daadwerkelijk_geclassificeerd(
+    monkeypatch,
+):
+    """
+    Regressie: Hallux Podotherapie Roermond. De juiste vestigingspagina werd
+    gevonden, maar scope_class bleef "unknown" omdat deze tak nooit zelf
+    classificeerde — het nam alleen (het bijna nooit gevulde) document.scope_class
+    over. Zonder een als "vestiging" herkende kandidaat kan
+    behoud_vestigingsanker (research/ranking.py) niets beschermen.
+    """
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    aangeroepen_met = {}
+
+    async def fake_classify_scope(naam, adres, gemeente, context):
+        aangeroepen_met.update(naam=naam, gemeente=gemeente, context=context)
+        return "vestiging"
+
+    monkeypatch.setattr(
+        source_reviewer, "_llm_classify_scope", fake_classify_scope,
+    )
+    document = SourceDocument(
+        naam="Hallux Podotherapie",
+        company_website_url="https://hallux.nl",
+        url="https://hallux.nl/vestigingen/limburg/roermond/podotherapie-roermond-bredeweg/",
+        titel="Podotherapie Roermond Bredeweg",
+        tekst="In Roermond werken vier podotherapeuten voor u klaar.",
+        brontype="officiele_website",
+        documenttype="teampagina",
+        wp_gevonden=4,
+        eenheid="werkzame_personen",
+        bewijsfragment="In Roermond werken vier podotherapeuten voor u klaar.",
+    )
+
+    reviewed = await reviewer.review(
+        _context("Hallux Podotherapie", gemeente="Roermond"), document,
+    )
+
+    assert aangeroepen_met["context"] == (
+        "In Roermond werken vier podotherapeuten voor u klaar."
+    )
+    assert reviewed.document.scope_class == "vestiging"
+    assert reviewed.validaties["intelligente_review"]["beslissing"] == (
+        "tonen_aan_reviewer"
+    )
+
+
+@pytest.mark.asyncio
+async def test_eigen_domein_zonder_enige_context_slaat_scopeclassificatie_over(
+    monkeypatch,
+):
+    """Een lege organisatiepagina heeft niets te classificeren — geen zinloze LLM-call."""
+    reviewer = IntelligentSourceReviewer()
+    reviewer._llm_review = AsyncMock()
+    classify = AsyncMock()
+    monkeypatch.setattr(source_reviewer, "_llm_classify_scope", classify)
+    document = SourceDocument(
+        naam="Voorbeeld Zorg",
+        company_website_url="https://voorbeeldzorg.nl",
+        url="https://voorbeeldzorg.nl/contact",
+        titel="Contact",
+        tekst="",
+        brontype="officiele_website",
+    )
+
+    reviewed = await reviewer.review(_context("Voorbeeld Zorg"), document)
+
+    classify.assert_not_awaited()
+    assert reviewed.validaties["intelligente_review"]["scope_class"] == "unknown"
 
 
 @pytest.mark.asyncio

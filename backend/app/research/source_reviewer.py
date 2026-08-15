@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 from ..config import get_settings
 from ..pipeline.identity_scope import domain_matches_company
+from ..providers.identity import _llm_classify_scope
 from .query_planner import QueryContext
 from .usage import record_response_usage
 from .urls import canonicaliseer_url
@@ -146,6 +147,33 @@ def _is_lage_waarde_zonder_wp(document: SourceDocument) -> bool:
 class IntelligentSourceReviewer:
     """Combineert harde regels met een LLM-judge; iedere fout is fail-closed."""
 
+    async def _scope_voor_eigen_domein(
+        self, context: QueryContext, document: SourceDocument,
+    ) -> str:
+        """Bepaalt scope_class voor een bron op het eigen domein.
+
+        Regressie: bij Hallux Podotherapie werd de juiste vestigingspagina wel
+        gevonden, maar scope_class bleef "unknown" — deze tak nam tot nu toe
+        altijd het (meestal nooit ingevulde) document.scope_class over zonder
+        ooit zelf te classificeren, waardoor een vestigingsanker nergens als
+        zodanig herkenbaar was. Alleen classificeren als er iets te
+        beoordelen valt (een bewijsfragment of paginatekst); een lege
+        organisatiepagina zonder enige inhoud levert toch niets bruikbaars op
+        en is een LLM-call niet waard.
+        """
+        if document.scope_class:
+            return document.scope_class
+        beschikbare_context = document.bewijsfragment or document.tekst[:2000]
+        if not beschikbare_context:
+            return "unknown"
+        try:
+            return await _llm_classify_scope(
+                context.naam, context.adres, context.gemeente,
+                beschikbare_context,
+            )
+        except Exception:
+            return "unknown"
+
     async def review(
         self,
         context: QueryContext,
@@ -215,7 +243,7 @@ class IntelligentSourceReviewer:
         if domain_matches_company(
             document.url, document.company_website_url,
         ) is True:
-            scope = document.scope_class or "unknown"
+            scope = await self._scope_voor_eigen_domein(context, document)
             if _is_lage_waarde_zonder_wp(document):
                 validatie.identity_class = "exact_entity"
                 validatie.is_afgewezen = True
