@@ -1,12 +1,16 @@
 import {describe, expect, it} from "vitest";
 import {
+  bedrijfRelatie,
   bereikLabel,
+  bereikRelatie,
+  bewijsRelatie,
   bronwaarschuwingen,
   brontypeLabel,
   identiteitLabel,
   menselijkeWaarde,
   monitoringStatus,
   organisatieStatus,
+  primaireConclusie,
 } from "./onderzoekLabels.js";
 
 describe("monitoringStatus", () => {
@@ -157,10 +161,10 @@ describe("brontypeLabel", () => {
 });
 
 describe("bronwaarschuwingen", () => {
-  it("waarschuwt bij een FTE-getal", () => {
+  it("waarschuwt niet apart bij een FTE-getal — dat zegt de Bewijs-regel al", () => {
     const labels = bronwaarschuwingen({eenheid: "fte", wp_gevonden: 47})
       .map((item) => item.label);
-    expect(labels).toContain("FTE — geen WP");
+    expect(labels).toEqual([]);
   });
 
   it("waarschuwt bij een afwijkend verslagjaar", () => {
@@ -177,13 +181,13 @@ describe("bronwaarschuwingen", () => {
     expect(labels).toEqual([]);
   });
 
-  it("waarschuwt als er geen getal is gevonden", () => {
+  it("waarschuwt niet apart als er geen getal is gevonden — dat zegt de Bewijs-regel al", () => {
     const labels = bronwaarschuwingen({wp_gevonden: null})
       .map((item) => item.label);
-    expect(labels).toContain("Geen getal gevonden");
+    expect(labels).toEqual([]);
   });
 
-  it("vertaalt bekende backend-waarschuwingen naar Nederlands", () => {
+  it("onderdrukt geen_concreet_wp_bewijs/getal_zonder_bewijsfragment/alleen_context_geen_wp_voorstel — de Bewijs-regel dekt dit al", () => {
     const labels = bronwaarschuwingen({
       wp_gevonden: 47,
       eenheid: "werkzame_personen",
@@ -193,16 +197,14 @@ describe("bronwaarschuwingen", () => {
         "alleen_context_geen_wp_voorstel",
       ],
     }).map((item) => item.label);
-    expect(labels).toContain("Geen hard WP-bewijs");
-    expect(labels).toContain("Getal zonder citaat");
-    expect(labels).toContain("Alleen context, geen WP-getal");
+    expect(labels).toEqual([]);
   });
 
-  it("onderdrukt fte_geen_wp, want de FTE-chip zegt dat al", () => {
+  it("onderdrukt fte_geen_wp — de Bewijs-regel zegt dat al", () => {
     const labels = bronwaarschuwingen({
       wp_gevonden: 47, eenheid: "fte", waarschuwingen: ["fte_geen_wp"],
     }).map((item) => item.label);
-    expect(labels).toEqual(["FTE — geen WP"]);
+    expect(labels).toEqual([]);
   });
 
   it("onderdrukt afwijkend_verslagjaar, want het jaarsignaal zegt dat al", () => {
@@ -247,11 +249,122 @@ describe("bronwaarschuwingen", () => {
 
   it("toont hetzelfde signaal nooit twee keer", () => {
     const labels = bronwaarschuwingen({
-      wp_gevonden: null,
+      wp_gevonden: 47,
       eenheid: "werkzame_personen",
-      waarschuwingen: ["geen_concreet_wp_bewijs", "geen_concreet_wp_bewijs"],
+      waarschuwingen: ["een_nieuwe_backend_sleutel", "een_nieuwe_backend_sleutel"],
     }).map((item) => item.label);
-    expect(labels).toEqual(["Geen getal gevonden", "Geen hard WP-bewijs"]);
+    expect(labels).toEqual(["een nieuwe backend sleutel"]);
+  });
+});
+
+describe("bedrijfRelatie", () => {
+  it("meldt een overeenkomst voor exacte en groepsidentiteit", () => {
+    expect(bedrijfRelatie("exact_entity").label).toBe("Komt overeen");
+    expect(bedrijfRelatie("same_brand_or_group").label).toBe("Komt overeen");
+  });
+
+  it("meldt een mismatch als afwijkend, met fout-toon", () => {
+    expect(bedrijfRelatie("mismatch")).toEqual({label: "Afwijkend", toon: "fout"});
+  });
+
+  it("meldt onzekere identiteit als nog niet vastgesteld", () => {
+    expect(bedrijfRelatie("possible_match").label).toBe("Nog niet vastgesteld");
+    expect(bedrijfRelatie(null).label).toBe("Nog niet vastgesteld");
+  });
+});
+
+describe("bereikRelatie", () => {
+  it("meldt vestiging en Limburg als vastgesteld", () => {
+    expect(bereikRelatie("vestiging").label).toBe("Vastgesteld — deze vestiging");
+    expect(bereikRelatie("limburg").label).toBe("Vastgesteld — Limburg");
+    expect(bereikRelatie("vestiging").toon).toBe("neutraal");
+  });
+
+  it("meldt een landelijk of concerncijfer als breder dan de vestiging", () => {
+    expect(bereikRelatie("nederland").label).toBe("Breder dan deze vestiging");
+    expect(bereikRelatie("concern").toon).toBe("aandacht");
+  });
+
+  it("meldt een onbekend bereik als nog niet vastgesteld", () => {
+    expect(bereikRelatie("unknown").label).toBe("Nog niet vastgesteld");
+    expect(bereikRelatie(null).label).toBe("Nog niet vastgesteld");
+  });
+});
+
+describe("bewijsRelatie", () => {
+  it("meldt een WP-getal met citaat neutraal", () => {
+    expect(bewijsRelatie({
+      wp_gevonden: 47, eenheid: "werkzame_personen", bewijsfragment: "47 medewerkers",
+    })).toEqual({label: "47 WP, met citaat", toon: "neutraal"});
+  });
+
+  it("meldt een WP-getal zonder citaat als aandacht", () => {
+    expect(bewijsRelatie({wp_gevonden: 47, eenheid: "werkzame_personen"}).toon)
+      .toBe("aandacht");
+  });
+
+  it("meldt een FTE-getal expliciet als geen WP-getal", () => {
+    expect(bewijsRelatie({wp_gevonden: 47, eenheid: "fte"}).label)
+      .toBe("47 FTE — geen WP-getal");
+  });
+
+  it("meldt een teampagina als nog niet geteld", () => {
+    expect(bewijsRelatie({documenttype: "teampagina", wp_gevonden: null}).label)
+      .toBe("Teamoverzicht gevonden, nog niet geteld");
+  });
+
+  it("meldt alleen context wanneer er wel een citaat maar geen getal is", () => {
+    expect(bewijsRelatie({wp_gevonden: null, bewijsfragment: "noemt het team"}).label)
+      .toBe("Alleen context, geen WP-getal");
+  });
+
+  it("meldt geen medewerkerstal zonder getal en zonder citaat", () => {
+    expect(bewijsRelatie({wp_gevonden: null}).label)
+      .toBe("Geen medewerkerstal uitgelezen");
+  });
+});
+
+describe("primaireConclusie", () => {
+  it("meldt een mismatch als eerste zin, zonder vervolgzin over bereik", () => {
+    const conclusie = primaireConclusie({identity_class: "mismatch"});
+    expect(conclusie.hoofd).toBe("Deze bron lijkt bij een ander bedrijf te horen.");
+  });
+
+  it("meldt een bruikbaar WP-getal met citaat", () => {
+    const conclusie = primaireConclusie({
+      identity_class: "exact_entity",
+      wp_gevonden: 47,
+      eenheid: "werkzame_personen",
+      bewijsfragment: "47 medewerkers",
+      scope_class: "vestiging",
+    });
+    expect(conclusie.hoofd).toBe("Bruikbaar WP-getal gevonden, met citaat.");
+    expect(conclusie.vervolg).toBeNull();
+  });
+
+  it("voegt een vervolgzin toe wanneer het bereik nog onbekend is", () => {
+    const conclusie = primaireConclusie({
+      identity_class: "exact_entity",
+      wp_gevonden: null,
+      scope_class: "unknown",
+    });
+    expect(conclusie.hoofd).toBe(
+      "Juiste bedrijfsbron gevonden, maar nog geen medewerkerstal uitgelezen.",
+    );
+    expect(conclusie.vervolg).toBe(
+      "De locatie waarop deze informatie betrekking heeft is nog niet vastgesteld.",
+    );
+  });
+
+  it("meldt een landelijk/concerncijfer als breder dan de vestiging", () => {
+    const conclusie = primaireConclusie({
+      identity_class: "exact_entity",
+      wp_gevonden: 4900,
+      eenheid: "werkzame_personen",
+      bewijsfragment: "de groep telt 4.900 medewerkers",
+      scope_class: "concern",
+    });
+    expect(conclusie.vervolg).toBe("Dit cijfer geldt breder dan alleen deze vestiging.");
   });
 });
 

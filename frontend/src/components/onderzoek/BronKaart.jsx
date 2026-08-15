@@ -2,9 +2,17 @@ import {useState} from "react";
 import {Check, ChevronDown, ChevronUp, Eye, X} from "lucide-react";
 import {classNames} from "../../lib/format.js";
 import {
-  TOON_STYLE, bereikLabel, bronwaarschuwingen, brontypeLabel, identiteitLabel,
-  menselijkeWaarde,
+  TOON_STYLE, bedrijfRelatie, bereikLabel, bereikRelatie, bewijsRelatie,
+  bronwaarschuwingen, brontypeLabel, identiteitLabel, menselijkeWaarde,
+  primaireConclusie,
 } from "../../lib/onderzoekLabels.js";
+
+const TOON_TEKST = {
+  neutraal: "text-ink",
+  aandacht: "text-amber-800",
+  fout: "text-red-800",
+  gekozen: "text-emerald-800",
+};
 
 function Signaal({label, toon}) {
   return (
@@ -14,6 +22,26 @@ function Signaal({label, toon}) {
     )}>
       {label}
     </span>
+  );
+}
+
+function Kaartrij({label, waarde}) {
+  return (
+    <div className="flex gap-3">
+      <dt className="w-16 shrink-0 text-slate-500">{label}</dt>
+      <dd className={classNames("flex-1", TOON_TEKST[waarde.toon])}>
+        <span
+          aria-hidden="true"
+          className={classNames(
+            "mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle",
+            waarde.toon === "aandacht" ? "bg-amber-500"
+              : waarde.toon === "fout" ? "bg-red-500"
+              : waarde.toon === "gekozen" ? "bg-emerald-500" : "bg-slate-300",
+          )}
+        />
+        {waarde.label}
+      </dd>
+    </div>
   );
 }
 
@@ -30,9 +58,13 @@ export function BronKaart({
   onBekijk, onAccepteer, onWijsAf,
 }) {
   const [toonOnderbouwing, setToonOnderbouwing] = useState(false);
+  const conclusie = primaireConclusie(candidate);
+  const bedrijf = bedrijfRelatie(candidate.identity_class);
+  const bereikRij = bereikRelatie(candidate.scope_class);
+  const bewijsRij = bewijsRelatie(candidate);
+  const waarde = menselijkeWaarde(candidate);
   const identiteit = identiteitLabel(candidate.identity_class);
   const bereik = bereikLabel(candidate.scope_class);
-  const waarde = menselijkeWaarde(candidate);
   const waarschuwingen = bronwaarschuwingen({...candidate, gevraagd_jaar: gevraagdJaar});
   const beoordeeld = ["geaccepteerd", "afgewezen"].includes(candidate.status);
 
@@ -65,43 +97,35 @@ export function BronKaart({
         </p>
       ) : null}
 
-      {candidate.bewijsfragment ? (
-        <blockquote className="mt-3 text-base leading-relaxed text-ink">
-          “{candidate.bewijsfragment}”
-        </blockquote>
-      ) : (
-        <p className="mt-3 text-sm italic text-slate-500">
-          Geen citaat geëxtraheerd — beoordeel de bron zelf.
+      <div className="mt-3">
+        <p className="max-w-[65ch] text-base font-medium leading-snug text-ink">
+          {conclusie.hoofd}
         </p>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        <Signaal {...identiteit} />
-        <Signaal {...bereik} />
-        {candidate.wp_gevonden != null ? (
-          <span className="text-xs tabular-nums text-slate-600">
-            {candidate.wp_gevonden} {candidate.eenheid === "fte" ? "FTE" : "WP"}
-          </span>
-        ) : null}
-        {candidate.verslagjaar ? (
-          <span className="text-xs text-slate-500">
-            verslagjaar {candidate.verslagjaar}
-          </span>
+        {conclusie.vervolg ? (
+          <p className="mt-1 max-w-[65ch] text-sm text-slate-600">{conclusie.vervolg}</p>
         ) : null}
       </div>
 
+      <dl className="mt-4 space-y-1.5 text-sm">
+        <Kaartrij label="Bedrijf" waarde={bedrijf} />
+        <Kaartrij label="Bereik" waarde={bereikRij} />
+        <Kaartrij label="Bewijs" waarde={bewijsRij} />
+        <Kaartrij label="Actie" waarde={{label: waarde.actie, toon: "neutraal"}} />
+      </dl>
+
+      {candidate.bewijsfragment ? (
+        <blockquote className="mt-3 max-w-[65ch] border-l-2 border-line pl-3 text-sm italic leading-relaxed text-slate-600">
+          “{candidate.bewijsfragment}”
+        </blockquote>
+      ) : null}
+
       {waarschuwingen.length ? (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-3 flex flex-wrap gap-1.5">
           {waarschuwingen.map((item) => (
             <Signaal key={item.label} {...item} />
           ))}
         </div>
       ) : null}
-
-      <div className="mt-3 border-t border-line pt-3 text-sm">
-        <p className="font-medium text-ink">{waarde.label}</p>
-        <p className="mt-0.5 max-w-[70ch] text-slate-600">{waarde.actie}</p>
-      </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
@@ -144,6 +168,18 @@ export function BronKaart({
 
       {toonOnderbouwing ? (
         <dl className="mt-3 space-y-1 border-t border-line pt-3 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-1.5 pb-1">
+            <Signaal {...identiteit} />
+            <Signaal {...bereik} />
+            {candidate.wp_gevonden != null ? (
+              <span className="tabular-nums text-slate-600">
+                {candidate.wp_gevonden} {candidate.eenheid === "fte" ? "FTE" : "WP"}
+              </span>
+            ) : null}
+            {candidate.verslagjaar ? (
+              <span className="text-slate-500">verslagjaar {candidate.verslagjaar}</span>
+            ) : null}
+          </div>
           {candidate.validaties?.intelligente_review?.reden ? (
             <div>
               <dt className="inline font-medium text-slate-600">Bronreview: </dt>

@@ -34,22 +34,21 @@ const BEREIK = {
 /**
  * Backend-waarschuwingen naar leesbaar Nederlands.
  *
- * `null` betekent bewust onderdrukken. Drie sleutels leidt de frontend zelf al
- * af uit de kandidaatvelden (eenheid, verslagjaar, scope_class); ze ook nog als
- * losse chip tonen levert twee chips voor één feit op. `recent_actualiteits-
- * signaal` is een pluspunt, geen "controleer dit", en hoort dus niet thuis in
- * een rij waarschuwingen.
+ * `null` betekent bewust onderdrukken. Deze sleutels leidt de bronkaart nu af
+ * uit `bewijsRelatie`/`bereikRelatie` (één zin in de samenvatting); ze ook nog
+ * als losse chip tonen levert twee meldingen voor hetzelfde feit op —
+ * bijvoorbeeld "Geen getal gevonden" naast "Alleen context, geen WP-getal".
+ * `recent_actualiteitssignaal` is een pluspunt, geen "controleer dit", en
+ * hoort dus niet thuis in een rij waarschuwingen.
  */
 const WAARSCHUWING = {
   fte_geen_wp: null,
   afwijkend_verslagjaar: null,
   scope_breder_dan_vestiging: null,
   recent_actualiteitssignaal: null,
-  getal_zonder_bewijsfragment: {label: "Getal zonder citaat", toon: "aandacht"},
-  geen_concreet_wp_bewijs: {label: "Geen hard WP-bewijs", toon: "aandacht"},
-  alleen_context_geen_wp_voorstel: {
-    label: "Alleen context, geen WP-getal", toon: "aandacht",
-  },
+  getal_zonder_bewijsfragment: null,
+  geen_concreet_wp_bewijs: null,
+  alleen_context_geen_wp_voorstel: null,
 };
 
 const BRONTYPE = {
@@ -124,6 +123,100 @@ export function bereikLabel(scopeClass) {
   return BEREIK[scopeClass] || BEREIK.unknown;
 }
 
+/**
+ * Voor de bronkaart-samenvatting: dezelfde classificatie als `identiteitLabel`,
+ * maar in de relationele taal die de reviewer als eerste leest ("komt overeen"
+ * versus de technische klassenaam "Dit bedrijf" in de onderbouwing).
+ */
+export function bedrijfRelatie(identityClass) {
+  if (identityClass === "mismatch") {
+    return {label: "Afwijkend", toon: "fout"};
+  }
+  if (identityClass === "exact_entity" || identityClass === "same_brand_or_group") {
+    return {label: "Komt overeen", toon: "neutraal"};
+  }
+  return {label: "Nog niet vastgesteld", toon: "aandacht"};
+}
+
+/** Zelfde idee als `bedrijfRelatie`, maar dan voor geografisch bereik. */
+export function bereikRelatie(scopeClass) {
+  if (scopeClass === "vestiging") {
+    return {label: "Vastgesteld — deze vestiging", toon: "neutraal"};
+  }
+  if (scopeClass === "limburg") {
+    return {label: "Vastgesteld — Limburg", toon: "neutraal"};
+  }
+  if (scopeClass === "nederland" || scopeClass === "concern") {
+    return {label: "Breder dan deze vestiging", toon: "aandacht"};
+  }
+  return {label: "Nog niet vastgesteld", toon: "aandacht"};
+}
+
+/**
+ * Eén regel bewijsstatus. Vervangt de losse chips "Geen getal gevonden",
+ * "Alleen context, geen WP-getal" en "Getal zonder citaat" door één zin, zodat
+ * dezelfde constatering niet twee keer in andere woorden op de kaart staat.
+ */
+export function bewijsRelatie(candidate) {
+  const heeftGetal = candidate?.wp_gevonden != null;
+  const heeftCitaat = !!candidate?.bewijsfragment;
+  if (heeftGetal && candidate.eenheid === "werkzame_personen") {
+    return heeftCitaat
+      ? {label: `${candidate.wp_gevonden} WP, met citaat`, toon: "neutraal"}
+      : {label: `${candidate.wp_gevonden} WP, zonder citaat`, toon: "aandacht"};
+  }
+  if (heeftGetal && candidate.eenheid === "fte") {
+    return {label: `${candidate.wp_gevonden} FTE — geen WP-getal`, toon: "aandacht"};
+  }
+  if (candidate?.documenttype === "teampagina") {
+    return {label: "Teamoverzicht gevonden, nog niet geteld", toon: "aandacht"};
+  }
+  if (heeftCitaat) {
+    return {label: "Alleen context, geen WP-getal", toon: "aandacht"};
+  }
+  return {label: "Geen medewerkerstal uitgelezen", toon: "aandacht"};
+}
+
+/**
+ * De primaire conclusie bovenaan de kaart: één zin in gewone taal, met
+ * optioneel een tweede zin over het geografisch bereik. Technische
+ * classificaties (identity_class, scope_class) komen pas daarna.
+ */
+export function primaireConclusie(candidate) {
+  const identiteit = candidate?.identity_class;
+  const bereik = candidate?.scope_class;
+  const heeftWpGetal = candidate?.wp_gevonden != null
+    && candidate?.eenheid === "werkzame_personen";
+  const heeftCitaat = !!candidate?.bewijsfragment;
+  const juisteIdentiteit = identiteit === "exact_entity" || identiteit === "same_brand_or_group";
+
+  let hoofd;
+  if (identiteit === "mismatch") {
+    hoofd = "Deze bron lijkt bij een ander bedrijf te horen.";
+  } else if (heeftWpGetal && heeftCitaat) {
+    hoofd = "Bruikbaar WP-getal gevonden, met citaat.";
+  } else if (heeftWpGetal) {
+    hoofd = "WP-getal gevonden, maar zonder citaat ter onderbouwing.";
+  } else if (candidate?.eenheid === "fte" && candidate?.wp_gevonden != null) {
+    hoofd = "Alleen een FTE-cijfer gevonden — dat is geen WP-getal.";
+  } else if (candidate?.documenttype === "teampagina") {
+    hoofd = "Teampagina gevonden, medewerkers nog niet geteld.";
+  } else if (juisteIdentiteit) {
+    hoofd = "Juiste bedrijfsbron gevonden, maar nog geen medewerkerstal uitgelezen.";
+  } else {
+    hoofd = "Bron gevonden, maar nog geen medewerkerstal uitgelezen.";
+  }
+
+  let vervolg = null;
+  if (bereik === "unknown") {
+    vervolg = "De locatie waarop deze informatie betrekking heeft is nog niet vastgesteld.";
+  } else if (bereik === "nederland" || bereik === "concern") {
+    vervolg = "Dit cijfer geldt breder dan alleen deze vestiging.";
+  }
+
+  return {hoofd, vervolg};
+}
+
 export function brontypeLabel(brontype) {
   return BRONTYPE[brontype] || "Openbare bron";
 }
@@ -174,18 +267,12 @@ export function menselijkeWaarde(candidate) {
 export function bronwaarschuwingen(candidate) {
   if (!candidate) return [];
   const items = [];
-  if (candidate.eenheid === "fte") {
-    items.push({label: "FTE — geen WP", toon: "aandacht"});
-  }
   if (
     candidate.gevraagd_jaar != null
     && candidate.verslagjaar != null
     && candidate.gevraagd_jaar !== candidate.verslagjaar
   ) {
     items.push({label: "Ander verslagjaar", toon: "aandacht"});
-  }
-  if (candidate.wp_gevonden == null) {
-    items.push({label: "Geen getal gevonden", toon: "aandacht"});
   }
   for (const waarschuwing of candidate.waarschuwingen || []) {
     const sleutel = String(waarschuwing);
