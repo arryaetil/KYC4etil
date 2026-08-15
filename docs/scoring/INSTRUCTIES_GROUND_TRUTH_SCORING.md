@@ -12,6 +12,13 @@ Gebruik `ground_truth_template.csv` als startpunt (bevat de 20 bekende
 testbedrijven; `wp_werkelijk` is bewust leeg gelaten — zoek dit zelf opnieuw
 uit, vertrouw niet op oude aannames).
 
+Voor de bredere v1-meting staan 50 cases in
+`backend/data/research_testset_v1.csv` en de afzonderlijke bronlabels in
+`backend/data/research_testset_sources_v1.csv`. Het bijbehorende werkboek
+`VR_research_testset_v1.xlsx` is de praktische invulversie. Alle regels starten
+als `pending_review`; alleen `verified` cases en bronnen tellen mee in de
+automatische evaluator `backend/scripts/evaluate_research_testset.py`.
+
 ## Wat je per bedrijf invult
 
 | Kolom | Wat je invult |
