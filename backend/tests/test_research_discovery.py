@@ -76,6 +76,47 @@ def test_canonicaliseer_url_dedupliceert_http_en_https_als_dezelfde_webbron():
     )
 
 
+def test_canonicaliseer_url_verwijdert_srsltid_tracking_parameter():
+    """
+    Regressie: Poulissen Audio Video Center leverde in de VR-testbatch
+    (batch f575fc9c) dezelfde teampagina en homepage elk 2x op, uitsluitend
+    door een wisselend Google-Shopping-trackingparameter.
+    """
+    assert canonicaliseer_url(
+        "https://www.poulissen.nl/pages/ons-team"
+        "?srsltid=AfmBOor_zF8C7v1ti24dIIr3XjeO13ZfCQKOGaaUmKICzkk28bpMT2h7"
+    ) == canonicaliseer_url(
+        "https://www.poulissen.nl/pages/ons-team"
+        "?srsltid=AfmBOorFbsBUZdwOsQ7mAJfjB9zBkreyO4e-JoMvMUJ6BH-N_L3ljLAt"
+    )
+    assert canonicaliseer_url(
+        "https://www.poulissen.nl/?srsltid=AfmBOoogJXaJVF-4kYOxe07S_6PbPTW5sF9OdNPBJbYi15zqKZIcRsjh"
+    ) == canonicaliseer_url("https://www.poulissen.nl/")
+
+
+def test_canonicaliseer_url_dedupliceert_taalvarianten_van_dezelfde_pagina():
+    """
+    Regressie: DSM-Firmenich en Koninklijke BAM leverden in dezelfde testbatch
+    een Engelse en Nederlandse variant van precies dezelfde pagina als twee
+    losse kandidaten op (zie docs/OPENSTAANDE_OBSERVATIES_RESEARCH_EN_UI.md §4).
+    """
+    assert canonicaliseer_url(
+        "https://our-company.dsm-firmenich.com/en/our-company/ventures/team.html"
+    ) == canonicaliseer_url(
+        "https://our-company.dsm-firmenich.com/nl-nl/our-company/ventures/team.html"
+    )
+    assert canonicaliseer_url("https://www.bam.com/") == canonicaliseer_url(
+        "https://www.bam.com/nl"
+    )
+
+
+def test_canonicaliseer_url_laat_landenpad_dat_geen_taalcode_is_ongemoeid():
+    """Een pad als "/us/..." is een landensectie, geen taalvariant-prefix."""
+    assert canonicaliseer_url(
+        "https://example.com/us/investor-relations"
+    ) != canonicaliseer_url("https://example.com/investor-relations")
+
+
 def test_parallelle_paden_worden_voor_opslag_canoniek_gededupliceerd():
     specialist = SimpleNamespace(document=SimpleNamespace(
         url="https://www.mondriaan.eu/jaarverslag-2024.pdf",
