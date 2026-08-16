@@ -249,7 +249,14 @@ async def test_officieel_groepsdocument_is_niet_automatisch_exacte_vestiging():
 
     assert reviewed.is_afgewezen is False
     assert reviewed.identity_class == "same_brand_or_group"
-    assert reviewed.document.scope_class == "unknown"
+    # "concern", niet "unknown": 4.900 is het groepstotaal en niet het aantal
+    # van déze locatie. Deze assertie stond op "unknown" omdat de scope-call
+    # onder PROVIDER_MODE=live faalde en stil op de fallback uitkwam; met de
+    # deterministische classifier komt het juiste label eruit. Het onderscheid
+    # doet er ook echt toe: kandidaten met scope "concern" zaten in de
+    # productiedata 9% van de tijd binnen 10% van de waarheid, tegen 65% voor
+    # scope "limburg".
+    assert reviewed.document.scope_class == "concern"
     assert reviewed.validaties["intelligente_review"]["beslissing"] == "context_only"
     reviewer._llm_review.assert_not_awaited()
 
@@ -540,3 +547,77 @@ async def test_groepshomepage_is_geen_exacte_vestiging_zonder_naamsbewijs():
         == "context_only"
     )
     reviewer._llm_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bronreview_draait_op_temperatuur_nul(monkeypatch):
+    """De bronreview bepaalt identity_class, scope_class en de afwijzingen.
+
+    Op OpenAI's default-temperatuur (1.0) kreeg dezelfde URL tussen twee runs
+    een ander oordeel: gemeten op productiedata wisselde scope_class bij 77%
+    van de opnieuw beoordeelde URL's. De call moet daarom via
+    llm._create_response lopen, die openai_temperature (0.0) afdwingt.
+    """
+    import openai
+
+    doorgegeven: dict = {}
+
+    class _Response:
+        output_text = '{"identity_class": "exact_entity", "scope_class": "limburg"}'
+        usage = None
+
+    class _Responses:
+        async def create(self, **kwargs):
+            doorgegeven.update(kwargs)
+            return _Response()
+
+    class _FakeClient:
+        # Onderschept één laag lager dan _create_response, zodat de echte
+        # wrapper draait en zijn temperature-default aantoonbaar toepast.
+        def __init__(self, *args, **kwargs):
+            self.responses = _Responses()
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", _FakeClient)
+    settings = source_reviewer.get_settings()
+    monkeypatch.setattr(settings, "openai_api_key", "test-key", raising=False)
+
+    reviewer = IntelligentSourceReviewer()
+    document = SourceDocument(
+        naam="Mondriaan",
+        company_website_url="https://www.mondriaan.eu/",
+        url="https://www.mondriaan.eu/jaarverslag-2025.pdf",
+        titel="Jaarverantwoording 2025",
+        brontype="jaarverslag",
+        tekst="Er waren 2294 medewerkers actief.",
+    )
+    await reviewer._llm_review(_context("Mondriaan"), document)
+
+    assert doorgegeven, "_llm_review moet via llm._create_response lopen"
+    assert doorgegeven.get("temperature", 1.0) == 0.0
+
+
+def test_geen_enkele_openai_call_omzeilt_de_wrapper():
+    """Structurele bewaking tegen drift.
+
+    llm._create_response zet de temperatuur en telt het tokenverbruik. Een
+    nieuwe call-site die rechtstreeks client.responses.create aanroept, mist
+    allebei — stil, zonder foutmelding. Dat is precies hoe de bronreview
+    maandenlang op temperatuur 1.0 draaide.
+    """
+    from pathlib import Path
+
+    app_dir = Path(__file__).resolve().parent.parent / "app"
+    overtreders = []
+    for pad in app_dir.rglob("*.py"):
+        # llm.py bevat de wrapper zelf en mag als enige direct aanroepen.
+        if pad.name == "llm.py" and pad.parent.name == "providers":
+            continue
+        for nummer, regel in enumerate(
+            pad.read_text(encoding="utf-8").splitlines(), start=1,
+        ):
+            if "responses.create(" in regel and "_create_response" not in regel:
+                overtreders.append(f"{pad.relative_to(app_dir)}:{nummer}")
+    assert not overtreders, (
+        "Deze call-sites omzeilen llm._create_response en draaien dus op "
+        f"temperatuur 1.0 zonder tokentelling: {overtreders}"
+    )

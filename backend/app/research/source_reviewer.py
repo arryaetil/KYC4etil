@@ -8,9 +8,9 @@ from urllib.parse import urlsplit
 
 from ..config import get_settings
 from ..pipeline.identity_scope import domain_matches_company
+from ..providers import llm
 from ..providers.identity import _llm_classify_scope
 from .query_planner import QueryContext
-from .usage import record_response_usage
 from .urls import canonicaliseer_url
 from .validation import (
     BronValidatie,
@@ -398,7 +398,16 @@ class IntelligentSourceReviewer:
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=settings.openai_api_key)
-        response = await client.responses.create(
+        # Via llm._create_response en niet rechtstreeks: die wrapper zet
+        # temperature op openai_temperature (0.0) én telt het tokenverbruik.
+        # Deze call ging er als enige in de applicatie omheen en draaide
+        # daardoor op OpenAI's default van 1.0. Gevolg: dezelfde URL kreeg
+        # tussen twee runs een ander oordeel — gemeten op productiedata
+        # wisselde scope_class bij 77% van de opnieuw beoordeelde URL's, en
+        # leverden twee runs op hetzelfde bedrijf 0 van de 10 keer dezelfde
+        # bronnenset op. De bronreview is 72% van alle OpenAI-calls in een run.
+        response = await llm._create_response(
+            client,
             model=settings.openai_model_extraction or settings.openai_model,
             input=REVIEW_PROMPT.format(
                 naam=context.naam,
@@ -417,5 +426,5 @@ class IntelligentSourceReviewer:
             max_output_tokens=800,
             text={"format": {"type": "json_object"}},
         )
-        record_response_usage(response)
+        # Geen record_response_usage hier: _create_response telt al.
         return json.loads(response.output_text)
