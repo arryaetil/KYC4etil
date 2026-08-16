@@ -45,3 +45,37 @@ def canonicaliseer_url(url: str) -> str:
         query,
         "",
     ))
+
+
+# Domeinen die per definitie geen primair WP-bewijs kunnen leveren en die nu
+# eerst worden opgehaald en door de review-LLM gelezen voordat ze alsnog
+# worden afgewezen. Gemeten op 1.095 gelogde afwijzingen in productie is dat
+# 27% van alle afwijzingen: Instagram 147, LinkedIn 73, Facebook 68, YouTube
+# 11, plus 26 vacaturesites. De bronreview is 72% van de OpenAI-calls per run,
+# dus dit is verspilling die vóór het ophalen te voorkomen is.
+#
+# Bewust géén nieuwsdomeinen hierin: media leverde in de metingen 3 van de
+# 5 keer een waarde binnen 10% van de waarheid en is dus een echte bron.
+_GEEN_PRIMAIRE_WP_BRON = {
+    # sociale profielen — tonen volgersaantallen, geen personeelsbestand
+    "linkedin.com", "facebook.com", "instagram.com", "x.com", "twitter.com",
+    "youtube.com", "tiktok.com", "pinterest.com",
+    # vacatureplatforms — vacatures zijn geen personeelsomvang
+    "indeed.com", "nationalevacaturebank.nl", "monsterboard.nl",
+    "werkzoeken.nl", "jobbird.com", "glassdoor.com", "glassdoor.nl",
+}
+
+
+def is_geen_primaire_wp_bron(url: str) -> bool:
+    """True als het domein nooit een bruikbaar WP-cijfer kan opleveren.
+
+    Vergelijkt op registreerbaar domein inclusief subdomeinen, zodat
+    `nl.linkedin.com` en `be.jobs.jumbo.com`-achtige varianten meetellen.
+    """
+    domein = (urlsplit(url).hostname or "").lower().removeprefix("www.")
+    if not domein:
+        return False
+    return any(
+        domein == geblokkeerd or domein.endswith(f".{geblokkeerd}")
+        for geblokkeerd in _GEEN_PRIMAIRE_WP_BRON
+    )

@@ -11,8 +11,14 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from .query_planner import QueryContext, plan_queries, plan_routes
-from .ranking import RankedBron, behoud_vestigingsanker, rank_bronnen
+from .ranking import (
+    RankedBron,
+    behoud_vestigingsanker,
+    rank_bronnen,
+    selecteer_bronportfolio,
+)
 from .types import CombinedSearchResult, PlannedQuery
+from .urls import is_geen_primaire_wp_bron
 from .validation import SourceDocument, valideer_bron
 
 
@@ -60,8 +66,13 @@ class ResearchSupervisor:
         self,
         context: QueryContext,
         seed_documents: list[SourceDocument] | None = None,
+        route_plan: list[dict] | None = None,
     ) -> ResearchOutcome:
-        route_plan = plan_routes(context)
+        # Het plan mag van buiten komen, zodat de aanroeper het één keer
+        # opstelt (inclusief de sectorprobe die registers zichzelf laat
+        # identificeren) en precies hetzelfde plan aan seeds én supervisor
+        # geeft. Zonder dat argument blijft het gedrag ongewijzigd.
+        route_plan = route_plan if route_plan is not None else plan_routes(context)
         seed_documents = seed_documents or []
         fouten: list[str] = []
         zoekfouten_per_route: Counter = Counter()
@@ -93,7 +104,7 @@ class ResearchSupervisor:
                 and (
                     (document.raw_data or {}).get("route_sufficient") is True
                     or (
-                        document.research_route in {"duo", "digimv"}
+                        document.research_route in {"duo", "digimv", "lrk"}
                         and (document.raw_data or {}).get("seed_origin")
                         not in {"existing_source", "organization_source"}
                     )
@@ -120,6 +131,7 @@ class ResearchSupervisor:
         queries: list[PlannedQuery] = []
         vervolgindex = {route: 0 for route in per_route_queries}
         geen_nieuwe_resultaten: Counter = Counter()
+        vooraf_geblokkeerd: Counter = Counter()
         stopredenen: dict[str, str] = {
             route: "rechtstreekse sectorspecifieke bron gevonden"
             for route in directe_routes
@@ -154,6 +166,17 @@ class ResearchSupervisor:
                     zoekfouten_per_route[query.pad] += 1
                     geen_nieuwe_resultaten[query.pad] += 1
                     continue
+                # Filter vóór het ophalen, niet pas in de bronreview. Deze
+                # domeinen worden daar toch altijd afgewezen
+                # (sociaal_profiel_geen_primaire_wp_bron, 27% van alle
+                # afwijzingen), maar dan is de pagina al opgehaald en door de
+                # review-LLM gelezen. Wel meetellen als geblokkeerd, zodat de
+                # diagnostiek laat zien dat de zoekopdracht wél iets vond.
+                geblokkeerd = [r for r in results if is_geen_primaire_wp_bron(r.url)]
+                if geblokkeerd:
+                    vooraf_geblokkeerd[query.pad] += len(geblokkeerd)
+                results = [r for r in results if not is_geen_primaire_wp_bron(r.url)]
+
                 voor = len(route_urls.setdefault(query.pad, set()))
                 route_urls[query.pad].update(
                     result.canonical_url for result in results
@@ -336,12 +359,22 @@ class ResearchSupervisor:
                     "review_reden": intelligente_review.get("reden"),
                 })
 
-        # Bewaar alle relevante kandidaten tot de eenvoudige harde bovengrens.
-        # Bij de gebruikelijke circa vijf bronnen is een diversiteitsfilter
-        # schadelijker dan behulpzaam: het kan een derde relevante team- of
-        # documentbron stil laten verdwijnen.
+        # Diversiteit bepaalt de vólgorde, het vestigingsanker de inhoud.
+        #
+        # De eerdere afweging ("bij circa vijf bronnen is een diversiteitsfilter
+        # schadelijker dan behulpzaam") ging uit van korte kandidatenlijsten en
+        # van een portfoliofunctie die de lijst kon laten krimpen. Beide
+        # kloppen niet meer: research_max_kandidaten staat op 8, en gemeten op
+        # productiedata komt bij runs met vier of meer kandidaten de mediaan
+        # 100% van één domein — 39 van de 53 runs zijn volledig monocultuur.
+        # De reviewer krijgt dan acht varianten van dezelfde pagina in plaats
+        # van complementair bewijs. selecteer_bronportfolio vult sinds kort
+        # altijd aan tot het maximum, dus er kan niets meer stil wegvallen.
         ranked = behoud_vestigingsanker(
-            rank_bronnen(validaties), self.max_kandidaten,
+            selecteer_bronportfolio(
+                rank_bronnen(validaties), self.max_kandidaten,
+            ),
+            self.max_kandidaten,
         )
         reden_teller = Counter(
             reden
@@ -405,6 +438,11 @@ class ResearchSupervisor:
                 ),
                 "afwijsredenen": dict(reden_teller),
                 "afwijzingen": afwijzingen,
+                # Zoekresultaten die vóór het ophalen zijn weggefilterd omdat
+                # het domein nooit primair WP-bewijs kan leveren. Apart
+                # zichtbaar zodat "route vond niets" te onderscheiden blijft
+                # van "route vond alleen sociale profielen".
+                "vooraf_geblokkeerd": dict(vooraf_geblokkeerd),
                 "adaptief_stoppen": stopredenen,
                 "route_statussen": route_statussen,
             },

@@ -11,6 +11,7 @@ from .live_tools import LiveResearchTools
 from .mock_tools import MockResearchTools
 from .organizations import koppel_organisatie, vind_bestaande_bronnen
 from .query_planner import QueryContext, plan_routes
+from .sector_probe import verrijk_routeplan
 from .seeds import verzamel_seed_documenten
 from .source_reviewer import IntelligentSourceReviewer
 from .supervisor import ResearchSupervisor
@@ -62,6 +63,7 @@ def maak_research_run(
         sbi_code=company.sbi_code,
         sbi_omschrijving=company.sbi_omschrijving,
         kvk_nummer=company.kvk_nummer,
+        vestigingsnummer=company.vestigingsnummer,
     )
     koppel_organisatie(
         db,
@@ -124,6 +126,7 @@ async def _run_research_run(run_id: str) -> None:
             company_sbi_code = company.sbi_code
             company_sbi_omschrijving = company.sbi_omschrijving
             company_kvk_nummer = company.kvk_nummer
+            company_vestigingsnummer = company.vestigingsnummer
             gevraagd_jaar = run.gevraagd_jaar
             website_url = company.website_url or enrichment_website
             if website_url:
@@ -197,6 +200,7 @@ async def _run_research_run(run_id: str) -> None:
             sbi_code=company_sbi_code,
             sbi_omschrijving=company_sbi_omschrijving,
             kvk_nummer=company_kvk_nummer,
+            vestigingsnummer=company_vestigingsnummer,
         )
         with SessionLocal() as db:
             company = db.get(Company, company_id)
@@ -211,11 +215,17 @@ async def _run_research_run(run_id: str) -> None:
             if settings.provider_mode == "live"
             else MockResearchTools()
         )
+        # Eén routeplan voor de hele run. In live-modus mogen de registers
+        # zichzelf identificeren wanneer er geen SBI-code is; dat plan gaat
+        # daarna ongewijzigd naar zowel de seeds als de supervisor.
+        route_plan = plan_routes(context)
+        if settings.provider_mode == "live":
+            route_plan = await verrijk_routeplan(context, route_plan)
         seed_documents = (
             await verzamel_seed_documenten(
                 tools,
                 context,
-                {item["route"] for item in plan_routes(context)},
+                {item["route"] for item in route_plan},
                 bestaande_bronnen=bestaande_bronnen,
             )
             if settings.provider_mode == "live"
@@ -231,7 +241,7 @@ async def _run_research_run(run_id: str) -> None:
                 if settings.provider_mode == "live"
                 else None
             ),
-        ).run(context, seed_documents=seed_documents)
+        ).run(context, seed_documents=seed_documents, route_plan=route_plan)
 
         with SessionLocal() as db:
             run = db.get(ResearchRun, run_id)

@@ -377,3 +377,62 @@ async def test_bronreview_calls_lopen_concurrent():
     # (nieuw) moet dit ruim onder die grens blijven.
     assert duur < 0.20
     assert len(outcome.kandidaten) == 3
+
+
+@pytest.mark.asyncio
+async def test_sociale_profielen_worden_niet_opgehaald():
+    """Ze werden altijd al afgewezen, maar pas ná ophalen én LLM-review.
+
+    Gemeten op 1.095 gelogde afwijzingen in productie is 27% een sociaal
+    profiel of vacatureplatform. Die pagina's kosten nu een fetch plus een
+    review-call voordat ze worden weggegooid.
+    """
+    opgehaald: list[str] = []
+
+    class _SocialTools:
+        async def search(self, query: PlannedQuery, max_results: int):
+            return [
+                CombinedSearchResult(
+                    title="Voorbeeldzorg op LinkedIn",
+                    url="https://nl.linkedin.com/company/voorbeeldzorg",
+                    canonical_url="https://nl.linkedin.com/company/voorbeeldzorg",
+                    snippets=["1.200 volgers"],
+                    providers=["serper"], queries=[query.query],
+                ),
+                CombinedSearchResult(
+                    title="Vacatures", url="https://nl.indeed.com/q-voorbeeldzorg",
+                    canonical_url="https://nl.indeed.com/q-voorbeeldzorg",
+                    snippets=["12 vacatures"],
+                    providers=["serper"], queries=[query.query],
+                ),
+                CombinedSearchResult(
+                    title="Ons team", url="https://voorbeeldzorg.nl/team",
+                    canonical_url="https://voorbeeldzorg.nl/team",
+                    snippets=["47 medewerkers"],
+                    providers=["serper"], queries=[query.query],
+                ),
+            ]
+
+        async def inspect(self, context, query, result):
+            opgehaald.append(result.url)
+            return SourceDocument(
+                naam=context.naam, company_website_url=context.website_url,
+                url=result.url, titel=result.title, tekst="47 medewerkers",
+                brontype="officiele_website", documenttype="teampagina",
+                wp_gevonden=47, eenheid="werkzame_personen",
+                bewijsfragment="47 medewerkers",
+            )
+
+    uitkomst = await ResearchSupervisor(
+        _SocialTools(), max_queries=3, max_pages=10,
+    ).run(QueryContext(
+        naam="Voorbeeldzorg", gemeente="Heerlen", gevraagd_jaar=2026,
+        website_url="https://voorbeeldzorg.nl",
+    ))
+
+    assert not any("linkedin" in url for url in opgehaald)
+    assert not any("indeed" in url for url in opgehaald)
+    assert any("voorbeeldzorg.nl/team" in url for url in opgehaald)
+    assert uitkomst.diagnostiek["vooraf_geblokkeerd"], (
+        "geblokkeerde treffers moeten zichtbaar blijven in de diagnostiek"
+    )

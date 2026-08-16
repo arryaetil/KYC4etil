@@ -12,6 +12,7 @@ from dataclasses import replace
 
 from .digimv import zoek_digimv_documenten
 from .duo import vind_duo_personeelsbron
+from .lrk import vind_lrk_bron
 from .live_tools import LiveResearchTools
 from .organizations import BestaandeBron
 from .query_planner import QueryContext
@@ -119,7 +120,10 @@ async def verzamel_seed_documenten(
             if document is not None
         ]
 
-    officiele_website, nieuwste_document, duo_bron, digimv_bronnen, oude_bronnen = await asyncio.gather(
+    (
+        officiele_website, nieuwste_document, duo_bron, digimv_bronnen,
+        lrk_bron, oude_bronnen,
+    ) = await asyncio.gather(
         _veilig(tools.find_officiele_website(context)),
         (
             _veilig(tools.find_nieuwste_officiele_document(context))
@@ -136,6 +140,11 @@ async def verzamel_seed_documenten(
             if "digimv" in actieve_routes
             else asyncio.sleep(0, result=[])
         ),
+        (
+            _veilig(vind_lrk_bron(context))
+            if "lrk" in actieve_routes
+            else asyncio.sleep(0, result=None)
+        ),
         _bestaande_documenten(),
     )
     if officiele_website is not None:
@@ -145,6 +154,8 @@ async def verzamel_seed_documenten(
     if duo_bron is not None:
         seed_documents.append(duo_bron)
     seed_documents.extend(digimv_bronnen or [])
+    if lrk_bron is not None:
+        seed_documents.append(lrk_bron)
     seed_documents.extend(oude_bronnen or [])
 
     if (
