@@ -24,6 +24,31 @@ class QueryContext:
     sbi_code: str | None = None
     sbi_omschrijving: str | None = None
     kvk_nummer: str | None = None
+    # Het LRK publiceert `vestigingsnummer_houder`, dezelfde sleutel als het
+    # Vestigingsregister. Daarmee is een koppeling een identiteit in plaats
+    # van een naamgelijkenis; zonder dit veld valt lrk.py terug op het
+    # KvK-nummer en uiteindelijk op de naam.
+    vestigingsnummer: str | None = None
+
+
+def _bevat_stam(tekst: str, stammen: tuple[str, ...]) -> bool:
+    """Trefwoord aan een woordbegin, niet ergens middenin een ander woord."""
+    return any(re.search(rf"\b{re.escape(stam)}", tekst) for stam in stammen)
+
+
+# "verzorging" is een handeling (haarverzorging, autoverzorging), "zorg" is de
+# sector. Kale substringmatching op "zorg" haalde daardoor een kapsalon en een
+# schadeherstelbedrijf binnen als institutionele zorg, inclusief verplichte
+# DigiMV-route. Woordbegin-matching alleen is te streng: "Buurtzorg",
+# "thuiszorg" en "gehandicaptenzorg" zijn wél zorg maar beginnen er niet mee.
+# Vandaar: knip de handeling eruit en zoek dan pas naar "zorg" — met
+# verzorgingshuis en verzorgingstehuis als uitzondering, want dat zijn
+# instellingen en geen handeling.
+_VERZORGING_IS_GEEN_ZORG = re.compile(r"verzorging(?!s?(?:huis|tehuis))|verzorgend\w*")
+
+
+def _is_zorgtekst(tekst: str) -> bool:
+    return "zorg" in _VERZORGING_IS_GEEN_ZORG.sub(" ", tekst)
 
 
 def plan_routes(context: QueryContext) -> list[dict]:
@@ -46,32 +71,51 @@ def plan_routes(context: QueryContext) -> list[dict]:
     naam_en_omschrijving = (
         f"{context.sbi_omschrijving or ''} {context.naam}"
     ).lower()
-    onderwijs = sbi.startswith("85") or any(
-        woord in naam_en_omschrijving
-        for woord in (
-            "onderwijs", "school", "college", "universiteit", "hogeschool",
-            "opleiding",
-        )
+    onderwijs = sbi.startswith("85") or _bevat_stam(
+        naam_en_omschrijving,
+        (
+            "onderwijs", "school", "scholen", "college", "universit",
+            "hogescho", "opleiding", "roc", "vmbo", "havo", "vwo", "mbo",
+            "hbo",
+        ),
     )
-    zorg = sbi.startswith(("86", "87", "88")) or any(
-        woord in naam_en_omschrijving
-        for woord in (
-            "zorg", "ziekenhuis", "verpleging", "welzijn", "hospice",
-            "kliniek", "revalidatie", "psychogeriatrie", "gehandicapt",
-            "groepswoning",
+    zorg = (
+        sbi.startswith(("86", "87", "88"))
+        or _is_zorgtekst(naam_en_omschrijving)
+        # Deze termen hebben geen "verzorging"-achtige valse tweelingbroer, dus
+        # gewone substringmatching mag: "wijkverpleging", "polikliniek" en
+        # "kinderrevalidatie" zijn allemaal zorg.
+        or any(
+            woord in naam_en_omschrijving
+            for woord in (
+                "ziekenhuis", "verpleeg", "verpleging", "hospice", "kliniek",
+                "revalidatie", "psychogeriatrie", "gehandicapt",
+                "groepswoning",
+            )
         )
+        # Korte afkortingen wél op woordgrens: "umc" en "ggz" zouden anders
+        # middenin willekeurige woorden kunnen vallen.
+        or _bevat_stam(naam_en_omschrijving, ("umc", "ggz"))
     )
-    lokale_zorgpraktijk = sbi.startswith(("862", "8691", "8692")) or any(
-        woord in naam_en_omschrijving
-        for woord in (
+    lokale_zorgpraktijk = sbi.startswith(("862", "8691", "8692")) or _bevat_stam(
+        naam_en_omschrijving,
+        (
             "tandarts", "huisarts", "fysiotherap", "verloskund",
             "podotherap", "orthodont",
-        )
+        ),
     )
     institutionele_zorg = zorg and not lokale_zorgpraktijk
-    lokale_teamdienst = lokale_zorgpraktijk or sbi.startswith("9602") or any(
-        woord in naam_en_omschrijving
-        for woord in ("kapper", "haarverzorging", "schoonheidsverzorging")
+    kinderopvang = sbi.startswith("8891") or _bevat_stam(
+        naam_en_omschrijving,
+        (
+            "kinderopvang", "kinderdagverblijf", "kindercentr",
+            "peuterspeelzaal", "peuteropvang", "buitenschoolse opvang",
+            "gastouderbureau", "kindontwikkeling",
+        ),
+    )
+    lokale_teamdienst = lokale_zorgpraktijk or sbi.startswith("9602") or _bevat_stam(
+        naam_en_omschrijving,
+        ("kapper", "kapsalon", "haarverzorging", "schoonheidsverzorging"),
     )
 
     routes = [{
@@ -80,17 +124,26 @@ def plan_routes(context: QueryContext) -> list[dict]:
         "status": "wachtend",
         "reden": "officiële website en organisatiepagina's",
     }]
-    if not lokale_teamdienst:
-        routes.append({
-            "route": "document",
-            "verplicht": onderwijs or institutionele_zorg,
-            "status": "wachtend",
-            "reden": (
-                "formele documenten zijn een kernbron voor dit profiel"
-                if onderwijs or institutionele_zorg
-                else "formele documenten onderzoeken wanneer beschikbaar"
-            ),
-        })
+    # De documentroute draait altijd én is altijd verplicht. Hij stond eerder
+    # uit voor lokale teamdiensten, maar SBI zegt niets over omvang: Mondriaan
+    # (GGZ, 2.281 WP) deelt SBI 8622 met een tandartspraktijk. Gevolg was dat
+    # Mondriaan zijn eigen jaarverslag niet meer zocht — op 25-07 leverde de
+    # documentroute daar nog 2.400 en 2.294 op, daarna niets meer.
+    #
+    # Verplicht, omdat dit de dragende route is: van de kandidaten met een
+    # WP-waarde was brontype jaarverslag 15× de énige bron binnen 25% van de
+    # waarheid — meer dan alle andere brontypen samen (11×). Faalt deze route,
+    # dan is de run technisch onvolledig en niet "niets gevonden".
+    routes.append({
+        "route": "document",
+        "verplicht": True,
+        "status": "wachtend",
+        "reden": (
+            "formele documenten zijn een kernbron voor dit profiel"
+            if onderwijs or institutionele_zorg
+            else "formele documenten zijn de sterkste WP-bron als ze bestaan"
+        ),
+    })
     if onderwijs:
         routes.append({
             "route": "duo",
@@ -109,10 +162,31 @@ def plan_routes(context: QueryContext) -> list[dict]:
                 else "DigiMV onderzoeken wanneer de lokale zorgpraktijk erin voorkomt"
             ),
         })
+    if kinderopvang:
+        routes.append({
+            "route": "lrk",
+            # Niet verplicht: het LRK levert het aantal vestigingen en de
+            # capaciteit, maar bewust géén WP-cijfer (kindplaatsen zijn
+            # dagcapaciteit). Een run mag hier niet op vastlopen.
+            "verplicht": False,
+            "status": "wachtend",
+            "reden": (
+                "het Landelijk Register Kinderopvang telt de ingeschreven "
+                "locaties per houder"
+            ),
+        })
     if lokale_teamdienst:
         routes.append({
             "route": "team_afspraak",
-            "verplicht": True,
+            # Bewust niet verplicht. SBI 862x zegt niets over omvang, dus deze
+            # route komt ook op instellingen terecht waar hij alleen ruis
+            # oplevert: bij Mondriaan produceerde hij WP-waarden 3, 4 en 5 uit
+            # patiënteninformatie-PDF's. Van de kandidaten met een WP-waarde
+            # haalde brontype team_afspraak 0 van de 2 keer een waarde binnen
+            # 25% van de waarheid. Hij mag meedraaien, maar zijn falen mag de
+            # run niet als technisch onvolledig markeren en zijn vondsten
+            # mogen de documentroute niet verdringen.
+            "verplicht": False,
             "status": "wachtend",
             "reden": "team- en afspraakmodules tonen vaak de werkzame personen",
         })
@@ -196,6 +270,15 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
             f"site:digimv13.desan.nl {naam}",
             "DigiMV-archief en zorgverantwoording",
         ))
+    if "lrk" in actieve_routes:
+        # Zonder query zou deze route als "overgeslagen" worden gerapporteerd
+        # zodra de directe registerkoppeling niets oplevert, terwijl hij wel
+        # degelijk is uitgevoerd. Dat verschil moet zichtbaar blijven.
+        queries.append(PlannedQuery(
+            "lrk",
+            f"site:landelijkregisterkinderopvang.nl {naam}{gemeente}",
+            "Landelijk Register Kinderopvang",
+        ))
     if "team_afspraak" in actieve_routes:
         if domein:
             queries.append(PlannedQuery(
@@ -221,6 +304,19 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
             "website",
             f"{zoekalias}{gemeente} medewerkers team",
             "openbare bronnen onder de naam zonder administratieve code",
+        ))
+
+    if "document" in actieve_routes and not context.gevraagd_jaar:
+        # Zonder peiljaar leverde deze route hiervóór géén enkele query op,
+        # terwijl plan_routes hem wel plande: de route werd dan stil
+        # "overgeslagen". Een jaarloze variant is nog altijd de sterkste bron
+        # die er is — brontype jaarverslag was 15× de enige kandidaat binnen
+        # 25% van de waarheid.
+        queries.append(PlannedQuery(
+            "document",
+            f"site:{domein} {naam} jaarverslag" if domein
+            else f"{naam}{gemeente} jaarverslag pdf",
+            "formeel document zonder bekend peiljaar",
         ))
 
     if context.gevraagd_jaar and "document" in actieve_routes:
