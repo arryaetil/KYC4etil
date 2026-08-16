@@ -433,3 +433,60 @@ async def test_website_agent_valt_terug_op_web_search_zonder_resultaat(monkeypat
     assert finding is not None
     assert finding.wp_gevonden == 8
     assert finding.bron_type == "media"
+
+
+def test_crawl4ai_config_bevat_geen_paginaslopende_parameters():
+    """Regressiebewaking op de config van 15/16 augustus.
+
+    Drie parameters die los onschuldig lijken, sloopten samen de oogst:
+    remove_overlay_elements verwijderde hele pagina's (mondriaan.eu 11.273 → 1
+    teken), excluded_tags liet de interne links van 34 naar 2 vallen, en
+    networkidle liet pergamijn.org structureel in de timeout lopen.
+    """
+    import inspect
+
+    from app.providers import fetch
+
+    bron = inspect.getsource(fetch._haal_pagina_op_crawl4ai)
+    assert "remove_overlay_elements=True" not in bron
+    assert "excluded_tags=" not in bron
+    assert 'wait_until="networkidle"' not in bron
+    assert 'wait_until="domcontentloaded"' in bron
+    assert "exclude_external_links=False" in bron
+    # scan_full_page is de enige parameter met aantoonbare winst (hallux
+    # 27.481 → 41.232 tekens) en moet blijven staan.
+    assert "scan_full_page=True" in bron
+
+
+def test_externe_pdf_links_blijven_behouden():
+    """Jaarverslagen staan vaak op een CDN of apart rapportagedomein.
+
+    Alleen same-domein links toelaten kost precies de bronnen waar de
+    documentroute op draait: brontype jaarverslag was in de productiedata 15×
+    de enige bron binnen 25% van de waarheid.
+    """
+    from app.providers.fetch import _is_bruikbare_link
+
+    assert _is_bruikbare_link("https://eigen.nl/team", "eigen.nl")
+    assert _is_bruikbare_link("https://cdn.extern.com/jaarverslag-2025.pdf", "eigen.nl")
+    assert _is_bruikbare_link(
+        "https://jumborapportage.com/asset/download/jaarverslag.pdf?v=2", "eigen.nl",
+    )
+    assert not _is_bruikbare_link("https://extern.com/over-ons", "eigen.nl")
+
+
+def test_html_route_oogst_ook_externe_pdf_links():
+    from app.providers.fetch import _pagina_data_uit_html
+
+    html = """
+    <html><body>
+      <a href="/team">Ons team</a>
+      <a href="https://cdn.example.org/jaarverslag-2025.pdf">Jaarverslag 2025</a>
+      <a href="https://partner.example.com/nieuws">Partnernieuws</a>
+    </body></html>
+    """
+    data = _pagina_data_uit_html(html, "https://eigen.nl/over-ons")
+    urls = {link["url"] for link in data["links"]}
+    assert "https://eigen.nl/team" in urls
+    assert "https://cdn.example.org/jaarverslag-2025.pdf" in urls
+    assert "https://partner.example.com/nieuws" not in urls

@@ -217,15 +217,27 @@ async def _haal_pagina_op_crawl4ai(url: str) -> dict:
         # woorden, dus elke drempel hierboven filtert precies de namenlijsten
         # weg waar we op tellen.
         word_count_threshold=1,
-        # Navigatie en footers eruit vóór de markdown-generatie; dat scheelt
-        # tokens en voorkomt dat herhaalde menu-items als inhoud tellen.
-        excluded_tags=["nav", "footer", "header", "aside", "script", "style"],
-        exclude_external_links=True,
-        remove_overlay_elements=True,
+        # GEEN excluded_tags. Ze leken onschuldig (navigatie eruit scheelt
+        # tokens), maar ze halveren de linkoogst: op vier gemeten pagina's
+        # vielen de interne links van 34 naar 2 (pergamijn), 30 naar 2
+        # (fysiosittard) en 21 naar 2 (l1). De documentroute vindt
+        # jaarverslagen door <a href="*.pdf"> te oogsten, en sites zetten hun
+        # downloads juist vaak in een <aside> of <footer>.
+        #
+        # GEEN remove_overlay_elements. Dit was de werkelijke oorzaak van de
+        # regressie van 15/16 augustus — niet het pruningfilter. Op sites waar
+        # de pagina-inhoud in een element staat dat de heuristiek als overlay
+        # ziet, verwijdert hij de héle pagina: mondriaan.eu ging van 11.273
+        # naar 1 teken, fysiosittard van 9.774 naar 12.
+        exclude_external_links=False,
         # Laadt lazy-loaded teamlijsten volledig ("toon meer", infinite scroll)
-        # in plaats van alleen het eerste scherm.
+        # in plaats van alleen het eerste scherm. Aantoonbare winst: hallux
+        # 27.481 → 41.232 tekens, l1 6.422 → 15.033.
         scan_full_page=True,
-        wait_until="networkidle",
+        # domcontentloaded, niet networkidle: sites met analytics-pings of een
+        # chatwidget worden nooit stil. pergamijn.org liep daardoor structureel
+        # in de timeout — totaal verlies in plaats van een tragere pagina.
+        wait_until="domcontentloaded",
         # Krapper dan de default (60s): met research_max_pages=15 en drie
         # renders tegelijk zijn dat vijf golven. Bij 60s zou één trage site de
         # research_company_timeout_seconds (300s) alleen al met renderen
@@ -233,13 +245,16 @@ async def _haal_pagina_op_crawl4ai(url: str) -> dict:
         page_timeout=30000,
         markdown_generator=DefaultMarkdownGenerator(
             content_filter=PruningContentFilter(
-                # Losser dan de default (0.48 fixed): een lijst korte namen is
-                # per definitie low-density en wordt anders weggesnoeid.
-                # "dynamic" past de drempel aan het paginatype aan.
+                # Library-default (0.48 fixed). Bij parameter-isolatie bleek
+                # het filter juist het onschuldigste onderdeel: het snijdt naar
+                # 50-83% van de ruwe markdown en heeft op geen enkele geteste
+                # pagina inhoud vernietigd. De losser gezette 0.30/dynamic
+                # leverde geen meetbaar betere namenlijsten op en maakte het
+                # gedrag alleen minder voorspelbaar per paginatype.
                 # min_word_threshold blijft None (library-default): elke
                 # drempel daar snijdt teamkaarten van een paar woorden weg.
-                threshold=0.30,
-                threshold_type="dynamic",
+                threshold=0.48,
+                threshold_type="fixed",
             ),
         ),
     )
@@ -255,14 +270,35 @@ async def _haal_pagina_op_crawl4ai(url: str) -> dict:
     eigen_domein = urlparse(url).netloc
     links: list[dict] = []
     seen: set[str] = set()
-    for link in (result.links or {}).get("internal", []):
+    alle_links = (
+        list((result.links or {}).get("internal", []))
+        + list((result.links or {}).get("external", []))
+    )
+    for link in alle_links:
         href = link.get("href")
-        if not href or href in seen or urlparse(href).netloc != eigen_domein:
+        if not href or href in seen:
+            continue
+        if not _is_bruikbare_link(href, eigen_domein):
             continue
         seen.add(href)
         links.append({"tekst": link.get("text") or "", "url": href})
 
     return {"tekst": tekst, "links": links}
+
+
+def _is_bruikbare_link(href: str, eigen_domein: str) -> bool:
+    """Same-domein links, plus PDF's waar ze ook staan.
+
+    Alleen same-domein toelaten kost precies de bronnen waar de documentroute
+    op draait: veel organisaties hosten hun jaarverslag op een CDN of een apart
+    rapportagedomein (jumborapportage.com, *.cloudfront.net). Die link staat
+    dan wél op de eigen site maar wijst naar buiten.
+    """
+    from urllib.parse import urlparse
+
+    if urlparse(href).netloc == eigen_domein:
+        return True
+    return href.lower().split("?")[0].endswith(".pdf")
 
 
 def _pagina_data_uit_html(html: str, url: str) -> dict:
@@ -278,7 +314,7 @@ def _pagina_data_uit_html(html: str, url: str) -> dict:
         if a.find_parent(["nav", "footer"]) is not None:
             continue
         absolute = urljoin(url, a["href"])
-        if urlparse(absolute).netloc != eigen_domein:
+        if not _is_bruikbare_link(absolute, eigen_domein):
             continue
         if absolute in seen:
             continue
