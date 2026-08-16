@@ -1,11 +1,24 @@
 """Gedeelde fixtures: in-memory SQLite database + TestClient."""
-import fitz  # PyMuPDF
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-from sqlite3 import Connection as SQLite3Connection
+import os
+
+# Vóór élke app-import, want get_settings() is lru_cached: de eerste aanroep
+# bevriest de configuratie voor de hele testsessie.
+#
+# De testsuite gaat uit van de deterministische mockproviders, maar `.env`
+# staat op PROVIDER_MODE=live en die waarde won. Dat gaf geen foutmelding maar
+# drie tests die stil over het netwerk gingen en daarop faalden — precies het
+# soort verschil tussen "de code is stuk" en "de omgeving stond anders" dat
+# uren kost om te herleiden. Tests mogen nooit afhangen van een .env die niet
+# in de repository staat.
+os.environ["PROVIDER_MODE"] = "mock"
+
+import fitz  # noqa: E402  (PyMuPDF)
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import create_engine, event  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
+from sqlite3 import Connection as SQLite3Connection  # noqa: E402
 
 from app.auth import get_current_user, get_current_user_of_querytoken
 from app.database import get_db, Base

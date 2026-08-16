@@ -22,6 +22,24 @@ TESTSET = Path(__file__).resolve().parents[1] / "data" / "testset.csv"
 
 
 async def main() -> int:
+    # De docstring hierboven zegt "PROVIDER_MODE=mock", maar `.env` staat op
+    # live en die waarde wint als je hem niet expliciet overschrijft. Het
+    # gevolg is geen foutmelding maar een stille nulmeting: alle twintig
+    # bedrijven komen zonder WP terug en coverage rapporteert 0% — wat eruitziet
+    # als een regressie in de pipeline. Liever hier hard stoppen dan een
+    # verkeerd cijfer publiceren.
+    from app.config import get_settings
+
+    modus = get_settings().provider_mode
+    if modus != "mock":
+        print(
+            f"\n❌ PROVIDER_MODE staat op '{modus}', niet op 'mock'.\n"
+            "   De streefwaarden gelden voor de deterministische mockproviders;\n"
+            "   in live-modus meet dit script netwerkbeschikbaarheid, niet de\n"
+            "   pipeline. Draai als:  PROVIDER_MODE=mock python -m scripts.validate\n",
+        )
+        return 1
+
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
