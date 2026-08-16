@@ -468,8 +468,8 @@ async def test_verwerk_company_logt_kosten_en_tokens_op_een_totaalregel():
     runs = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], PipelineRun)]
     totaal = next(r for r in runs if r.stap == "totaal")
 
-    # 200k in * 0,015 + 50k uit * 0,06 = 6 cent (prijzen uit config.py)
-    assert totaal.kosten_cents == 6
+    # 200k in * 0,02 + 50k uit * 0,12 = 10 cent (prijzen uit config.py)
+    assert totaal.kosten_cents == 10
     assert (totaal.tokens_in, totaal.tokens_out) == (200_000, 50_000)
 
     # De website-stap krijgt zijn eigen tokens toegewezen, de verrijkingsstap niet.

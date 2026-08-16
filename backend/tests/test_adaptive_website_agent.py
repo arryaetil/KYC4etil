@@ -65,6 +65,7 @@ async def test_haal_pagina_op_geeft_tekst_en_links(monkeypatch):
 @pytest.mark.asyncio
 async def test_haal_pagina_op_gebruikt_crawl4ai_fallback_bij_weinig_tekst(monkeypatch):
     monkeypatch.setattr(live.settings, "playwright_enabled", True)
+    monkeypatch.setattr(live.settings, "crawl4ai_altijd", False)
     monkeypatch.setattr(httpx, "AsyncClient", _FakeHtmlClient("<html><body><div id='root'></div></body></html>"))
 
     async def fake_haal_pagina_op_crawl4ai(url):
@@ -86,6 +87,7 @@ async def test_haal_pagina_op_valt_terug_op_http_als_crawl4ai_niet_beter_is(monk
     """Als de crawl4ai-fallback niet meer tekst oplevert dan de platte HTTP-poging,
     moet het platte resultaat gebruikt worden (geen onnodige overschrijving)."""
     monkeypatch.setattr(live.settings, "playwright_enabled", True)
+    monkeypatch.setattr(live.settings, "crawl4ai_altijd", False)
     monkeypatch.setattr(httpx, "AsyncClient", _FakeHtmlClient("<html><body><p>een tekst van precies dertig tk</p></body></html>"))
 
     async def fake_haal_pagina_op_crawl4ai(url):
@@ -96,6 +98,47 @@ async def test_haal_pagina_op_valt_terug_op_http_als_crawl4ai_niet_beter_is(monk
     resultaat = await fetch._haal_pagina_op("https://voorbeeld.test")
 
     assert resultaat["tekst"] == "een tekst van precies dertig tk"
+
+
+@pytest.mark.asyncio
+async def test_altijd_modus_kiest_markdown_ook_als_die_korter_is(monkeypatch):
+    """In altijd-modus is kortere tekst juist de winst: PruningContentFilter
+    haalt navigatie en boilerplate eruit vóórdat het tokens kost. De oude
+    'langer wint'-regel zou precies die besparing weggooien."""
+    monkeypatch.setattr(live.settings, "playwright_enabled", True)
+    monkeypatch.setattr(live.settings, "crawl4ai_altijd", True)
+    lange_ruis = "<html><body><p>" + ("navigatie boilerplate " * 60) + "</p></body></html>"
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHtmlClient(lange_ruis))
+
+    schone_markdown = "## Ons team\n\n" + ("Wij hebben 14 medewerkers in Weert. " * 8)
+
+    async def fake_haal_pagina_op_crawl4ai(url):
+        return {"tekst": schone_markdown, "links": []}
+
+    monkeypatch.setattr(fetch, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
+
+    resultaat = await fetch._haal_pagina_op("https://voorbeeld.test")
+
+    assert resultaat["tekst"] == schone_markdown
+    assert len(resultaat["tekst"]) < len(lange_ruis)
+
+
+@pytest.mark.asyncio
+async def test_altijd_modus_valt_terug_als_renderen_niets_oplevert(monkeypatch):
+    """Een lege of vrijwel lege render mag de bruikbare HTTP-tekst niet
+    verdringen — anders verliest een pagina die Crawl4AI niet aankan alles."""
+    monkeypatch.setattr(live.settings, "playwright_enabled", True)
+    monkeypatch.setattr(live.settings, "crawl4ai_altijd", True)
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHtmlClient(HTML_MET_LINKS))
+
+    async def fake_haal_pagina_op_crawl4ai(url):
+        return {"tekst": "cookies accepteren", "links": []}
+
+    monkeypatch.setattr(fetch, "_haal_pagina_op_crawl4ai", fake_haal_pagina_op_crawl4ai)
+
+    resultaat = await fetch._haal_pagina_op("https://voorbeeld.test")
+
+    assert "12 medewerkers" in resultaat["tekst"]
 
 
 @pytest.mark.asyncio

@@ -65,6 +65,15 @@ def start_jaarverslag_scheduler() -> None:
     start_scheduler()
 
 
+@app.on_event("shutdown")
+async def sluit_gedeelde_browser() -> None:
+    """Crawl4AI houdt één browser open voor de hele proceslevensduur; zonder
+    dit blijft Chromium achter bij een herstart van de service."""
+    from .providers.fetch import sluit_crawler
+
+    await sluit_crawler()
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "provider_mode": settings.provider_mode}

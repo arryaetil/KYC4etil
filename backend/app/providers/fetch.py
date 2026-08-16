@@ -3,6 +3,8 @@
 Alles wat het net op gaat om ruwe tekst op te halen staat hier; de interpretatie
 van die tekst hoort in de agent-modules. Web scraping respecteert robots.txt,
 gebruikt een identificerende user-agent en max 1 request/sec per domein (doc §7)."""
+import asyncio
+import logging
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -139,26 +141,111 @@ async def _eerste_pdf_paginas(pdf_url: str) -> str:
     )
 
 
+# Crawl4AI draait op een echte browser. Eén gedeelde instantie per proces is
+# fors goedkoper dan een browser per pagina, en de semafoor voorkomt dat het
+# parallelle inspecteren in de supervisor (tot research_max_pages pagina's in
+# één asyncio.gather) evenveel Chromium-instanties tegelijk openzet.
+_crawler = None
+_crawler_lock: asyncio.Lock | None = None
+_crawler_semafoor: asyncio.Semaphore | None = None
+# Onder deze lengte gaan we ervan uit dat het renderen niets bruikbaars opleverde
+# en valt de platte HTTP-tekst terug in beeld.
+_MIN_MARKDOWN_TEKST = 200
+
+
+def _crawler_primitieven() -> tuple[asyncio.Lock, asyncio.Semaphore]:
+    """Lui aanmaken: asyncio-primitieven horen bij de draaiende event loop, en
+    die bestaat bij import nog niet."""
+    global _crawler_lock, _crawler_semafoor
+    if _crawler_lock is None:
+        _crawler_lock = asyncio.Lock()
+    if _crawler_semafoor is None:
+        _crawler_semafoor = asyncio.Semaphore(settings.crawl4ai_max_parallel)
+    return _crawler_lock, _crawler_semafoor
+
+
+async def _gedeelde_crawler():
+    global _crawler
+    lock, _ = _crawler_primitieven()
+    if _crawler is None:
+        async with lock:
+            if _crawler is None:
+                from crawl4ai import AsyncWebCrawler, BrowserConfig
+
+                crawler = AsyncWebCrawler(
+                    config=BrowserConfig(headless=True, user_agent=USER_AGENT),
+                )
+                await crawler.start()
+                _crawler = crawler
+    return _crawler
+
+
+async def sluit_crawler() -> None:
+    """Sluit de gedeelde browser af. Aangeroepen bij shutdown en in tests;
+    een volgende aanroep start hem vanzelf opnieuw."""
+    global _crawler
+    if _crawler is None:
+        return
+    crawler, _crawler = _crawler, None
+    try:
+        await crawler.close()
+    except Exception:
+        pass
+
+
 async def _haal_pagina_op_crawl4ai(url: str) -> dict:
     """Rendert de pagina met een echte browser (Crawl4AI, op Playwright) en levert
     schone, ruisvrije markdown + links terug — same-domein, net als de platte
     HTTP-poging. Crawl4AI's PruningContentFilter verwijdert boilerplate (herhaalde
-    navigatie, sidebars) al vóórdat de tekst bij de extractie-LLM komt.
+    navigatie, sidebars) al vóórdat de tekst bij de extractie-LLM komt, en de
+    markdown behoudt koppen, lijsten en tabellen die soup.get_text() platslaat.
 
-    Duurder (echte browser opstarten) dan de platte HTTP-poging, daarom alleen
-    ingezet als fallback bij te weinig tekst (JS-zware sites: React/Vue/Angular)."""
+    Gebruikt één gedeelde browser (zie _gedeelde_crawler) in plaats van er per
+    pagina een op te starten."""
     from urllib.parse import urlparse
 
-    from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
+    from crawl4ai import CacheMode, CrawlerRunConfig
     from crawl4ai.content_filter_strategy import PruningContentFilter
     from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
-    browser_conf = BrowserConfig(headless=True, user_agent=USER_AGENT)
     run_conf = CrawlerRunConfig(
+        # Monitoring moet wijzigingen kunnen zien; een cache zou een nieuw
+        # jaarverslag kunnen maskeren. Daarom bewust geen hergebruik.
         cache_mode=CacheMode.BYPASS,
-        markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()),
+        # Expliciet op 1 (= de library-default) vastgezet: elk blok telt mee.
+        # Een teamkaart ("Thera Hurkmans — wijkverpleegkundige") is vier
+        # woorden, dus elke drempel hierboven filtert precies de namenlijsten
+        # weg waar we op tellen.
+        word_count_threshold=1,
+        # Navigatie en footers eruit vóór de markdown-generatie; dat scheelt
+        # tokens en voorkomt dat herhaalde menu-items als inhoud tellen.
+        excluded_tags=["nav", "footer", "header", "aside", "script", "style"],
+        exclude_external_links=True,
+        remove_overlay_elements=True,
+        # Laadt lazy-loaded teamlijsten volledig ("toon meer", infinite scroll)
+        # in plaats van alleen het eerste scherm.
+        scan_full_page=True,
+        wait_until="networkidle",
+        # Krapper dan de default (60s): met research_max_pages=15 en drie
+        # renders tegelijk zijn dat vijf golven. Bij 60s zou één trage site de
+        # research_company_timeout_seconds (300s) alleen al met renderen
+        # kunnen opmaken.
+        page_timeout=30000,
+        markdown_generator=DefaultMarkdownGenerator(
+            content_filter=PruningContentFilter(
+                # Losser dan de default (0.48 fixed): een lijst korte namen is
+                # per definitie low-density en wordt anders weggesnoeid.
+                # "dynamic" past de drempel aan het paginatype aan.
+                # min_word_threshold blijft None (library-default): elke
+                # drempel daar snijdt teamkaarten van een paar woorden weg.
+                threshold=0.30,
+                threshold_type="dynamic",
+            ),
+        ),
     )
-    async with AsyncWebCrawler(config=browser_conf) as crawler:
+    _, semafoor = _crawler_primitieven()
+    crawler = await _gedeelde_crawler()
+    async with semafoor:
         result = await crawler.arun(url=url, config=run_conf)
 
     tekst = ""
@@ -214,11 +301,26 @@ async def _haal_pagina_op(url: str) -> dict:
         r.raise_for_status()
         pagina = _pagina_data_uit_html(r.text, url)
 
-    if settings.playwright_enabled and len(pagina["tekst"]) < 500:
-        try:
-            rendered = await _haal_pagina_op_crawl4ai(url)
-            if len(rendered["tekst"]) > len(pagina["tekst"]):
-                return rendered
-        except Exception:
-            pass
-    return pagina
+    if not settings.playwright_enabled:
+        return pagina
+    if not (settings.crawl4ai_altijd or len(pagina["tekst"]) < 500):
+        return pagina
+    try:
+        rendered = await _haal_pagina_op_crawl4ai(url)
+    except Exception as exc:
+        # Stil terugvallen zou betekenen dat altijd-aan uit staat zonder dat
+        # iemand het merkt — bijvoorbeeld bij een config-parameter die deze
+        # crawl4ai-versie niet kent, of een ontbrekende Chromium.
+        logging.getLogger("crawl4ai").warning(
+            "Renderen mislukt voor %s (%s: %s); platte HTTP-tekst gebruikt",
+            url, type(exc).__name__, exc,
+        )
+        return pagina
+
+    if settings.crawl4ai_altijd:
+        # Markdown mág korter zijn dan de platte tekst — dat is juist de winst:
+        # PruningContentFilter haalt navigatie en boilerplate eruit vóórdat de
+        # tekst tokens kost. Alleen terugvallen als er niets over blijft.
+        return rendered if len(rendered["tekst"]) >= _MIN_MARKDOWN_TEKST else pagina
+    # Fallbackmodus: renderen moest juist méér tekst opleveren dan platte HTTP.
+    return rendered if len(rendered["tekst"]) > len(pagina["tekst"]) else pagina

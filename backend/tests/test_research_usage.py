@@ -82,12 +82,12 @@ async def test_gelijktijdige_taken_tellen_op_bij_de_ouder():
 
 def test_tokenkosten_volgen_de_prijzen_uit_config():
     # 200.000 input- + 50.000 output-tokens tegen de standaardprijzen in
-    # config.py (gpt-4o-mini: 0,015 cent per 1k in, 0,06 cent per 1k uit).
-    # 200 * 0,015 = 3,0 cent + 50 * 0,06 = 3,0 cent = 6 cent.
+    # config.py (gpt-5.6-luna: 0,02 cent per 1k in, 0,12 cent per 1k uit).
+    # 200 * 0,02 = 4,0 cent + 50 * 0,12 = 6,0 cent = 10 cent.
     start_usage_tracking()
     record_response_usage(_response(200_000, 50_000))
 
-    assert get_cost_summary()["totaal_cents"] == 6
+    assert get_cost_summary()["totaal_cents"] == 10
 
 
 def test_kostenoverzicht_telt_tokens_en_alle_providercalls():
@@ -110,8 +110,9 @@ def test_kostenoverzicht_telt_tokens_en_alle_providercalls():
     assert kosten["providers"]["duckduckgo_search"] == {
         "calls": 1, "kosten_usd": 0.0,
     }
-    assert kosten["providers"]["openai_tokens"]["kosten_usd"] == 0.00249
-    assert kosten["totaal_usd"] == 0.03649
+    # 15.000 in * 0,02 + 400 uit * 0,12 = 0,348 cent (prijzen uit config.py)
+    assert kosten["providers"]["openai_tokens"]["kosten_usd"] == 0.00348
+    assert kosten["totaal_usd"] == 0.03748
     assert kosten["totaal_cents"] == 4
 
 

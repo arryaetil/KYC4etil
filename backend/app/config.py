@@ -9,7 +9,12 @@ class Settings(BaseSettings):
     provider_mode: str = "mock"  # mock | live
     database_url: str = ""       # leeg -> SQLite
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"         # hoofd-model; overschrijfbaar via OPENAI_MODEL
+    # Hoofd-model; overschrijfbaar via OPENAI_MODEL. Extractie, scope-classificatie
+    # en de bronreview zijn oordeelstaken ("is dit een namenlijst van medewerkers
+    # of van bestuurders?"); gpt-4o-mini bleek daar te licht voor. Bij ~82k in en
+    # ~5,6k out per bedrijf kost luna circa 1,4x zoveel — een paar tientjes per
+    # volledige cyclus. Zie openai_prijs_* hieronder: die moeten meeveranderen.
+    openai_model: str = "gpt-5.6-luna"
     openai_model_extraction: str = ""          # leeg = fallback naar openai_model
     openai_web_search_model: str = "gpt-4.1-mini"
     openai_web_search_enabled: bool = False     # zoeken uitsluitend via Serper
@@ -29,10 +34,22 @@ class Settings(BaseSettings):
     # Indicatieve OpenAI-prijzen (cent per 1000 tokens) — controleer tegen de
     # actuele OpenAI-pricingpagina voor het geconfigureerde model vóórdat
     # kosten_cents als harde budgetbron wordt gebruikt.
-    openai_prijs_in_cent_per_1k: float = 0.015
-    openai_prijs_out_cent_per_1k: float = 0.06
+    # Deze twee horen bij openai_model hierboven en moeten bij elke modelwissel
+    # mee: anders rapporteert de app kosten van een model dat niet meer draait.
+    # gpt-5.6-luna: $0,20/1M in = 0,02 cent/1k · $1,20/1M uit = 0,12 cent/1k.
+    openai_prijs_in_cent_per_1k: float = 0.02
+    openai_prijs_out_cent_per_1k: float = 0.12
     research_company_timeout_seconds: int = 300
     playwright_enabled: bool = False
+    # Altijd via Crawl4AI renderen in plaats van alleen als fallback bij te
+    # weinig platte tekst. Levert markdown met behoud van koppen, lijsten en
+    # tabellen en zonder navigatie-boilerplate: minder ruis én minder
+    # inputtokens. Werkt alleen als playwright_enabled aanstaat.
+    crawl4ai_altijd: bool = True
+    # Maximaal aantal gelijktijdige renders op de gedeelde browser. De
+    # supervisor inspecteert tot research_max_pages pagina's in één gather;
+    # zonder deze rem zouden dat evenveel gelijktijdige tabs zijn.
+    crawl4ai_max_parallel: int = 3
     frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174"
     frontend_url: str = "http://localhost:5173"  # publieke URL voor chat-links in emails
     resend_api_key: str = ""
