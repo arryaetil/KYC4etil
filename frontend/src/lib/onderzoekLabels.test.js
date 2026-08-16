@@ -11,6 +11,7 @@ import {
   monitoringStatus,
   organisatieStatus,
   primaireConclusie,
+  telopdracht,
 } from "./onderzoekLabels.js";
 
 describe("monitoringStatus", () => {
@@ -416,5 +417,56 @@ describe("menselijkeWaarde", () => {
 
     expect(waarde.label).toBe("Teamoverzicht");
     expect(waarde.actie).toContain("tel");
+  });
+
+  it("vraagt de reviewer zelf te tellen als de telling is ingetrokken", () => {
+    const waarde = menselijkeWaarde({
+      documenttype: "teampagina",
+      wp_gevonden: null,
+      validaties: {
+        naamlijst_telling_aan_reviewer: {
+          reden: "leidinggevendenlijst",
+          afgeleid_aantal: 6,
+          genoemde_namen: ["Robin Barkmeijer (CEO)", "Frank Van der Linden (COO)"],
+        },
+      },
+    });
+
+    expect(waarde.rol).toBe("telopdracht");
+    expect(waarde.label).toBe("Tel de medewerkers zelf");
+    expect(waarde.aantal_namen).toBe(2);
+  });
+});
+
+describe("telopdracht", () => {
+  it("geeft niets terug voor een gewone bron", () => {
+    expect(telopdracht({wp_gevonden: 12})).toBeNull();
+  });
+
+  it("levert de namen zodat de reviewer ze naast de bron kan leggen", () => {
+    const telling = telopdracht({
+      validaties: {
+        naamlijst_telling_aan_reviewer: {
+          reden: "scope_buiten_vestiging",
+          afgeleid_aantal: 3,
+          genoemde_namen: ["Marc", "Mandy", "Nicole"],
+        },
+      },
+    });
+
+    expect(telling.afgeleidAantal).toBe(3);
+    expect(telling.namen).toHaveLength(3);
+    expect(telling.uitleg).toContain("breder dan deze vestiging");
+  });
+
+  it("legt bij een bestuurspagina uit dat het de leidinglaag betreft", () => {
+    const telling = telopdracht({
+      validaties: {
+        naamlijst_telling_aan_reviewer: {reden: "leidinggevendenlijst"},
+      },
+    });
+
+    expect(telling.uitleg).toContain("leidinglaag");
+    expect(telling.namen).toEqual([]);
   });
 });

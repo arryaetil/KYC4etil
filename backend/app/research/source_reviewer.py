@@ -12,7 +12,12 @@ from ..providers.identity import _llm_classify_scope
 from .query_planner import QueryContext
 from .usage import record_response_usage
 from .urls import canonicaliseer_url
-from .validation import BronValidatie, SourceDocument, valideer_bron
+from .validation import (
+    BronValidatie,
+    SourceDocument,
+    draag_naamlijsttelling_over_aan_reviewer,
+    valideer_bron,
+)
 
 
 REVIEW_PROMPT = """Je bent een strenge bronreviewer voor een Nederlands
@@ -298,13 +303,14 @@ class IntelligentSourceReviewer:
                 if zelfde_specifieke_pagina or noemt_doelorganisatie
                 else "same_brand_or_group"
             )
+            validatie.document = replace(document, scope_class=scope)
+            draag_naamlijsttelling_over_aan_reviewer(validatie, scope)
             beslissing = (
                 "tonen_aan_reviewer"
-                if document.wp_gevonden is not None
+                if validatie.document.wp_gevonden is not None
                 and scope in {"vestiging", "limburg"}
                 else "context_only"
             )
-            validatie.document = replace(document, scope_class=scope)
             validatie.identity_class = identity
             validatie.validaties["intelligente_review"] = {
                 "beslissing": beslissing,
@@ -357,6 +363,13 @@ class IntelligentSourceReviewer:
 
         reviewed_document = replace(document, scope_class=scope)
         validatie.document = reviewed_document
+        draag_naamlijsttelling_over_aan_reviewer(validatie, scope)
+        if (
+            beslissing == "tonen_aan_reviewer"
+            and validatie.document.wp_gevonden is None
+        ):
+            # Het WP-voorstel is ingetrokken; er blijft een telopdracht over.
+            beslissing = "context_only"
         validatie.identity_class = identity
         validatie.validaties["intelligente_review"] = {
             **oordeel,

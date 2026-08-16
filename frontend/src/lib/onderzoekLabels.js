@@ -56,6 +56,9 @@ const WAARSCHUWING = {
   wp_afgeleid_uit_naamlijst: {
     label: "Geteld uit namenlijst", toon: "aandacht",
   },
+  naamlijst_telling_aan_reviewer: {
+    label: "Tel zelf — telling ingetrokken", toon: "aandacht",
+  },
 };
 
 const BRONTYPE = {
@@ -240,9 +243,37 @@ export function brontypeLabel(brontype) {
   return BRONTYPE[brontype] || "Openbare bron";
 }
 
+/**
+ * Een namenlijst die niet het personeelsbestand van déze vestiging is, levert
+ * geen WP-voorstel maar een telopdracht op. De namen zijn al vastgelegd door de
+ * agent, zodat de reviewer ze naast de bron kan leggen in plaats van opnieuw te
+ * zoeken.
+ */
+export function telopdracht(candidate) {
+  const vastgelegd = candidate?.validaties?.naamlijst_telling_aan_reviewer;
+  if (!vastgelegd) return null;
+  return {
+    reden: vastgelegd.reden,
+    afgeleidAantal: vastgelegd.afgeleid_aantal ?? null,
+    namen: vastgelegd.genoemde_namen || [],
+    uitleg: vastgelegd.reden === "leidinggevendenlijst"
+      ? "Deze pagina toont de leidinglaag van de organisatie, niet het personeelsbestand."
+      : "Deze namenlijst gaat breder dan deze vestiging.",
+  };
+}
+
 export function menselijkeWaarde(candidate) {
   const vastgelegd = candidate?.validaties?.menselijke_waarde;
   if (vastgelegd?.label && vastgelegd?.actie) return vastgelegd;
+  const telling = telopdracht(candidate);
+  if (telling) {
+    return {
+      rol: "telopdracht",
+      label: "Tel de medewerkers zelf",
+      actie: `${telling.uitleg} Tel de medewerkers op de bron zelf.`,
+      aantal_namen: telling.namen.length,
+    };
+  }
   if (candidate?.documenttype === "duo_personeel_personen") {
     return {
       rol: "duo_personeelsbron",

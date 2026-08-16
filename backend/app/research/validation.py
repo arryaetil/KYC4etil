@@ -1,11 +1,45 @@
 """Goedkope, deterministische bronvalidatie vóór semantische verdieping."""
-from dataclasses import dataclass, field
+import re
+import unicodedata
+from dataclasses import dataclass, field, replace
 from datetime import date
+from urllib.parse import urlsplit
 
 from ..pipeline.identity_scope import (
     domain_matches_company,
     heuristic_identity_class,
 )
+
+# Een bestuurs-, directie- of MT-pagina toont de leidinglaag van een
+# organisatie, niet het personeelsbestand. Zes namen op zo'n pagina zijn geen
+# zes werkzame personen — dat is precies hoe de Poolse moedergroep van
+# Okechamp met zes bestuurders als vestiging van 138 WP in het register kwam.
+_LEIDINGGEVENDENPAGINA = {
+    "aandeelhouders", "akcjonariusze", "bestuur", "bestuurders", "board",
+    "directie", "directieteam", "leadership", "management", "managementteam",
+    "raad-van-bestuur", "raad-van-toezicht", "toezicht", "zarzad",
+}
+# Scopes waarbij een uit namen afgeleide telling aantoonbaar niet over déze
+# vestiging gaat. "unknown"/"onbekend" horen hier bewust NIET bij: gemeten op
+# de productieruns staan Poulissen en Dreessen — waar de telling juist klopt —
+# allebei op unknown, en alleen Hallux op vestiging.
+_SCOPE_BUITEN_VESTIGING = {"concern", "nederland"}
+
+
+def _normaliseer(waarde: str) -> str:
+    return unicodedata.normalize("NFKD", waarde).encode(
+        "ascii", "ignore",
+    ).decode("ascii").lower()
+
+
+def is_leidinggevendenlijst(document: "SourceDocument") -> bool:
+    pad_en_titel = _normaliseer(
+        f"{urlsplit(document.url).path} {document.titel or ''}"
+    )
+    return any(
+        re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", pad_en_titel)
+        for term in _LEIDINGGEVENDENPAGINA
+    )
 
 
 @dataclass(frozen=True)
@@ -39,6 +73,50 @@ class BronValidatie:
     afwijsredenen: list[str] = field(default_factory=list)
     validaties: dict = field(default_factory=dict)
     waarschuwingen: list[str] = field(default_factory=list)
+
+
+def draag_naamlijsttelling_over_aan_reviewer(
+    validatie: BronValidatie, scope_class: str | None = None,
+) -> BronValidatie:
+    """Zet een onbetrouwbare namenlijst-telling om in een telopdracht.
+
+    De agent mag namen op een teampagina tellen (dat is bij kleine bedrijven
+    het juiste antwoord), maar niet wanneer die lijst aantoonbaar niet het
+    personeelsbestand van déze vestiging is. In dat geval verdwijnt het getal
+    als WP-voorstel en houdt de reviewer de namenlijst over om zelf te tellen.
+
+    Idempotent: draait zowel vóór als ná de scope-bepaling van de reviewer,
+    en doet niets zodra het getal al is ingetrokken.
+    """
+    document = validatie.document
+    if document.wp_gevonden is None:
+        return validatie
+    if not (document.raw_data or {}).get("wp_afgeleid_uit_naamlijst"):
+        return validatie
+
+    scope = scope_class or document.scope_class
+    if is_leidinggevendenlijst(document):
+        reden = "leidinggevendenlijst"
+    elif scope in _SCOPE_BUITEN_VESTIGING:
+        reden = "scope_buiten_vestiging"
+    else:
+        return validatie
+
+    validatie.document = replace(document, wp_gevonden=None, eenheid=None)
+    # Houd de afgeleide validatievlaggen gelijk aan het document, anders
+    # blijft de UI "heeft WP-getal" tonen voor een ingetrokken voorstel.
+    if "heeft_wp" in validatie.validaties:
+        validatie.validaties["heeft_wp"] = False
+    if "eenheid_is_wp" in validatie.validaties:
+        validatie.validaties["eenheid_is_wp"] = False
+    validatie.validaties["naamlijst_telling_aan_reviewer"] = {
+        "reden": reden,
+        "afgeleid_aantal": document.wp_gevonden,
+        "genoemde_namen": (document.raw_data or {}).get("genoemde_namen") or [],
+    }
+    if "naamlijst_telling_aan_reviewer" not in validatie.waarschuwingen:
+        validatie.waarschuwingen.append("naamlijst_telling_aan_reviewer")
+    return validatie
 
 
 def valideer_bron(document: SourceDocument) -> BronValidatie:
@@ -102,7 +180,7 @@ def valideer_bron(document: SourceDocument) -> BronValidatie:
         "eenheid_is_wp": document.eenheid == "werkzame_personen",
         "scope_is_bruikbaar": document.scope_class in {"vestiging", "limburg"},
     }
-    return BronValidatie(
+    return draag_naamlijsttelling_over_aan_reviewer(BronValidatie(
         document=document,
         identity_class=identity,
         is_officieel=is_officieel,
@@ -110,4 +188,4 @@ def valideer_bron(document: SourceDocument) -> BronValidatie:
         afwijsredenen=afwijsredenen,
         validaties=validaties,
         waarschuwingen=waarschuwingen,
-    )
+    ))

@@ -88,6 +88,21 @@ def _menselijke_waarde(bron: BronValidatie) -> dict[str, str]:
         and document.eenheid == "werkzame_personen"
         and bool(document.bewijsfragment)
     )
+    telopdracht = bron.validaties.get("naamlijst_telling_aan_reviewer")
+    if telopdracht:
+        namen = telopdracht.get("genoemde_namen") or []
+        return {
+            "rol": "telopdracht",
+            "label": "Tel de medewerkers zelf",
+            "actie": (
+                "Deze pagina toont de leidinglaag, niet het personeelsbestand — "
+                "tel de medewerkers op de bron zelf."
+                if telopdracht.get("reden") == "leidinggevendenlijst"
+                else "Deze namenlijst gaat breder dan deze vestiging — tel op de "
+                "bron zelf hoeveel personen bij déze vestiging horen."
+            ),
+            "aantal_namen": len(namen),
+        }
     if heeft_wp_bewijs and document.scope_class in {"vestiging", "limburg"}:
         return {
             "rol": "direct_wp_bewijs",

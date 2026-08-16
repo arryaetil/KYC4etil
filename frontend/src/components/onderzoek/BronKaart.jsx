@@ -4,7 +4,7 @@ import {classNames} from "../../lib/format.js";
 import {
   TOON_STYLE, bedrijfRelatie, bereikLabel, bereikRelatie, bewijsRelatie,
   bronwaarschuwingen, brontypeLabel, identiteitLabel, menselijkeWaarde,
-  primaireConclusie,
+  primaireConclusie, telopdracht,
 } from "../../lib/onderzoekLabels.js";
 
 const TOON_TEKST = {
@@ -66,6 +66,7 @@ export function BronKaart({
   const identiteit = identiteitLabel(candidate.identity_class);
   const bereik = bereikLabel(candidate.scope_class);
   const waarschuwingen = bronwaarschuwingen({...candidate, gevraagd_jaar: gevraagdJaar});
+  const telling = telopdracht(candidate);
   const beoordeeld = ["geaccepteerd", "alternatief", "afgewezen"].includes(candidate.status);
 
   return (
@@ -121,6 +122,34 @@ export function BronKaart({
         <blockquote className="mt-3 max-w-[65ch] border-l-2 border-line pl-3 text-sm italic leading-relaxed text-slate-600">
           “{candidate.bewijsfragment}”
         </blockquote>
+      ) : null}
+
+      {telling ? (
+        <div className="mt-3 max-w-[65ch] rounded-md border border-amber-200 bg-amber-50/60 p-3">
+          <p className="text-sm font-medium text-amber-900">
+            Tel de medewerkers zelf
+          </p>
+          <p className="mt-0.5 text-sm text-amber-800">
+            {telling.uitleg}{" "}
+            {telling.afgeleidAantal != null
+              ? `De agent telde ${telling.afgeleidAantal} `
+                + `${telling.afgeleidAantal === 1 ? "naam" : "namen"}; `
+                + "dat is niet overgenomen als WP-getal."
+              : "Het afgeleide getal is niet overgenomen als WP-getal."}
+          </p>
+          {telling.namen.length ? (
+            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-amber-900">
+              {telling.namen.map((naam) => (
+                <li
+                  key={naam}
+                  className="before:mr-1 before:text-amber-400 before:content-['•']"
+                >
+                  {naam}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
 
       {waarschuwingen.length ? (
