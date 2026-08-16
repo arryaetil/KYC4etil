@@ -284,8 +284,54 @@ def test_bronportfolio_beperkt_dubbele_rollen_tot_twee():
 
     portfolio = selecteer_bronportfolio(ranked, maximum=8)
 
-    assert len(portfolio) == 2
+    # Diversiteit bepaalt de vólgorde, niet het aantal. Deze assertie stond op
+    # 2: de rollimiet gooide drie van de vijf bronnen weg zodra ze dezelfde rol
+    # deelden. Dat was precies de reden om de functie nooit aan te sluiten.
+    # Onder het maximum blijft nu alles staan — de reviewer verliest geen bron.
+    assert len(portfolio) == len(ranked) == 5
     assert {
         item.validaties["menselijke_waarde"]["rol"]
         for item in portfolio
     } == {"officiele_route"}
+
+
+def test_bronportfolio_zet_complementaire_rollen_vooraan():
+    """Gemeten op productiedata komt bij runs met vier of meer kandidaten de
+    mediaan 100% van één domein; 39 van de 53 runs zijn volledig monocultuur.
+    De reviewer krijgt dan acht varianten van dezelfde pagina."""
+    documenten = [
+        SourceDocument(
+            naam="Voorbeeld Zorg",
+            company_website_url="https://voorbeeldzorg.nl",
+            url=f"https://voorbeeldzorg.nl/pagina-{index}",
+            titel=f"Organisatiepagina {index}",
+            tekst="Voorbeeld Zorg",
+            brontype="officiele_website",
+            documenttype="organisatiepagina",
+        )
+        for index in range(5)
+    ] + [
+        SourceDocument(
+            naam="Voorbeeld Zorg",
+            company_website_url="https://voorbeeldzorg.nl",
+            url="https://voorbeeldzorg.nl/jaarverslag-2025.pdf",
+            titel="Jaarverslag 2025",
+            tekst="Voorbeeld Zorg had 470 medewerkers.",
+            brontype="jaarverslag",
+            documenttype="jaarverslag",
+            gevraagd_jaar=2025,
+            verslagjaar=2025,
+            wp_gevonden=470,
+            eenheid="werkzame_personen",
+            bewijsfragment="Voorbeeld Zorg had 470 medewerkers.",
+        ),
+    ]
+    ranked = rank_bronnen([valideer_bron(item) for item in documenten])
+
+    portfolio = selecteer_bronportfolio(ranked, maximum=3)
+
+    rollen = [item.validaties["menselijke_waarde"]["rol"] for item in portfolio]
+    assert len(portfolio) == 3
+    assert len(set(rollen)) > 1, (
+        "een top-3 van drie keer dezelfde rol is geen bronportfolio"
+    )

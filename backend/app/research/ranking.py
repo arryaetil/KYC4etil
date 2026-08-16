@@ -55,19 +55,42 @@ def _relevance_score(bron: BronValidatie) -> float:
 
 
 def _freshness_score(bron: BronValidatie, referentiedatum: date) -> float:
+    """Actualiteit uit publicatiedatum, en anders uit het verslagjaar.
+
+    Deze component was in productie volledig dood: `publicatiedatum` is bij
+    0 van de 929 opgeslagen kandidaten gevuld, dus de functie gaf altijd 0,45
+    terug. Standaarddeviatie 0,000 over alle kandidaten — het gewicht van 0,15
+    verlaagde elke score met exact hetzelfde bedrag en onderscheidde niets.
+
+    `verslagjaar` is bij 34,8% wél gevuld en zegt precies wat we willen weten.
+    Een jaarverslag over jaar X verschijnt pas in X+1, dus één jaar verschil is
+    normaal en geen reden voor een penalty (zie
+    `peilmoment_max_leeftijd_jaren`). Een onbekend peilmoment blijft neutraal.
+    """
     publication = bron.document.publicatiedatum
-    if publication is None:
+    if publication is not None:
+        maanden = max(
+            0,
+            (referentiedatum.year - publication.year) * 12
+            + referentiedatum.month - publication.month,
+        )
+        if maanden <= 6:
+            return 1.0
+        if maanden <= 18:
+            return 0.8
+        if maanden <= 36:
+            return 0.55
+        return 0.25
+
+    verslagjaar = bron.document.verslagjaar
+    if verslagjaar is None:
         return 0.45
-    maanden = max(
-        0,
-        (referentiedatum.year - publication.year) * 12
-        + referentiedatum.month - publication.month,
-    )
-    if maanden <= 6:
+    jaren = max(0, referentiedatum.year - verslagjaar)
+    if jaren <= 1:
         return 1.0
-    if maanden <= 18:
+    if jaren == 2:
         return 0.8
-    if maanden <= 36:
+    if jaren == 3:
         return 0.55
     return 0.25
 
@@ -260,7 +283,23 @@ def selecteer_bronportfolio(
         if rol_aantallen.get(rol, 0) >= maximum_per_rol:
             continue
         gekozen.append(kandidaat)
+        gekozen_ids.add(id(kandidaat))
         rol_aantallen[rol] = rol_aantallen.get(rol, 0) + 1
         if len(gekozen) >= maximum:
             break
+
+    # Vul aan tot het maximum met de hoogst gerangschikte overgeblevenen.
+    # Zonder deze stap kan de rollimiet de lijst kleiner maken dan hij mag
+    # zijn: acht kandidaten in dezelfde rol leverden er dan twee op. Dat was
+    # de reden om deze functie niet aan te sluiten. Diversiteit hoort de
+    # vólgorde te bepalen, niet het aantal — de reviewer verliest liever geen
+    # bron.
+    if len(gekozen) < maximum:
+        for kandidaat in ranked:
+            if id(kandidaat) in gekozen_ids:
+                continue
+            gekozen.append(kandidaat)
+            gekozen_ids.add(id(kandidaat))
+            if len(gekozen) >= maximum:
+                break
     return gekozen
