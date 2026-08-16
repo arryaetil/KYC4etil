@@ -14,15 +14,50 @@ settings = get_settings()
 _JSON_PARSER = JsonOutputParser()
 
 
+# Modellen die de temperature-parameter weigeren. Wordt bij de eerste 400
+# gevuld, zodat er per model hooguit één mislukte call is en er niets
+# geconfigureerd hoeft te worden als OpenAI het gedrag later wijzigt.
+_ZONDER_TEMPERATURE: set[str] = set()
+
+
+def _weigert_temperature(exc: Exception) -> bool:
+    tekst = str(exc)
+    return "temperature" in tekst and (
+        "Unsupported parameter" in tekst or "unsupported_value" in tekst
+    )
+
+
 async def _create_response(client, **kwargs):
     """Wrapper om elke OpenAI Responses-call zodat tokenverbruik van élke
     aanroep in dit bestand altijd wordt geteld, zonder elke call-site apart
     te hoeven aanpassen als de trackinglogica zelf verandert.
 
     Zet ook de temperatuur, want zonder expliciete waarde draait elke call op
-    de OpenAI-default 1.0 — ongewenst voor extractie en classificatie."""
-    kwargs.setdefault("temperature", settings.openai_temperature)
-    response = await client.responses.create(**kwargs)
+    de OpenAI-default 1.0 — ongewenst voor extractie en classificatie.
+
+    Niet elk model laat dat toe. gpt-5.6-luna accepteert alleen zijn eigen
+    default en antwoordt op elke andere waarde met HTTP 400 "Unsupported
+    parameter: 'temperature'". Omdat `openai_temperature` op 0.0 staat, faalde
+    daardoor élke call door deze wrapper zodra luna het hoofdmodel werd —
+    inclusief de volledige WP-extractie en de scope-classificatie. Dat gebeurde
+    stil: de aanroeper vangt de fout af en levert `None`, wat niet te
+    onderscheiden is van "niets gevonden".
+
+    Vandaar: één keer proberen mét, en bij een expliciete weigering opnieuw
+    zonder. Het model onthoudt dat voor de rest van het proces.
+    """
+    model = kwargs.get("model") or ""
+    wil_temperature = "temperature" not in kwargs
+    if wil_temperature and model not in _ZONDER_TEMPERATURE:
+        kwargs["temperature"] = settings.openai_temperature
+    try:
+        response = await client.responses.create(**kwargs)
+    except Exception as exc:
+        if not (_weigert_temperature(exc) and "temperature" in kwargs):
+            raise
+        _ZONDER_TEMPERATURE.add(model)
+        kwargs.pop("temperature")
+        response = await client.responses.create(**kwargs)
     record_response_usage(response)
     return response
 
