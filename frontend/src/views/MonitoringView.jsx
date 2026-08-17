@@ -20,18 +20,18 @@ function monitoringOpties(doeljaar) {
   return [
     {
       waarde: "actueel",
-      label: doeljaar ? `Verslag ${doeljaar} binnen` : "Actueel verslag",
+      label: doeljaar ? `Nieuw — verslag ${doeljaar}` : "Nieuw verslag",
     },
-    {waarde: "verouderd", label: "Alleen een ouder verslag"},
-    {waarde: "ontbreekt", label: "Geen jaarverslag gevonden"},
+    {waarde: "verouderd", label: "Gevonden, maar ouder"},
+    {waarde: "ontbreekt", label: "Niet gevonden"},
     {waarde: "mislukt", label: "Controle mislukt"},
   ];
 }
 
 const MONITORING_TELLERS = [
-  {sleutel: "actueel", label: "actueel"},
-  {sleutel: "verouderd", label: "verouderd"},
-  {sleutel: "ontbreekt", label: "ontbreekt"},
+  {sleutel: "actueel", label: "nieuw"},
+  {sleutel: "verouderd", label: "ouder"},
+  {sleutel: "ontbreekt", label: "niet gevonden"},
 ];
 
 export function MonitoringView({api}) {
@@ -91,12 +91,24 @@ export function MonitoringView({api}) {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-2">
         <span className="text-sm font-medium text-ink">{batch.naam}</span>
-        {/* De hoofdvraag van deze module staat vooraan: van hoeveel
-            organisaties hebben we het verslag over het doeljaar. */}
-        <span className="text-xs tabular-nums text-slate-500">
-          {status.actueel} van {status.totaal} met verslag
-          {status.doeljaar ? ` ${status.doeljaar}` : ""}
-          {" · "}{status.verouderd} ouder{" · "}{status.ontbreekt} ontbreekt
+        {/* De hoofdvraag van deze module in drie getallen: hoeveel hebben het
+            verslag over het doeljaar, hoeveel alleen een ouder verslag, en van
+            hoeveel is er niets. Nadrukkelijk in die volgorde en met "nieuw" voor
+            het doeljaar — dat is het woord waarin de reviewer erover praat. */}
+        <span className="flex flex-wrap items-baseline gap-x-3 text-xs tabular-nums">
+          <span className="text-ink">
+            <strong className="text-sm font-semibold">{status.actueel}</strong>
+            {" "}nieuw{status.doeljaar ? ` — verslag ${status.doeljaar}` : ""}
+          </span>
+          <span className="text-amber-700">
+            <strong className="text-sm font-semibold">{status.verouderd}</strong>
+            {" "}gevonden, maar ouder
+          </span>
+          <span className="text-slate-500">
+            <strong className="text-sm font-semibold">{status.ontbreekt}</strong>
+            {" "}niet gevonden
+          </span>
+          <span className="text-slate-400">van {status.totaal}</span>
         </span>
         <span className="text-xs text-slate-400">
           {status.gecontroleerd} gecontroleerd

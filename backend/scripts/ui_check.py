@@ -214,23 +214,26 @@ def _controleer_monitoring(page, c: Controle) -> None:
         "monitoringmodule laadt zonder fout",
     )
     # De indeling op verslagjaar is de kernvraag van deze module; zonder een
-    # eigen assertie zou een lege of stukgelopen kopregel groen blijven.
+    # eigen assertie zou een lege of stukgelopen kopregel groen blijven. De drie
+    # getallen moeten in één oogopslag te lezen zijn, in de taal van de reviewer:
+    # nieuw = het verslag over het doeljaar.
     c.meld(
-        page.is_visible("text=/met verslag \\d{4}/"),
+        page.is_visible("text=/nieuw — verslag \\d{4}/"),
         "kopregel noemt hoeveel organisaties het verslag over het doeljaar hebben",
     )
     c.meld(
-        page.is_visible("text=/\\d+ ouder/")
-        and page.is_visible("text=/\\d+ ontbreekt/"),
-        "kopregel splitst verouderd en ontbrekend uit",
+        page.is_visible("text=gevonden, maar ouder")
+        and page.is_visible("text=niet gevonden"),
+        "kopregel splitst ouder gevonden en niet gevonden uit",
     )
     filter_opties = page.locator(
         "select[aria-label='Filter op status'] option",
     ).all_inner_texts()
     c.meld(
-        any(tekst.startswith("Verslag ") for tekst in filter_opties)
-        and "Alleen een ouder verslag" in filter_opties,
-        "statusfilter biedt de jaarbuckets aan",
+        any(tekst.startswith("Nieuw — verslag ") for tekst in filter_opties)
+        and "Gevonden, maar ouder" in filter_opties
+        and "Niet gevonden" in filter_opties,
+        "statusfilter biedt de drie jaarbuckets aan",
     )
     c.meld(
         "Nieuwe vondst" not in filter_opties,
@@ -249,7 +252,7 @@ def _controleer_achterlopende_vondst(page, c: Controle) -> None:
     dus stond de URL wel op de monitoringkaart maar bestond er geen bronkaart.
     """
     organisatie = page.locator(
-        "button:has-text('Alleen verslag')",
+        "button:has-text('Ouder — verslag')",
     ).first
     if organisatie.count() == 0:
         return c.overgeslagen("geen organisatie met alleen een ouder verslag")

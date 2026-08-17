@@ -140,12 +140,15 @@ export function monitoringStatus(company) {
   const jaarstatus = company?.jaarstatus
     || (company?.laatste_bron_url ? "verouderd" : "ontbreekt");
 
+  // "Nieuw" betekent in deze module één ding: het verslag over het doeljaar.
+  // Niet "veranderd sinds de vorige ronde" — dat woord is hier bewust vermeden,
+  // anders staat er twee keer "nieuw" op dezelfde kaart met een andere betekenis.
   if (jaarstatus === "actueel") {
     return {
       sleutel: "actueel",
       label: company?.doeljaar
-        ? `Verslag ${company.doeljaar} binnen`
-        : "Actueel verslag",
+        ? `Nieuw — verslag ${company.doeljaar}`
+        : "Nieuw verslag",
       toon: "neutraal",
     };
   }
@@ -153,14 +156,14 @@ export function monitoringStatus(company) {
     return {
       sleutel: "verouderd",
       label: company?.verslagjaar
-        ? `Alleen verslag ${company.verslagjaar}`
-        : "Verslag zonder jaartal",
+        ? `Ouder — verslag ${company.verslagjaar}`
+        : "Ouder — jaartal onbekend",
       toon: "aandacht",
     };
   }
   return {
     sleutel: "ontbreekt",
-    label: "Geen jaarverslag gevonden",
+    label: "Niet gevonden",
     toon: "aandacht",
   };
 }

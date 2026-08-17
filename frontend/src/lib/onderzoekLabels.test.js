@@ -22,12 +22,12 @@ describe("monitoringStatus", () => {
     });
   });
 
-  it("noemt een verslag over het doeljaar actueel", () => {
+  it("noemt het verslag over het doeljaar nieuw", () => {
     expect(monitoringStatus({
       jaarstatus: "actueel", doeljaar: 2025, verslagjaar: 2025,
       laatste_bron_url: "https://x.nl/jaar-2025.pdf",
     })).toEqual({
-      sleutel: "actueel", label: "Verslag 2025 binnen", toon: "neutraal",
+      sleutel: "actueel", label: "Nieuw — verslag 2025", toon: "neutraal",
     });
   });
 
@@ -36,7 +36,7 @@ describe("monitoringStatus", () => {
       jaarstatus: "verouderd", doeljaar: 2025, verslagjaar: 2023,
       laatste_bron_url: "https://x.nl/jaar-2023.pdf",
     })).toEqual({
-      sleutel: "verouderd", label: "Alleen verslag 2023", toon: "aandacht",
+      sleutel: "verouderd", label: "Ouder — verslag 2023", toon: "aandacht",
     });
   });
 
@@ -45,14 +45,14 @@ describe("monitoringStatus", () => {
       jaarstatus: "verouderd", doeljaar: 2025,
       laatste_bron_url: "https://x.nl/jaarverslagsite/",
     })).toEqual({
-      sleutel: "verouderd", label: "Verslag zonder jaartal", toon: "aandacht",
+      sleutel: "verouderd", label: "Ouder — jaartal onbekend", toon: "aandacht",
     });
   });
 
   it("meldt aandacht als er niets is gevonden", () => {
     expect(monitoringStatus({jaarstatus: "ontbreekt"})).toEqual({
       sleutel: "ontbreekt",
-      label: "Geen jaarverslag gevonden",
+      label: "Niet gevonden",
       toon: "aandacht",
     });
     expect(monitoringStatus(null).sleutel).toBe("ontbreekt");
