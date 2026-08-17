@@ -101,6 +101,17 @@ export function organisatieStatus(company) {
   if (company.research_resultaat_status === "review_nodig") {
     return {sleutel: "te_beoordelen", label: "Te beoordelen", toon: "neutraal"};
   }
+  // `technisch_onvolledig` betekent: een verplichte onderzoeksroute is technisch
+  // mislukt, dus "niets gevonden" is hier geen conclusie maar een onbekende.
+  // Zonder deze regel viel die status door naar "Onderzoek afgerond" — neutraal
+  // en buiten elk filter, terwijl er juist iets te herstellen valt.
+  if (company.research_resultaat_status === "technisch_onvolledig") {
+    return {
+      sleutel: "onvolledig",
+      label: "Onderzoek onvolledig",
+      toon: "aandacht",
+    };
+  }
   return {sleutel: "afgerond", label: "Onderzoek afgerond", toon: "neutraal"};
 }
 

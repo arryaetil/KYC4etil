@@ -876,3 +876,26 @@ async def test_runner_slaat_jaarverslag_agent_over_bij_hoog_zekerheid():
         await verwerk_company(db, company, batch)
 
     mock_jaarverslag.run.assert_not_called()
+
+
+def test_llm_getal_dat_geen_getal_is_laat_de_controle_niet_klappen():
+    """Regressie uit de live monitoringronde van 17-08-2026.
+
+    Bij Stichting XONAR sloeg de hele jaarverslagcontrole stuk op
+    `invalid literal for int() with base 10: '8d\xc2\x94...'`: de bron was een PDF
+    die als platte tekst werd binnengehaald, de LLM kreeg bytes te zien en gaf
+    een stuk van die ruis terug als `wp_gevonden`. Externe tekst is
+    onbetrouwbare invoer, dus ook wat de LLM eruit terugkoppelt.
+    """
+    from app.providers.wp_extractie import _als_aantal
+
+    assert _als_aantal("8d\x94\x159n\x10\x10\x7f") is None
+    assert _als_aantal(None) is None
+    assert _als_aantal("") is None
+    assert _als_aantal("ongeveer 40") is None
+    assert _als_aantal(True) is None
+    # Duizendscheiding mag: zo staat het in Nederlandse jaarverslagen.
+    assert _als_aantal("1.204") == 1204
+    assert _als_aantal("1 204") == 1204
+    assert _als_aantal(1204) == 1204
+    assert _als_aantal(1204.0) == 1204

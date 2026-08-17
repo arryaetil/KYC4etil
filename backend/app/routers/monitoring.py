@@ -117,6 +117,10 @@ def monitoring_status(db: Session = Depends(get_db)):
                    .order_by(PipelineRun.created_at)):
             laatste_status[pr.company_id] = pr
         for pr in laatste_status.values():
+            # Bewust alléén 'new'. 'updated' is een betere extractie op dezelfde
+            # URL en 'bronkaart_toegevoegd' een reeds bekende bron die alsnog
+            # beoordeelbaar werd; geen van beide is een nieuw jaarverslag. Zie
+            # test_monitoring_dashboard_noemt_betere_extractie_geen_nieuw_jaarverslag.
             if pr.status == "new":
                 bevindingen.add(pr.company_id)
             elif pr.status == "error":

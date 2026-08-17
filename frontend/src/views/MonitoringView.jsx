@@ -41,6 +41,7 @@ export function MonitoringView({api}) {
   const [busy, setBusy] = useState(false);
   const [geselecteerdId, setGeselecteerdId] = useState(null);
   const [geselecteerdeBron, setGeselecteerdeBron] = useState(null);
+  const [ronde, setRonde] = useState(null);
 
   async function load() {
     setStatus(await api.monitoringStatus());
@@ -55,8 +56,13 @@ export function MonitoringView({api}) {
   async function nuControleren() {
     setBusy(true);
     setError("");
+    setRonde(null);
     try {
-      await api.monitorRun();
+      // De respons zegt hoeveel organisaties deze ronde krijgt en hoeveel er
+      // worden overgeslagen. Die werd weggegooid, waardoor een ronde die niets
+      // te doen had niet te onderscheiden was van een ronde die draait — juist
+      // nu organisaties met een actueel én beoordeelbaar verslag overslaan.
+      setRonde(await api.monitorRun());
       await load();
     } catch (err) {
       setError(err.message);
@@ -94,7 +100,21 @@ export function MonitoringView({api}) {
         </span>
         <span className="text-xs text-slate-400">
           {status.gecontroleerd} gecontroleerd
+          {status.fouten ? ` · ${status.fouten} mislukt` : ""}
         </span>
+        {ronde ? (
+          <span className="text-xs text-slate-500">
+            {ronde.aantal_companies === 0
+              ? "Niets te doen: elk verslag over het doeljaar is al beoordeelbaar."
+              : `Ronde gestart voor ${ronde.aantal_companies} organisatie${
+                  ronde.aantal_companies === 1 ? "" : "s"
+                }${
+                  ronde.overgeslagen_actueel
+                    ? `, ${ronde.overgeslagen_actueel} overgeslagen`
+                    : ""
+                }.`}
+          </span>
+        ) : null}
         <IconButton
           icon={RefreshCw}
           variant="quiet"

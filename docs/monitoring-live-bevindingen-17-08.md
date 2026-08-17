@@ -1,5 +1,26 @@
 # Live monitoringronde 17-08-2026: wat er misging en wat daaruit te leren valt
 
+## Eindstand van de volledige ronde
+
+174 organisaties gecontroleerd in 19,1 minuten voor **11 cent** (som van per
+organisatie afgeronde centen, dus in werkelijkheid iets meer — zie punt E).
+
+| | vóór | ná |
+|---|---|---|
+| verslag over het doeljaar (2025) | 53 | **69** |
+| alleen verslagjaar 2024 | 26 | 15 |
+| alleen verslagjaar 2023 | 13 | 7 |
+| beoordeelbare bronkaart | ~32 | **70** |
+| geen bron | 108 | 110 |
+
+Pipelinestatussen: 114 × geen bron gevonden, 19 × nieuw verslag, 16 × betere
+extractie, 18 × bronkaart toegevoegd, 4 × ouder verslag genegeerd,
+2 × ongewijzigd, 1 × fout.
+
+Twee dingen vallen op. De bronkaart-achterstand is grotendeels weg (32 → 70) en
+zestien organisaties schoven van 2024/2023 naar het doeljaar. Maar "geen bron"
+liep met twee op: dat zijn de baselines die de hervalidatie introk (punt C).
+
 Aanleiding: de watchlist `Jaarverslag-monitoringlijst` (205 organisaties,
 `batch.jaar = 2026`, doeljaar verslagjaar 2025) had 108 organisaties zonder
 enige bron. Deze notitie legt vast wat een live ronde met echte providers
@@ -150,6 +171,61 @@ worden per organisatie 0 cent. Een rondetotaal dat per organisatie afgeronde
 centen optelt, valt daardoor te laag uit. `usage.py::neem_token_delta`
 documenteert precies deze afweging voor pipelinestappen; voor een rondetotaal
 zou je de micro-USD moeten optellen in plaats van de centen.
+
+### F. De LLM-zekerheid ís de confidence geworden, en dat spreekt CLAUDE.md tegen
+
+`CLAUDE.md`: *"LLM-zekerheid kan een confidence-score alleen begrenzen (cap),
+nooit verhogen."* De code doet het omgekeerde. `confidence.py:10,31`:
+
+```python
+ZEKERHEID_BASE = {"hoog": 0.90, "middel": 0.65, "laag": 0.35}
+score = ZEKERHEID_BASE.get(zekerheid, 0.35)
+```
+
+Eén LLM-oordeel "hoog" levert dus 0,90, boven `drempel_hoog` (0,80) — label 🟢,
+zonder tweede bron. De moduledocstring zegt dit ook openlijk ("zekerheid van de
+LLM als primair signaal … geen MCDA-formule meer"), dus dit lijkt een bewuste
+herziening waarbij `CLAUDE.md` niet is meegegaan. Dat moet één kant op: of de
+regel in `CLAUDE.md` klopt niet meer, of de confidence mag niet op één
+LLM-oordeel groen worden. Dit is de enige bevinding die raakt aan wanneer een
+cijfer als betrouwbaar de deur uit gaat.
+
+### G. Onbetrouwbare LLM-invoer liet één controle klappen (opgelost)
+
+Stichting XONAR faalde met `invalid literal for int() with base 10:
+'8d\xc2\x94…'`. `wp_extractie.py` deed `int(data["wp_gevonden"])` op een
+LLM-veld; de bron was een PDF die als platte tekst binnenkwam, de LLM kreeg
+bytes te zien en gaf een stuk van die ruis terug als aantal. Nu valt alleen die
+bron weg in plaats van de hele controle. Zie `_als_aantal`.
+
+### H. Een WP-getal uit een DigiMV-PDF kan nonsens zijn
+
+Stichting Dichterbij kreeg `wp_gevonden = 16`, met als bewijsfragment de
+samenstelling van de ondernemingsraad ("Oost Marcel Pleunis, Marleen
+Hartjes-Jacobs; West …"). Dichterbij heeft duizenden medewerkers. Het getal is
+geen telling maar een misgreep in een namenlijst; de bronkaart toont het als
+"16 WP, met citaat" en dat leest zelfverzekerd. Cicero Zorggroep ging juist goed:
+1.507 met eenheid `fte` en de waarschuwing `fte_geen_wp`, precies zoals de
+FTE ≠ WP-regel vraagt. Buurtzorg Nederland leverde 12.100 met een correcte zin,
+maar met `scope=concern` — dat is het concerncijfer, niet de vestiging.
+
+Het patroon: de extractie is bruikbaar maar niet zelfstandig te vertrouwen. Voor
+een namenlijst bestaat al machinerie (`wp_afgeleid_uit_naamlijst` →
+`draag_naamlijsttelling_over_aan_reviewer`), maar die vlag komt van
+`_llm_extract` via `raw_data`, en monitoring geeft `finding.raw` niet mee aan het
+`SourceDocument`. Daardoor mist monitoring die bescherming. Dat is bewust zo
+gelaten: het aanzetten trekt WP-getallen in die nu wél doorkomen, en dat is een
+afweging die eerst gemeten moet worden.
+
+### I. Bronkaarten zonder getal: 15 van de 23
+
+Van de bronkaarten die de ronde opleverde had de meerderheid `wp_gevonden = None`.
+Bij een reeds bekende URL doet de agent geen PDF-extractie meer (Zuyd: 14
+seconden, 0 cent, geen enkele modelaanroep), dus de reviewer krijgt een document
+zonder voorstel en moet zelf zoeken. Eén PDF-extractie kost ongeveer 1 cent
+(MeanderGroep), dus de hele achterstand van 66 organisaties een getal geven kost
+in de orde van € 0,60. Dat lijkt de goedkoopste kwaliteitswinst die er nog ligt,
+maar het is een kostenbesluit en staat daarom hier en niet in de code.
 
 ## Wat een misser meestal wél is
 

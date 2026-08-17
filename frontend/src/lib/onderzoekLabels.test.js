@@ -133,6 +133,19 @@ describe("organisatieStatus", () => {
     expect(status.toon).toBe("aandacht");
   });
 
+  it("onderscheidt een technisch onvolledige run van een afgeronde", () => {
+    // De supervisor zet `technisch_onvolledig` als een verplichte route
+    // technisch mislukte. Dat viel door naar "Onderzoek afgerond" — neutraal en
+    // buiten elk filter, terwijl "niets gevonden" hier geen conclusie is.
+    const status = organisatieStatus({
+      research_status: "completed",
+      research_resultaat_status: "technisch_onvolledig",
+    });
+    expect(status.sleutel).toBe("onvolledig");
+    expect(status.label).toBe("Onderzoek onvolledig");
+    expect(status.toon).toBe("aandacht");
+  });
+
   it("meldt een mislukt onderzoek met fout-toon", () => {
     const status = organisatieStatus({research_status: "error"});
     expect(status.label).toBe("Mislukt");

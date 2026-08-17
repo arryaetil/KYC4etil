@@ -26,18 +26,24 @@ export function KandidatenPaneel({
   const [afwijsreden, setAfwijsreden] = useState("");
   const [toelichting, setToelichting] = useState("");
 
-  const gevraagdJaar = batchJaar ? batchJaar - 1 : null;
+  // Het jaar dat de run zelf vroeg gaat voor op de afleiding uit het batchjaar:
+  // een monitoringronde en een handmatige run kunnen een ander jaar vragen, en
+  // de bronkaart zet dat jaartal naast het verslagjaar van de bron.
+  const [runJaar, setRunJaar] = useState(null);
+  const gevraagdJaar = runJaar ?? (batchJaar ? batchJaar - 1 : null);
 
   async function laadKandidaten() {
     const data = await api.researchCandidates(company.company_id);
     setItems(data.items || []);
     setDiagnostiek(data.diagnostiek || {});
     setOnderzoekspaden(data.onderzoekspaden || []);
+    setRunJaar(data.gevraagd_jaar ?? null);
   }
 
   useEffect(() => {
     setRun(null);
     setError("");
+    setRunJaar(null);
     laadKandidaten().catch((err) => setError(err.message));
   }, [company.company_id]);
 

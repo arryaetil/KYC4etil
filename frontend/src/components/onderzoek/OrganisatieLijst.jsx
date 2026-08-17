@@ -14,6 +14,10 @@ const ONDERZOEK_OPTIES = [
   {waarde: "te_beoordelen", label: "Te beoordelen"},
   {waarde: "gekozen", label: "Bron gekozen"},
   {waarde: "niet_gevonden", label: "Geen bron gevonden"},
+  // Een verplichte route is technisch mislukt; "niets gevonden" is dan geen
+  // uitkomst maar een onbekende. Zonder eigen filter viel dit samen met
+  // "Onderzoek afgerond" en was het niet terug te vinden.
+  {waarde: "onvolledig", label: "Onderzoek onvolledig"},
   {waarde: "niet_onderzocht", label: "Nog niet onderzocht"},
   {waarde: "mislukt", label: "Mislukt"},
 ];

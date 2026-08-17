@@ -318,7 +318,8 @@ def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
         .first()
     )
     if laatste_run is None:
-        return {"items": [], "diagnostiek": {}, "kosten": {}, "onderzoekspaden": []}
+        return {"items": [], "gevraagd_jaar": None, "diagnostiek": {},
+                "kosten": {}, "onderzoekspaden": []}
     kandidaten = (
         db.query(BronKandidaat)
         .filter_by(research_run_id=laatste_run.id)
@@ -334,6 +335,10 @@ def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
             )
             for item in kandidaten
         ],
+        # Het jaar dat déze run vroeg, zodat de bronkaart het niet hoeft te
+        # raden uit het batchjaar. Een monitoringronde en een handmatig gestarte
+        # run kunnen een ander gevraagd_jaar hebben.
+        "gevraagd_jaar": laatste_run.gevraagd_jaar,
         "kosten": _run_kosten(laatste_run),
         "diagnostiek": _run_diagnostiek(laatste_run),
         "onderzoekspaden": _onderzoekspaden(laatste_run),

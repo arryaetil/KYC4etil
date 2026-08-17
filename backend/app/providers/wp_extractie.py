@@ -12,9 +12,32 @@ from .naam_matching import _is_vacature_of_jobs_url, _tekst_lijkt_bij_bedrijf_te
 settings = get_settings()
 
 
+def _als_aantal(waarde) -> int | None:
+    """Een LLM-antwoord naar een aantal, of None als het er geen is.
+
+    `int(data["wp_gevonden"])` vertrouwde erop dat dit veld een getal is. Bij
+    Stichting XONAR sloeg de hele jaarverslagcontrole daarop stuk
+    (`invalid literal for int() with base 10: '8d\\xc2\\x94...'`): de bron was een
+    PDF die als platte tekst werd binnengehaald, de LLM kreeg bytes te zien en
+    gaf een stuk van die ruis terug als aantal. Externe tekst is onbetrouwbare
+    invoer, dus ook wat de LLM eruit terugkoppelt — één onbruikbaar veld mag
+    hoogstens deze bron laten vallen, niet de controle van de organisatie.
+
+    Punten en spaties als duizendscheiding blijven toegestaan (`1.204`, `1 204`).
+    """
+    if isinstance(waarde, bool):
+        return None
+    if isinstance(waarde, int):
+        return waarde
+    if isinstance(waarde, float):
+        return int(waarde)
+    tekst = str(waarde or "").strip().replace(".", "").replace(" ", "")
+    return int(tekst) if tekst.isdigit() else None
+
+
 def _finding_van_zoekresultaat(naam: str, data: dict, result: dict, bron_type: str) -> AgentFinding:
     return AgentFinding(
-        wp_gevonden=int(data["wp_gevonden"]),
+        wp_gevonden=_als_aantal(data["wp_gevonden"]),
         context=data.get("context"),
         zekerheid=data.get("zekerheid", "laag"),
         reden=data.get("reden"),
@@ -62,7 +85,7 @@ async def _extract_wp_van_zoekresultaten(
         if not _tekst_lijkt_bij_bedrijf_te_horen(naam, bron_context):
             continue
         data = await llm._llm_extract(naam, gemeente, tekst)
-        if not data or not data.get("wp_gevonden"):
+        if not data or _als_aantal(data.get("wp_gevonden")) is None:
             continue
         bevindingen.append(_finding_van_zoekresultaat(naam, data, result, bron_type))
     return bevindingen

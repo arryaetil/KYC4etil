@@ -440,7 +440,8 @@ def _beste_moderne_jaarverslagbron(
     db: Session,
     company: Company,
     jaar: int,
-) -> BronKandidaat | None:
+) -> tuple[int, BronKandidaat] | None:
+    """De nieuwste bruikbare jaarverslagkandidaat, met zijn afgeleide verslagjaar."""
     kandidaten = (
         db.query(BronKandidaat)
         .filter(
@@ -459,10 +460,17 @@ def _beste_moderne_jaarverslagbron(
         werkelijk_jaar = _documentjaar(kandidaat.url)
         if werkelijk_jaar is None or not jaar - 3 <= werkelijk_jaar <= jaar - 1:
             continue
-        if kandidaat.verslagjaar != werkelijk_jaar:
-            kandidaat.verslagjaar = werkelijk_jaar
         geldig.append((werkelijk_jaar, kandidaat))
-    return max(geldig, key=lambda item: item[0])[1] if geldig else None
+    if not geldig:
+        return None
+    # Het afgeleide jaar wordt níet op de kandidaat teruggeschreven. Deze query
+    # ziet ook kandidaten van de researchflow, en die dragen een `verslagjaar`
+    # dat verweven is met hun `relevantie_score`, `ranking_score` en
+    # `validaties["verslagjaar_match"]`. Alleen dat ene veld overschrijven levert
+    # een bronkaart op die zichzelf tegenspreekt: jaartal 2024 naast een score
+    # die een exacte treffer op 2025 beloofde. Monitoring gebruikt het afgeleide
+    # jaar dus alleen om te kiezen en om zijn eigen status te vullen.
+    return max(geldig, key=lambda item: item[0])
 
 
 def _heeft_al_een_bronkaart(
@@ -535,21 +543,16 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         status = JaarverslagMonitoring(company_id=company.id)
         db.add(status)
 
-    beste_moderne_bron = _beste_moderne_jaarverslagbron(
-        db,
-        company,
-        jaar,
-    )
-    if (
-        beste_moderne_bron is not None
-        and (
+    beste_moderne = _beste_moderne_jaarverslagbron(db, company, jaar)
+    if beste_moderne is not None:
+        beste_jaar, beste_bron = beste_moderne
+        if (
             status.laatste_verslagjaar
             or _documentjaar(status.laatste_bron_url)
             or 0
-        ) < (beste_moderne_bron.verslagjaar or 0)
-    ):
-        status.laatste_bron_url = beste_moderne_bron.url
-        status.laatste_verslagjaar = beste_moderne_bron.verslagjaar
+        ) < beste_jaar:
+            status.laatste_bron_url = beste_bron.url
+            status.laatste_verslagjaar = beste_jaar
 
     website_url = (company.enrichment.website_url if company.enrichment else None) or company.website_url
     if not website_url and lookup is not None:

@@ -91,9 +91,15 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
         Status: {status.label}.
         {/* Secundair, want het zegt iets over de vórige ronde en niet over de
             actualiteit van het verslag. Als hoofdstatus zette het juist
-            verouderde vondsten bovenaan. */}
+            verouderde vondsten bovenaan.
+
+            De tekst noemt bewust "nieuw jaarverslag" en niet "gewijzigd": de
+            backend zet dit signaal alleen bij pipelinestatus 'new'. Een betere
+            extractie op dezelfde URL ('updated') of een bekende bron die alsnog
+            beoordeelbaar werd ('bronkaart_toegevoegd') hoort er niet onder — zie
+            test_monitoring_dashboard_noemt_betere_extractie_geen_nieuw_jaarverslag. */}
         {company.nieuwe_bevinding
-          ? " Gewijzigd sinds de vorige controle."
+          ? " Nieuw jaarverslag sinds de vorige controle."
           : ""}
         {" "}Monitoring vindt bronnen; kiezen doe je zelf.
       </p>
