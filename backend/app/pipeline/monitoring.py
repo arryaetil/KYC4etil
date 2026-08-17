@@ -47,6 +47,10 @@ def _log(db, batch_id, company_id, stap, status, t0, error=None):
 STATUS_GEEN_BRON_GEVONDEN = "geen_bron_gevonden"
 STATUS_OUDER_VERSLAG = "ouder_verslag"
 STATUS_ONGEWIJZIGD = "ongewijzigd"
+# De bron was al bekend, maar had nog geen beoordeelbare bronkaart. Bewust geen
+# 'new' of 'updated': er is niets veranderd aan de bron zelf, dus dit mag niet
+# als bevinding in de dashboardaggregatie meetellen.
+STATUS_BRONKAART_TOEGEVOEGD = "bronkaart_toegevoegd"
 
 
 def _mag_ouder_verslag_bewaren(document: SourceDocument) -> bool:
@@ -251,7 +255,20 @@ async def _zoek_digimv_document(
             )
             return None
 
-    resultaten = await _veilig(zoek_digimv_documenten(context), "archiefzoekopdracht")
+    # `digimv.py::_kandidaat_boekjaren` telt twee jaar terug vanáf het gevraagde
+    # jaar, want dat veld was destijds het peiljaar (`batch.jaar`, 2026) en het
+    # boekjaar daarvan bestaat nog niet. Inmiddels geeft de flow `batch.jaar - 1`
+    # door, waardoor het archief om boekjaar 2024 en 2023 wordt gevraagd — nooit
+    # om het doeljaar zelf. Gemeten op 17-08-2026 bij MeanderGroep: met 2025 komt
+    # het verslag over 2024 terug, met 2026 het verslag over 2025, dat er dus wél
+    # ligt (jaarverantwoording over boekjaar X is uiterlijk 31 mei X+1 aangeleverd).
+    # Daarom één jaar hoger zoeken, en met het doeljaar inspecteren zodat de
+    # verslagjaarvergelijking blijft kloppen. De batchflow heeft deze afwijking
+    # ook; dat staat in `app/research/` en is niet aan deze module.
+    resultaten = await _veilig(
+        zoek_digimv_documenten(replace(context, gevraagd_jaar=jaar)),
+        "archiefzoekopdracht",
+    )
     if not resultaten:
         return None
 
@@ -457,6 +474,33 @@ def _beste_moderne_jaarverslagbron(
             kandidaat.verslagjaar = werkelijk_jaar
         geldig.append((werkelijk_jaar, kandidaat))
     return max(geldig, key=lambda item: item[0])[1] if geldig else None
+
+
+def _heeft_al_een_bronkaart(
+    db: Session,
+    company: Company,
+    bron_url: str,
+) -> bool:
+    """Bestaat er al een beoordeelbare bronkandidaat voor deze URL?
+
+    "Ongewijzigd" betekende: de agent vond dezelfde URL en geen nieuw WP-getal.
+    Daarmee sloeg de controle het opslaan over, óók als er nog nooit een
+    bronkandidaat voor die URL was aangemaakt. Gemeten op de watchlist van
+    17-08-2026: 66 van de 205 organisaties hebben een bekende bron-URL en 0
+    bronkandidaten — inclusief organisaties die al op verslagjaar 2025 staan.
+    Die kregen nooit een bronkaart, want hun URL verandert niet meer.
+
+    Een afgewezen kandidaat telt mee: de reviewer heeft die bron dan gezien en
+    beoordeeld, en hoort hem niet elke ronde opnieuw voorgeschoteld te krijgen.
+    """
+    return db.query(
+        db.query(BronKandidaat)
+        .filter(
+            BronKandidaat.company_id == company.id,
+            BronKandidaat.canonical_url == canonicaliseer_url(bron_url),
+        )
+        .exists()
+    ).scalar()
 
 
 def _wp_is_nieuw_voor_bron(
@@ -712,13 +756,22 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         finding.bron_url,
         finding.wp_gevonden,
     )
-    if not url_gewijzigd and not wp_is_nieuw:
+    alleen_bronkaart_ontbreekt = (
+        not url_gewijzigd
+        and not wp_is_nieuw
+        and not _heeft_al_een_bronkaart(db, company, finding.bron_url)
+    )
+    if not url_gewijzigd and not wp_is_nieuw and not alleen_bronkaart_ontbreekt:
         _log(db, company.batch_id, company.id, "jaarverslag_monitoring",
              STATUS_ONGEWIJZIGD, t0)
         db.commit()
         return False
 
-    wijzigingsstatus = "new" if verslag_is_nieuw else "updated"
+    wijzigingsstatus = (
+        STATUS_BRONKAART_TOEGEVOEGD if alleen_bronkaart_ontbreekt
+        else "new" if verslag_is_nieuw
+        else "updated"
+    )
 
     _sla_moderne_bron_op(
         db,
@@ -741,7 +794,9 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         t0,
     )
     db.commit()
-    return True
+    # Een toegevoegde bronkaart is geen wijziging van de bron zelf; de
+    # organisatie hoort niet als "gewijzigd sinds de vorige controle" te tonen.
+    return wijzigingsstatus != STATUS_BRONKAART_TOEGEVOEGD
 
 
 async def _check_company_met_eigen_sessie(batch_id: str, company_id: str, jaar: int,
@@ -822,6 +877,44 @@ def _heeft_doeljaar_al(status: JaarverslagMonitoring | None, doeljaar: int) -> b
     )
 
 
+def bepaal_over_te_slaan_companies(
+    db: Session,
+    batch: Batch,
+    doeljaar: int,
+) -> set[str]:
+    """Welke organisaties deze ronde niets nieuws kunnen opleveren.
+
+    Het verslag over het doeljaar hebben is niet genoeg: er moet ook een
+    beoordeelbare bronkandidaat zijn. Zonder die tweede eis sloot deze
+    optimalisatie precies de organisaties uit die nog een bronkaart missen — op
+    de watchlist van 17-08-2026 hebben 66 van de 205 een bekende bron-URL en 0
+    kandidaten, en een deel daarvan staat al op verslagjaar 2025. Die zouden dan
+    nooit meer aan de beurt komen, want hun URL verandert niet meer.
+
+    Eén plek voor dit begrip, zodat de teller in `routers/monitoring.py` en de
+    werkelijke ronde niet uit elkaar kunnen lopen.
+    """
+    met_kandidaat = {
+        company_id
+        for (company_id,) in (
+            db.query(BronKandidaat.company_id)
+            .join(Company, Company.id == BronKandidaat.company_id)
+            .filter(Company.batch_id == batch.id)
+            .distinct()
+        )
+    }
+    return {
+        status.company_id
+        for status in (
+            db.query(JaarverslagMonitoring)
+            .join(Company, Company.id == JaarverslagMonitoring.company_id)
+            .filter(Company.batch_id == batch.id)
+        )
+        if _heeft_doeljaar_al(status, doeljaar)
+        and status.company_id in met_kandidaat
+    }
+
+
 def run_monitoring_watchlist_background(
     limit: int | None = None,
     offset: int = 0,
@@ -846,15 +939,7 @@ def run_monitoring_watchlist_background(
         doeljaar = jaar - 1
         al_actueel: set[str] = set()
         if not hercontroleer_actuele:
-            al_actueel = {
-                status.company_id
-                for status in (
-                    db.query(JaarverslagMonitoring)
-                    .join(Company, Company.id == JaarverslagMonitoring.company_id)
-                    .filter(Company.batch_id == batch.id)
-                )
-                if _heeft_doeljaar_al(status, doeljaar)
-            }
+            al_actueel = bepaal_over_te_slaan_companies(db, batch, doeljaar)
         company_ids = [
             company_id
             for (company_id,) in (

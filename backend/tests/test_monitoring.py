@@ -16,6 +16,7 @@ from app.models import (
 from app.pipeline import monitoring as monitoring_module
 from app.pipeline.monitoring import check_company_jaarverslag
 from app.providers.base import AgentFinding
+from app.research.urls import canonicaliseer_url
 from app.research.validation import SourceDocument
 
 
@@ -325,11 +326,28 @@ async def test_monitoring_ziet_trackingvariant_niet_als_nieuwe_bron(
     db_session, monkeypatch,
 ):
     company = _maak_company(db_session, naam="Canonical Bedrijf")
+    baseline_url = (
+        "https://www.canonical.example/jaarverslag.pdf?utm_source=mail"
+    )
     db_session.add(JaarverslagMonitoring(
         company_id=company.id,
-        laatste_bron_url=(
-            "https://www.canonical.example/jaarverslag.pdf?utm_source=mail"
-        ),
+        laatste_bron_url=baseline_url,
+    ))
+    # De bronkaart bestaat al. Zonder deze rij zou de controle er terecht één
+    # aanmaken (zie test_bekende_bron_zonder_bronkaart_wordt_alsnog_beoordeelbaar)
+    # en zou deze test niet meer over canonicalisatie gaan.
+    bestaande_run = ResearchRun(
+        company_id=company.id, batch_id=company.batch_id,
+        doel="periodieke jaarverslagmonitoring", gevraagd_jaar=2025,
+        status="completed", resultaat_status="review_nodig",
+    )
+    db_session.add(bestaande_run)
+    db_session.flush()
+    db_session.add(BronKandidaat(
+        research_run_id=bestaande_run.id, company_id=company.id,
+        url=baseline_url, canonical_url=canonicaliseer_url(baseline_url),
+        brontype="jaarverslag", documenttype="jaarverslag",
+        status="voorgesteld", rang=1,
     ))
     db_session.commit()
     finding = AgentFinding(
@@ -349,9 +367,15 @@ async def test_monitoring_ziet_trackingvariant_niet_als_nieuwe_bron(
     )
 
     assert await check_company_jaarverslag(db_session, company, 2026) is False
+    # Geen tweede run en geen tweede kandidaat: de trackingparameter maakt van
+    # dezelfde bron geen nieuwe bron.
     assert (
         db_session.query(ResearchRun).filter_by(company_id=company.id).count()
-        == 0
+        == 1
+    )
+    assert (
+        db_session.query(BronKandidaat).filter_by(company_id=company.id).count()
+        == 1
     )
 
 
@@ -1000,8 +1024,9 @@ def test_monitoringstatussen_zijn_onderscheidend():
                                          STATUS_ONGEWIJZIGD,
                                          STATUS_OUDER_VERSLAG)
 
-    statussen = {STATUS_GEEN_BRON_GEVONDEN, STATUS_ONGEWIJZIGD, STATUS_OUDER_VERSLAG}
-    assert len(statussen) == 3
+    statussen = {STATUS_GEEN_BRON_GEVONDEN, STATUS_ONGEWIJZIGD, STATUS_OUDER_VERSLAG,
+                 monitoring_module.STATUS_BRONKAART_TOEGEVOEGD}
+    assert len(statussen) == 4
     # 'new' en 'error' hebben een eigen betekenis in de dashboard-aggregatie
     # (routers/monitoring.py) en mogen niet worden hergebruikt.
     assert not statussen & {"new", "error", "updated"}
@@ -1178,6 +1203,66 @@ def test_verslagjaar_nieuwer_dan_gevraagd_blijft_afgewezen():
 
     assert validatie.is_afgewezen is True
     assert validatie.afwijsredenen == ["verkeerd verslagjaar"]
+
+
+@pytest.mark.asyncio
+async def test_bekende_bron_zonder_bronkaart_wordt_alsnog_beoordeelbaar(
+    db_session, monkeypatch,
+):
+    """"Ongewijzigd" sloeg het opslaan over, ook als er nog nooit een bronkaart
+    was. Gemeten op de watchlist van 17-08-2026: 66 van de 205 organisaties
+    hebben een bekende bron-URL en 0 bronkandidaten, inclusief organisaties die
+    al op verslagjaar 2025 staan. Hun URL verandert niet meer, dus zonder deze
+    regel kregen ze nooit iets te beoordelen."""
+    company = _maak_company(db_session, naam="Bekende Bron")
+    company.website_url = "https://bekend.test"
+    bekende_url = "https://bekend.test/jaarverslag-2025.pdf"
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id,
+        laatste_bron_url=bekende_url,
+        laatste_verslagjaar=2025,
+    ))
+    db_session.commit()
+    # Zelfde URL als de baseline en geen WP-getal: precies het geval dat
+    # voorheen als "ongewijzigd" wegliep.
+    finding = AgentFinding(
+        wp_gevonden=None,
+        context=None,
+        zekerheid="laag",
+        reden="zelfde jaarverslag als vorige ronde",
+        bron_url=bekende_url,
+        bron_type="jaarverslag",
+    )
+
+    class Agent:
+        async def find_latest_source(self, *args, **kwargs):
+            return finding
+
+    monkeypatch.setattr(
+        monitoring_module, "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    # Geen wijziging van de bron, dus geen "gewijzigd"-signaal...
+    assert await check_company_jaarverslag(db_session, company, 2026) is False
+    # ...maar wel een beoordeelbare bronkaart.
+    bron = db_session.query(BronKandidaat).filter_by(company_id=company.id).one()
+    assert bron.url == bekende_url
+    assert bron.verslagjaar == 2025
+    run = db_session.query(PipelineRun).filter_by(
+        company_id=company.id, stap="jaarverslag_monitoring",
+    ).order_by(PipelineRun.created_at.desc()).first()
+    assert run.status == monitoring_module.STATUS_BRONKAART_TOEGEVOEGD
+
+    # Tweede ronde: de kaart bestaat nu, dus dan is het wél ongewijzigd.
+    assert await check_company_jaarverslag(db_session, company, 2026) is False
+    assert db_session.query(BronKandidaat).filter_by(
+        company_id=company.id,
+    ).count() == 1
+    run = db_session.query(PipelineRun).filter_by(
+        company_id=company.id, stap="jaarverslag_monitoring",
+    ).order_by(PipelineRun.created_at.desc()).first()
+    assert run.status == monitoring_module.STATUS_ONGEWIJZIGD
 
 
 # --- DigiMV natief in de monitoring ---
@@ -1415,7 +1500,10 @@ async def test_digimv_document_wint_op_wp_bewijs_en_erft_het_boekjaar(
     met_wp = _digimv_document(verslagjaar=None)
 
     async def fake_zoek(context, max_documenten=3):
-        assert context.gevraagd_jaar == 2025
+        # Eén jaar hoger dan het doeljaar: `_kandidaat_boekjaren` telt twee jaar
+        # terug vanaf dit veld, dus met 2025 zou het archief alleen boekjaar 2024
+        # en 2023 aanbieden en het verslag over het doeljaar nooit.
+        assert context.gevraagd_jaar == 2026
         assert context.gemeente == "Venlo"
         return [
             SimpleNamespace(queries=["DigiMV direct: zonder wp"]),
@@ -1425,6 +1513,9 @@ async def test_digimv_document_wint_op_wp_bewijs_en_erft_het_boekjaar(
     monkeypatch.setattr(monitoring_module, "zoek_digimv_documenten", fake_zoek)
 
     async def fake_inspect(self, context, query, result):
+        # Inspecteren gebeurt wél met het doeljaar, anders vergelijkt
+        # `valideer_bron` het verslagjaar tegen een jaar dat niemand vroeg.
+        assert context.gevraagd_jaar == 2025
         return zonder_wp if "zonder" in query.query else met_wp
 
     monkeypatch.setattr(
@@ -1481,8 +1572,8 @@ async def test_niet_digimv_bron_blijft_op_de_naamheuristiek_afgewezen():
 
 def test_run_monitoring_watchlist_slaat_actuele_organisaties_over(monkeypatch):
     """De echte kostenbesparing zit hier, niet in de router: een organisatie
-    waarvan het verslag over het doeljaar al binnen is, wordt niet opnieuw
-    doorzocht. Watchlistjaar 2026 betekent doeljaar 2025."""
+    waarvan het verslag over het doeljaar al binnen is én beoordeelbaar is,
+    wordt niet opnieuw doorzocht. Watchlistjaar 2026 betekent doeljaar 2025."""
     from app.models import JaarverslagMonitoring
     from app.pipeline.monitoring import run_monitoring_watchlist_background
 
@@ -1498,10 +1589,11 @@ def test_run_monitoring_watchlist_slaat_actuele_organisaties_over(monkeypatch):
             db.add(company)
             db.flush()
             per_naam[naam] = company.id
+        actuele_url = "https://x.test/jaarverslag-2025.pdf"
         db.add_all([
             JaarverslagMonitoring(
                 company_id=per_naam["Actueel"],
-                laatste_bron_url="https://x.test/jaarverslag-2025.pdf",
+                laatste_bron_url=actuele_url,
                 laatste_verslagjaar=2025,
             ),
             JaarverslagMonitoring(
@@ -1510,6 +1602,20 @@ def test_run_monitoring_watchlist_slaat_actuele_organisaties_over(monkeypatch):
                 laatste_verslagjaar=2023,
             ),
         ])
+        # Overslaan mag alleen als de reviewer die bron kan beoordelen.
+        run = ResearchRun(
+            company_id=per_naam["Actueel"], batch_id=batch.id,
+            doel="periodieke jaarverslagmonitoring", gevraagd_jaar=2025,
+            status="completed", resultaat_status="review_nodig",
+        )
+        db.add(run)
+        db.flush()
+        db.add(BronKandidaat(
+            research_run_id=run.id, company_id=per_naam["Actueel"],
+            url=actuele_url, canonical_url=canonicaliseer_url(actuele_url),
+            brontype="jaarverslag", documenttype="jaarverslag",
+            verslagjaar=2025, status="voorgesteld", rang=1,
+        ))
         db.commit()
 
         doorgegeven = []
@@ -1533,6 +1639,8 @@ def test_run_monitoring_watchlist_slaat_actuele_organisaties_over(monkeypatch):
         assert per_naam["Actueel"] in doorgegeven
         assert len(doorgegeven) == 3
     finally:
+        db.query(BronKandidaat).delete()
+        db.query(ResearchRun).delete()
         db.query(JaarverslagMonitoring).delete()
         db.query(Company).delete()
         db.query(Batch).delete()

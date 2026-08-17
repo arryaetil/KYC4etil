@@ -11,7 +11,7 @@ from ..models import (
     Batch, BronKandidaat, Company, JaarverslagMonitoring, PipelineRun,
 )
 from ..pipeline.monitoring import (
-    _heeft_doeljaar_al, run_monitoring_watchlist_background,
+    bepaal_over_te_slaan_companies, run_monitoring_watchlist_background,
 )
 from ..research.urls import canonicaliseer_url
 
@@ -214,14 +214,8 @@ def start_monitoring_run(
     te_doen = len(batch.companies)
     overgeslagen = 0
     if not hercontroleer_actuele and doeljaar is not None:
-        overgeslagen = sum(
-            1
-            for status in (
-                db.query(JaarverslagMonitoring)
-                .join(Company, Company.id == JaarverslagMonitoring.company_id)
-                .filter(Company.batch_id == batch.id)
-            )
-            if _heeft_doeljaar_al(status, doeljaar)
+        overgeslagen = len(
+            bepaal_over_te_slaan_companies(db, batch, doeljaar),
         )
         te_doen -= overgeslagen
     resterend = max(0, te_doen - max(offset, 0))

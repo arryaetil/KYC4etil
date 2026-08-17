@@ -317,11 +317,18 @@ def test_monitoring_status_geeft_bewijsplek_van_de_gevonden_bron(client, db_sess
     assert vondst["bewijsfragment"] == "47 medewerkers in dienst"
 
 
-def _watchlist_met_verslagjaren(client, db_session, naam, jaar, organisaties):
+def _watchlist_met_verslagjaren(
+    client, db_session, naam, jaar, organisaties, met_bronkaart=(),
+):
     """Zet een watchlist op waarin elke organisatie een bekend verslagjaar heeft.
 
     `organisaties` is een dict naam -> (bron_url, verslagjaar). Een lege URL
     betekent: nooit een bron gevonden.
+
+    `met_bronkaart` noemt de organisaties die óók een beoordeelbare
+    bronkandidaat hebben. Dat onderscheid doet ertoe: een verslag over het
+    doeljaar zonder bronkaart moet nog wél gecontroleerd worden, anders krijgt
+    de reviewer daar nooit iets te beoordelen.
     """
     _zorg_voor_test_user(db_session)
     csv = "naam\n" + "\n".join(organisaties) + "\n"
@@ -336,11 +343,27 @@ def _watchlist_met_verslagjaren(client, db_session, naam, jaar, organisaties):
     }
     nu = datetime.now(timezone.utc).replace(tzinfo=None)
     for organisatie, (url, verslagjaar) in organisaties.items():
+        company = companies[organisatie]
         db_session.add(JaarverslagMonitoring(
-            company_id=companies[organisatie].id,
+            company_id=company.id,
             laatste_bron_url=url or None,
             laatste_verslagjaar=verslagjaar,
             laatst_gecontroleerd_op=nu,
+        ))
+        if organisatie not in met_bronkaart or not url:
+            continue
+        run = ResearchRun(
+            company_id=company.id, batch_id=batch_id,
+            doel="periodieke jaarverslagmonitoring", gevraagd_jaar=jaar - 1,
+            status="completed", resultaat_status="review_nodig",
+        )
+        db_session.add(run)
+        db_session.flush()
+        db_session.add(BronKandidaat(
+            research_run_id=run.id, company_id=company.id,
+            url=url, canonical_url=canonicaliseer_url(url),
+            brontype="jaarverslag", documenttype="jaarverslag",
+            verslagjaar=verslagjaar, status="voorgesteld", rang=1,
         ))
     db_session.commit()
     return batch_id, companies
@@ -429,6 +452,9 @@ def test_monitoring_run_slaat_organisaties_met_het_doeljaar_over(
     Een verslag over jaar X verschijnt in X+1, dus zodra het verslag over het
     doeljaar er is kan een volgende ronde niets nieuwers vinden. Op de
     watchlist van 10-08-2026 gold dat voor 51 van de 205 organisaties.
+
+    Overslaan mag alleen als de reviewer die bron ook kan beoordelen; vandaar de
+    bronkaart bij "Actueel".
     """
     _, companies = _watchlist_met_verslagjaren(
         client, db_session, "skip-actueel", 2026, {
@@ -436,6 +462,7 @@ def test_monitoring_run_slaat_organisaties_met_het_doeljaar_over(
             "Ouder": ("https://x.test/jaarverslag-2023.pdf", 2023),
             "Niets": ("", None),
         },
+        met_bronkaart={"Actueel"},
     )
     gestart = []
     monkeypatch.setattr(
@@ -452,12 +479,43 @@ def test_monitoring_run_slaat_organisaties_met_het_doeljaar_over(
     assert gestart == [(None, 0, False)]
 
 
+def test_actueel_verslag_zonder_bronkaart_wordt_niet_overgeslagen(
+    client, db_session, monkeypatch,
+):
+    """De skip mag de bronkaart-achterstand niet bevriezen.
+
+    Gemeten op de watchlist van 17-08-2026: 66 van de 205 organisaties hebben
+    een bekende bron-URL en 0 bronkandidaten, een deel daarvan met het verslag
+    over het doeljaar. Alleen op verslagjaar filteren zou juist die organisaties
+    voorgoed uitsluiten, want hun URL verandert niet meer.
+    """
+    _watchlist_met_verslagjaren(
+        client, db_session, "skip-zonder-bronkaart", 2026, {
+            "Met kaart": ("https://x.test/jaarverslag-2025.pdf", 2025),
+            "Zonder kaart": ("https://y.test/jaarverslag-2025.pdf", 2025),
+        },
+        met_bronkaart={"Met kaart"},
+    )
+    monkeypatch.setattr(
+        monitoring_router, "run_monitoring_watchlist_background",
+        lambda limit=None, offset=0, hercontroleer_actuele=False: None,
+    )
+
+    data = client.post("/monitoring/run").json()
+
+    assert data["overgeslagen_actueel"] == 1
+    assert data["aantal_companies"] == 1
+
+
 def test_monitoring_run_kan_actuele_organisaties_alsnog_hercontroleren(
     client, db_session, monkeypatch,
 ):
-    _watchlist_met_verslagjaren(client, db_session, "hercontrole", 2026, {
-        "Actueel": ("https://x.test/jaarverslag-2025.pdf", 2025),
-    })
+    _watchlist_met_verslagjaren(
+        client, db_session, "hercontrole", 2026, {
+            "Actueel": ("https://x.test/jaarverslag-2025.pdf", 2025),
+        },
+        met_bronkaart={"Actueel"},
+    )
     gestart = []
     monkeypatch.setattr(
         monitoring_router, "run_monitoring_watchlist_background",
