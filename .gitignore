@@ -30,3 +30,6 @@ frontend/dist/
 # Analyse-artefacten (lokaal)
 graphify-out/
 skill-observations/
+
+# Screenshots van de UI-rookproef (scripts.ui_check)
+backend/scripts/ui_check_output/

@@ -31,9 +31,31 @@ niet meer geregistreerd en de publieke chatroute is uit de frontend gehaald.
 
 ## Testen
 
-- Backend: `python3 -m pytest -q backend/tests`.
+- Backend: `python3 -m pytest -q backend/tests`. De testsuite forceert
+  `PROVIDER_MODE=mock` in `tests/conftest.py`; `.env` staat op `live` en die
+  waarde won voorheen, wat drie tests stil over het netwerk liet gaan.
 - Frontend: `cd frontend && npm test -- --run`.
-- Validatie: `cd backend && .venv/bin/python -m scripts.validate` — streefwaarden coverage ≥70%, MAPE 🟢 ≤10%, kalibratie ≥80%. Staat nu op 100% / 0,0% / 100%.
+- Validatie: `cd backend && PROVIDER_MODE=mock python -m scripts.validate` —
+  streefwaarden coverage ≥70%, MAPE 🟢 ≤10%, kalibratie ≥80%. Staat nu op
+  100% / 0,0% / 100%. Zonder die variabele stopt het script met uitleg in
+  plaats van een nulmeting te rapporteren.
+- **UI-rookproef: `cd backend && python -m scripts.ui_check`.** Verplicht bij
+  elke frontendwijziging. Groene tests en een geslaagde build zeggen niets
+  over of de interface het dóet — de mappenlaag ging live met 463 groene
+  backendtests en 93 groene frontendtests terwijl niemand erop had geklikt.
+  Dit script logt in met een echte browser, klikt de kritieke paden door en
+  laat screenshots achter in `scripts/ui_check_output/` (gitignored) die je
+  zelf moet bekijken; een geslaagde assertie zegt niet dat het er goed uitziet.
+
+  ```
+  UI_CHECK_URL=http://localhost:5173 UI_CHECK_PASSWORD=... python -m scripts.ui_check
+  ```
+
+  Draait ook tegen productie (`UI_CHECK_URL=https://frontend-production-3080.up.railway.app`);
+  het script maakt alleen een eigen wegwerpmap aan en ruimt die op, ook na een
+  mislukking. Wachtwoord via
+  `railway variables -s backend --kv | grep DEMO_ADMIN_PASSWORD` — nooit in de
+  repository.
 
 ## Conventies
 
