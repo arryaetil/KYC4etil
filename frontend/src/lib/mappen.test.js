@@ -1,8 +1,10 @@
 import {describe, expect, it} from "vitest";
 import {
+  archiveerBevestiging,
   batchesQuery,
   lijstenLabel,
   magUploaden,
+  mapActies,
   verwijderBevestiging,
 } from "./mappen.js";
 
@@ -71,5 +73,38 @@ describe("magUploaden", () => {
   it("blokkeert uploaden in de verzamelweergave zonder map", () => {
     // Anders zou de nieuwe lijst meteen nergens bij horen.
     expect(magUploaden(null)).toBe(false);
+  });
+});
+
+describe("archiveerBevestiging", () => {
+  it("waarschuwt niet, want er raakt niets kwijt", () => {
+    const bevestiging = archiveerBevestiging({naam: "Oud", aantal_lijsten: 0});
+
+    expect(bevestiging.soort).toBe("archiveren");
+    expect(bevestiging.bevestigLabel).toBe("Archiveren");
+    expect(bevestiging.beschrijving).toContain("herstellen");
+  });
+
+  it("benoemt expliciet dat de lijsten blijven staan", () => {
+    const bevestiging = archiveerBevestiging({naam: "Zorg", aantal_lijsten: 4});
+
+    expect(bevestiging.beschrijving).toContain("4 lijsten");
+    expect(bevestiging.beschrijving).toContain("blijven staan");
+  });
+});
+
+describe("mapActies", () => {
+  it("zet archiveren vóór verwijderen", () => {
+    const acties = mapActies({naam: "Zorg"});
+
+    expect(acties).toEqual(["hernoemen", "archiveren", "verwijderen"]);
+    // Opruimen zonder weggooien is de gewone handeling; definitief weggooien
+    // hoort niet de eerste optie te zijn die je aanwijst.
+    expect(acties.indexOf("archiveren")).toBeLessThan(acties.indexOf("verwijderen"));
+  });
+
+  it("biedt in het archief terugzetten aan in plaats van hernoemen", () => {
+    expect(mapActies({naam: "Oud"}, {gearchiveerd: true}))
+      .toEqual(["herstellen", "verwijderen"]);
   });
 });

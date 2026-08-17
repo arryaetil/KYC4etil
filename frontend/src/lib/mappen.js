@@ -60,3 +60,32 @@ export function magUploaden(mapId) {
   // uploaden zou betekenen dat de lijst meteen nergens bij hoort.
   return mapId !== null;
 }
+
+/**
+ * Bevestiging bij archiveren.
+ *
+ * Bewust géén waarschuwende toon: er raakt niets kwijt en herstellen kost één
+ * klik. Wel expliciet benoemen wat er met de lijsten gebeurt, want dat is
+ * precies de zorg die verwijderen oproept.
+ */
+export function archiveerBevestiging(map) {
+  const aantal = map?.aantal_lijsten || 0;
+  return {
+    soort: "archiveren",
+    titel: `"${map?.naam}" archiveren?`,
+    beschrijving: aantal
+      ? `De map verdwijnt uit het overzicht. De ${lijstenLabel(aantal)
+        .toLowerCase()} erin blijven staan en komen terug zodra je de map `
+        + "herstelt."
+      : "De map verdwijnt uit het overzicht. Je kunt hem later herstellen.",
+    bevestigLabel: "Archiveren",
+  };
+}
+
+/** Menu-items voor een map, in de volgorde van meest naar minst gebruikt. */
+export function mapActies(map, {gearchiveerd = false} = {}) {
+  if (gearchiveerd) return ["herstellen", "verwijderen"];
+  // Archiveren vóór verwijderen: opruimen zonder weggooien is de gewone
+  // handeling, definitief weggooien de uitzondering.
+  return ["hernoemen", "archiveren", "verwijderen"];
+}

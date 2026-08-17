@@ -42,9 +42,13 @@ export function createApi(token, onUnauthorized) {
     }),
     me: () => request("/auth/me"),
     batches: (mapId) => request(batchesQuery(mapId)),
-    mappen: () => request("/mappen"),
+    mappen: (gearchiveerd) => request(
+      gearchiveerd ? "/mappen?gearchiveerd=true" : "/mappen",
+    ),
     maakMap: (naam) => request("/mappen", {method: "POST", json: {naam}}),
     hernoemMap: (id, naam) => request(`/mappen/${id}`, {method: "PATCH", json: {naam}}),
+    archiveerMap: (id) => request(`/mappen/${id}/archiveren`, {method: "POST"}),
+    herstelMap: (id) => request(`/mappen/${id}/herstellen`, {method: "POST"}),
     verwijderMap: (id, ontkoppelLijsten) => request(
       `/mappen/${id}${ontkoppelLijsten ? "?ontkoppel_lijsten=true" : ""}`,
       {method: "DELETE"},

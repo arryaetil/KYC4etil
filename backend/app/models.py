@@ -42,6 +42,10 @@ class Map(Base):
     naam: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     aangemaakt_door: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    # Archiveren is de zachte variant van opruimen: de map verdwijnt uit het
+    # hoofdoverzicht, maar de lijsten erin blijven onaangeraakt en bereikbaar.
+    # Daarmee is verwijderen niet langer de enige manier om orde te houden.
+    gearchiveerd_op: Mapped[datetime | None] = mapped_column(DateTime)
 
     batches: Mapped[list["Batch"]] = relationship(back_populates="map")
 

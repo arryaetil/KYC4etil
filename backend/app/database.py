@@ -141,6 +141,15 @@ def ensure_lightweight_migrations() -> None:
                 "CREATE INDEX IF NOT EXISTS ix_batches_map_id ON batches (map_id)"
             ))
 
+    # De tabel zelf komt uit create_all, maar op omgevingen waar die al bestond
+    # vóór het archiveren bestond, ontbreekt deze kolom.
+    if "mappen" in tables:
+        existing_mappen = {col["name"] for col in inspector.get_columns("mappen")}
+        with engine.begin() as conn:
+            _add_column_if_missing(
+                conn, "mappen", existing_mappen, "gearchiveerd_op", "TIMESTAMP",
+            )
+
     if "agent_results" in tables:
         existing_ar = {col["name"] for col in inspector.get_columns("agent_results")}
         with engine.begin() as conn:

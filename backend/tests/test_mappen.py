@@ -144,3 +144,75 @@ def test_monitoringlijst_telt_niet_mee_in_een_map(client, db_session):
 def test_onbekende_map_geeft_404(client):
     assert client.patch("/mappen/bestaat-niet", json={"naam": "X"}).status_code == 404
     assert client.delete("/mappen/bestaat-niet").status_code == 404
+
+
+def test_archiveren_haalt_de_map_uit_het_overzicht(client, db_session):
+    """Archiveren is opruimen zonder weggooien: de lijsten blijven staan."""
+    gemaakt = _maak_map(client, "Zorg 2025")
+    batch = Batch(naam="Testset", jaar=2026, totaal=20, map_id=gemaakt["id"])
+    db_session.add(batch)
+    db_session.commit()
+    batch_id = batch.id
+
+    response = client.post(f"/mappen/{gemaakt['id']}/archiveren")
+    assert response.status_code == 200
+    assert response.json()["gearchiveerd_op"] is not None
+
+    overzicht = client.get("/mappen").json()
+    assert overzicht["mappen"] == []
+    # Het aantal komt wel mee, zodat de interface kan tonen dát er iets in
+    # het archief zit zonder ernaartoe te hoeven.
+    assert overzicht["aantal_gearchiveerd"] == 1
+
+    db_session.expire_all()
+    bewaard = db_session.get(Batch, batch_id)
+    assert bewaard is not None
+    assert bewaard.map_id == gemaakt["id"], "de lijst hoort in de map te blijven"
+
+
+def test_archief_is_apart_op_te_vragen(client):
+    gemaakt = _maak_map(client, "Oud")
+    client.post(f"/mappen/{gemaakt['id']}/archiveren")
+
+    archief = client.get("/mappen?gearchiveerd=true").json()
+    assert [item["naam"] for item in archief["mappen"]] == ["Oud"]
+
+
+def test_herstellen_geeft_de_map_precies_terug(client, db_session):
+    gemaakt = _maak_map(client, "Terug")
+    db_session.add(Batch(naam="Testset", jaar=2026, totaal=20, map_id=gemaakt["id"]))
+    db_session.commit()
+    client.post(f"/mappen/{gemaakt['id']}/archiveren")
+
+    hersteld = client.post(f"/mappen/{gemaakt['id']}/herstellen").json()
+    assert hersteld["gearchiveerd_op"] is None
+    assert hersteld["aantal_lijsten"] == 1
+
+    overzicht = client.get("/mappen").json()
+    assert [item["naam"] for item in overzicht["mappen"]] == ["Terug"]
+    assert overzicht["aantal_gearchiveerd"] == 0
+
+
+def test_tweemaal_archiveren_verzet_het_moment_niet(client):
+    """Anders zou een dubbelklik de archiefdatum stilletjes bijwerken."""
+    gemaakt = _maak_map(client, "Stabiel")
+    eerste = client.post(f"/mappen/{gemaakt['id']}/archiveren").json()
+    tweede = client.post(f"/mappen/{gemaakt['id']}/archiveren").json()
+    assert eerste["gearchiveerd_op"] == tweede["gearchiveerd_op"]
+
+
+def test_naam_botst_ook_met_een_gearchiveerde_map(client):
+    """Anders levert herstellen ineens twee mappen met dezelfde naam op."""
+    gemaakt = _maak_map(client, "Zorg 2026")
+    client.post(f"/mappen/{gemaakt['id']}/archiveren")
+
+    response = client.post("/mappen", json={"naam": "zorg 2026"})
+    assert response.status_code == 409
+    # De melding moet vertellen wáár die map dan staat, want in het overzicht
+    # is ze niet te vinden.
+    assert "gearchiveerde" in response.json()["detail"]
+
+
+def test_archiveren_van_onbekende_map_geeft_404(client):
+    assert client.post("/mappen/bestaat-niet/archiveren").status_code == 404
+    assert client.post("/mappen/bestaat-niet/herstellen").status_code == 404
