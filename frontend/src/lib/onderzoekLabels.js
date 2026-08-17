@@ -44,6 +44,9 @@ const BEREIK = {
  */
 const WAARSCHUWING = {
   fte_geen_wp: null,
+  // Onderdrukt omdat `bronwaarschuwingen` het jaarverschil zelf al benoemt,
+  // mét beide jaartallen. Zowel de batchflow (`source_reviewer`) als de
+  // monitoring zet deze sleutel; de chip mag daar niet twee keer van staan.
   afwijkend_verslagjaar: null,
   scope_breder_dan_vestiging: null,
   recent_actualiteitssignaal: null,
@@ -357,7 +360,16 @@ export function bronwaarschuwingen(candidate) {
     && candidate.verslagjaar != null
     && candidate.gevraagd_jaar !== candidate.verslagjaar
   ) {
-    items.push({label: "Ander verslagjaar", toon: "aandacht"});
+    // Noem beide jaren. "Ander verslagjaar" liet de reviewer zelf uitzoeken
+    // welk jaar er dan gevraagd was, en verzweeg of dit verslag ouder of
+    // nieuwer is. Monitoring bewaart oudere verslagen sinds kort bewust als
+    // beoordeelbare bron, dus dat onderscheid moet op de kaart staan.
+    items.push({
+      label: candidate.verslagjaar < candidate.gevraagd_jaar
+        ? `Verslag ${candidate.verslagjaar}, gevraagd is ${candidate.gevraagd_jaar}`
+        : `Verslag ${candidate.verslagjaar}, nieuwer dan gevraagd`,
+      toon: "aandacht",
+    });
   }
   for (const waarschuwing of candidate.waarschuwingen || []) {
     const sleutel = String(waarschuwing);

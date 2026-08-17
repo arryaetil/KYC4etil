@@ -236,8 +236,45 @@ def _controleer_monitoring(page, c: Controle) -> None:
         "Nieuwe vondst" not in filter_opties,
         "de oude delta-status staat niet meer als hoofdfilter",
     )
+    _controleer_achterlopende_vondst(page, c)
     page.click("text=Onderzoek")
     page.wait_for_timeout(1500)
+
+
+def _controleer_achterlopende_vondst(page, c: Controle) -> None:
+    """Open een organisatie met alleen een ouder verslag.
+
+    Dit is de bak waar de reviewer het meest aan moet beslissen en waar tot voor
+    kort niets te beoordelen was: een ouder verslagjaar werd hard afgewezen,
+    dus stond de URL wel op de monitoringkaart maar bestond er geen bronkaart.
+    """
+    organisatie = page.locator(
+        "button:has-text('Alleen verslag')",
+    ).first
+    if organisatie.count() == 0:
+        return c.overgeslagen("geen organisatie met alleen een ouder verslag")
+    organisatie.click()
+    page.wait_for_timeout(2500)
+    page.screenshot(path=str(UITVOER / "08-ouder-verslag.png"), full_page=True)
+    c.meld(
+        page.is_visible("text=/Verslagjaar \\d{4} — gevraagd is \\d{4}/"),
+        "vondstkaart zet het verslagjaar naast het gevraagde jaar",
+    )
+    c.meld(
+        page.is_visible("text=/Verslag \\d{4}, gevraagd is \\d{4}/"),
+        "bronkaart waarschuwt met beide jaartallen",
+    )
+    routes = page.locator("summary:has-text('Onderzoeksroutes')")
+    if routes.count() == 0:
+        return c.overgeslagen("geen routeoverzicht bij deze organisatie")
+    routes.first.click()
+    page.wait_for_timeout(600)
+    page.screenshot(path=str(UITVOER / "09-onderzoeksroutes.png"))
+    c.meld(page.is_visible("text=digimv"), "de DigiMV-route staat in het overzicht")
+    c.meld(
+        page.is_visible("text=/vond het verslag over het doeljaar al/"),
+        "het routeoverzicht noemt waarom een route is overgeslagen",
+    )
 
 
 def main() -> int:

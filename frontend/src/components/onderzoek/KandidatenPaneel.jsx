@@ -140,13 +140,23 @@ export function KandidatenPaneel({
             Onderzoeksroutes · {onderzoekspaden.filter((item) => item.status === "afgerond").length}
             /{onderzoekspaden.length} afgerond
           </summary>
-          <ul className="mt-2 space-y-1 text-xs text-slate-700">
+          <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
             {onderzoekspaden.map((item) => (
-              <li key={item.route} className="flex flex-wrap justify-between gap-x-4 gap-y-1">
-                <span>{item.route.replaceAll("_", " ")} · {item.reden}</span>
-                <span className="tabular-nums text-slate-500">
-                  {item.status}{item.aantal_bronnen != null ? ` · ${item.aantal_bronnen} bronnen` : ""}
-                </span>
+              <li key={item.route}>
+                <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                  <span>{item.route.replaceAll("_", " ")} · {item.reden}</span>
+                  <span className="tabular-nums text-slate-500">
+                    {item.status}{item.aantal_bronnen != null ? ` · ${item.aantal_bronnen} bronnen` : ""}
+                  </span>
+                </div>
+                {/* De backend legt per route vast waarom die status eruit kwam
+                    ("niet uitgevoerd binnen het querybudget", "de agent vond het
+                    verslag over het doeljaar al"). Dat stond nergens in de UI,
+                    dus "overgeslagen" en "mislukt" waren niet van elkaar te
+                    onderscheiden in oorzaak. */}
+                {item.statusreden ? (
+                  <p className="text-slate-500">{item.statusreden}</p>
+                ) : null}
               </li>
             ))}
           </ul>

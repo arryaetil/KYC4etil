@@ -1,6 +1,7 @@
 """Tests voor periodieke jaarverslag-monitoring."""
 import asyncio
 import asyncio as _asyncio_voor_lock  # alias voorkomt naamsbotsing met bovenstaande `import asyncio`
+from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -15,6 +16,7 @@ from app.models import (
 from app.pipeline import monitoring as monitoring_module
 from app.pipeline.monitoring import check_company_jaarverslag
 from app.providers.base import AgentFinding
+from app.research.validation import SourceDocument
 
 
 def _now() -> datetime:
@@ -1022,6 +1024,459 @@ def test_monitoringcontrole_legt_kosten_vast():
 
     assert isinstance(run, PipelineRun)
     assert run.kosten_cents == 3
+
+
+# --- oudere verslagen blijven beoordeelbaar ---
+
+@pytest.mark.asyncio
+async def test_monitoring_bewaart_ouder_verslag_als_beoordeelbare_bron(
+    db_session, monkeypatch,
+):
+    """Van de 26 organisaties op verslagjaar 2024 en de 13 op 2023 had er 0 een
+    bronkaart: `valideer_bron` wees het afwijkende verslagjaar hard af, waarna
+    `_sla_moderne_bron_op` terugkeerde vóór het opslaan. De reviewer zag de URL
+    wel op de monitoringkaart, maar had niets te beoordelen."""
+    company = _maak_company(db_session, naam="Achterloper")
+    company.website_url = "https://achterloper.test"
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=340,
+        context="In 2023 waren er 340 medewerkers in dienst.",
+        zekerheid="hoog",
+        reden="nieuwste beschikbare jaarverslag",
+        bron_url="https://achterloper.test/jaarverslag-2023.pdf",
+        bron_type="jaarverslag",
+        bron_pagina=12,
+    )
+
+    class Agent:
+        async def find_latest_source(self, *args, **kwargs):
+            return finding
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+
+    bron = db_session.query(BronKandidaat).filter_by(company_id=company.id).one()
+    assert bron.verslagjaar == 2023
+    assert bron.wp_gevonden == 340
+    assert bron.bron_pagina == 12
+    # Dezelfde sleutel die de batchflow gebruikt, zodat de reviewer één begrip
+    # ziet; de bronkaart maakt daar "Verslag 2023, gevraagd is 2025" van.
+    assert "afwijkend_verslagjaar" in bron.waarschuwingen
+    run = db_session.query(ResearchRun).filter_by(company_id=company.id).one()
+    assert run.gevraagd_jaar == 2025
+    assert run.resultaat_status == "review_nodig"
+
+
+@pytest.mark.asyncio
+async def test_vondst_zonder_jaartal_verdringt_gedateerde_baseline_niet(
+    db_session, monkeypatch,
+):
+    """Een jaarloze overzichtspagina liet het bekende verslagjaar verdwijnen.
+
+    De ouder-dan-check kijkt alleen naar een aantoonbaar lager jaartal; bij een
+    URL zonder jaartal liep de controle daar langs en zette `laatste_verslagjaar`
+    op None. Een organisatie mét het verslag over 2025 zakte zo stil terug naar
+    "verslag zonder jaartal", inclusief verlies van de goede URL. De vondst moet
+    wél als bronkandidaat bij de reviewer terechtkomen."""
+    company = _maak_company(db_session, naam="Jaarloos")
+    company.website_url = "https://jaarloos.test"
+    actuele_url = "https://jaarloos.test/jaarverslag-2025.pdf"
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id,
+        laatste_bron_url=actuele_url,
+        laatste_verslagjaar=2025,
+    ))
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=None,
+        context=None,
+        zekerheid="laag",
+        reden="overzichtspagina met jaarverslagen",
+        bron_url="https://jaarloos.test/publicaties/jaarverslagen/",
+        bron_type="jaarverslag",
+    )
+
+    class Agent:
+        async def find_latest_source(self, *args, **kwargs):
+            return finding
+
+        async def validate_source(self, *args, **kwargs):
+            return True
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    await check_company_jaarverslag(db_session, company, 2026)
+
+    status = db_session.query(JaarverslagMonitoring).filter_by(
+        company_id=company.id,
+    ).one()
+    assert status.laatste_bron_url == actuele_url
+    assert status.laatste_verslagjaar == 2025
+    kandidaten = db_session.query(BronKandidaat).filter_by(
+        company_id=company.id,
+    ).all()
+    assert [bron.url for bron in kandidaten] == [finding.bron_url]
+
+
+def test_ouder_verslag_van_een_andere_organisatie_blijft_afgewezen():
+    """De verslagjaar-uitzondering mag de identiteitscheck niet meenemen.
+
+    Een naam-match koppelde eerder een Zorgboog-jaarverantwoording aan
+    Stichting Pergamijn, inclusief 2.400 WP. Zo'n bron heeft twee
+    afwijsmotieven; alleen het verslagjaar mag worden kwijtgescholden."""
+    from app.research.validation import SourceDocument
+
+    validatie = monitoring_module._valideer_voor_monitoring(
+        SourceDocument(
+            naam="Stichting Pergamijn",
+            company_website_url="https://www.pergamijn.org",
+            url="https://www.zorgboog.nl/Jaarverantwoording-Zorgboog-2023.pdf",
+            titel="Jaarverantwoording-Zorgboog-2023.pdf",
+            brontype="jaarverslag",
+            documenttype="jaarverslag",
+            gevraagd_jaar=2025,
+            verslagjaar=2023,
+            wp_gevonden=2400,
+            eenheid="werkzame_personen",
+            bewijsfragment="2.400 medewerkers",
+        ),
+    )
+
+    assert validatie.is_afgewezen is True
+    assert "verkeerde organisatie" in validatie.afwijsredenen
+
+
+def test_verslagjaar_nieuwer_dan_gevraagd_blijft_afgewezen():
+    """Alleen ouder wordt bewaard. Een verslagjaar boven het gevraagde jaar komt
+    in de praktijk alleen voor als een publicatiedatum uit de URL is gelezen
+    (DSV: `.../filings/3363/2026/RNS/...`); dat als verslagjaar op een bronkaart
+    zetten zou een feit beweren dat we niet hebben."""
+    from app.research.validation import SourceDocument
+
+    validatie = monitoring_module._valideer_voor_monitoring(
+        SourceDocument(
+            naam="DSV",
+            company_website_url="https://www.dsv.test",
+            url="https://www.dsv.test/filings/3363/2026/RNS/3363_rns_2026-02-04.pdf",
+            titel="3363_rns_2026-02-04.pdf",
+            brontype="jaarverslag",
+            documenttype="jaarverslag",
+            gevraagd_jaar=2025,
+            verslagjaar=2026,
+        ),
+    )
+
+    assert validatie.is_afgewezen is True
+    assert validatie.afwijsredenen == ["verkeerd verslagjaar"]
+
+
+# --- DigiMV natief in de monitoring ---
+
+_UIT_DE_URL = object()
+
+
+def _digimv_document(
+    *,
+    verslagjaar: int | None = _UIT_DE_URL,
+    boekjaar: int = 2024,
+    wp_gevonden: int | None = 1204,
+    naam: str = "Zorgstichting Sint Anna",
+    titel: str = "bestuursverslag: Jaardocument.pdf",
+    bewijsfragment: str | None = "Het aantal medewerkers bedroeg 1.204.",
+) -> SourceDocument:
+    """Een DigiMV-document zoals `_zoek_digimv_document` het teruggeeft.
+
+    Let op de titel: een archiefbestand heet `Jaardocument.pdf` en staat op
+    `digimv13.desan.nl`, dus noemt noch de organisatie noch het jaar. Het
+    boekjaar zit alleen in de `year=`-parameter van de archief-URL; standaard
+    staat het verslagjaar daarop, zoals na die functie. `verslagjaar=None` geeft
+    de ruwe uitvoer van `live_tools.inspect`, vóór die verrijking."""
+    if verslagjaar is _UIT_DE_URL:
+        verslagjaar = boekjaar
+    return SourceDocument(
+        naam=naam,
+        company_website_url="https://sintanna.test",
+        url=(
+            "https://digimv13.desan.nl/api/ArchiveSearch/GetDocument"
+            f"?documentId=98765&year={boekjaar}&fileNameOption=&fileName="
+        ),
+        titel=titel,
+        tekst="",
+        brontype="digimv",
+        documenttype="jaarverslag",
+        gevraagd_jaar=2025,
+        verslagjaar=verslagjaar,
+        wp_gevonden=wp_gevonden,
+        eenheid="werkzame_personen" if wp_gevonden is not None else None,
+        bewijsfragment=bewijsfragment,
+        scope_class="concern",
+        research_route="digimv",
+        raw_data={"providers": ["digimv_direct"], "queries": ["DigiMV direct"]},
+    )
+
+
+@pytest.mark.asyncio
+async def test_monitoring_gebruikt_digimv_als_de_agent_niets_vindt(
+    db_session, monkeypatch,
+):
+    """Monitoring vroeg DigiMV nooit iets — de sterkste verklaring voor een groot
+    deel van de 108 watchlist-organisaties zonder bron, want hun
+    jaarverantwoording staat niet op de eigen website maar in dat archief."""
+    company = _maak_company(db_session, naam="Zorgstichting Sint Anna")
+    company.website_url = "https://sintanna.test"
+    db_session.commit()
+
+    class Agent:
+        async def find_latest_source(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setattr(
+        monitoring_module, "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+    monkeypatch.setattr(
+        monitoring_module, "get_settings",
+        lambda: SimpleNamespace(provider_mode="live"),
+    )
+
+    async def fake_digimv(company_arg, jaar, website_url):
+        assert jaar == 2026
+        assert website_url == "https://sintanna.test"
+        return _digimv_document()
+
+    monkeypatch.setattr(monitoring_module, "_zoek_digimv_document", fake_digimv)
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+
+    bron = db_session.query(BronKandidaat).filter_by(company_id=company.id).one()
+    # Het brontype en de concern-scope van het onderzochte document blijven
+    # staan; het wordt niet opnieuw als website-jaarverslag opgebouwd.
+    assert bron.brontype == "digimv"
+    assert bron.scope_class == "concern"
+    assert bron.wp_gevonden == 1204
+    # Het boekjaar komt uit de archief-URL, want de bestandsnaam noemt er geen.
+    assert bron.verslagjaar == 2024
+    assert "afwijkend_verslagjaar" in bron.waarschuwingen
+    status = db_session.query(JaarverslagMonitoring).filter_by(
+        company_id=company.id,
+    ).one()
+    assert status.laatste_verslagjaar == 2024
+    run = db_session.query(ResearchRun).filter_by(company_id=company.id).one()
+    paden = {item["route"]: item for item in run.onderzoekspaden}
+    assert paden["digimv"]["status"] == "afgerond"
+    assert paden["digimv"]["aantal_bronnen"] == 1
+    assert paden["document"]["aantal_bronnen"] == 0
+
+
+@pytest.mark.asyncio
+async def test_monitoring_vraagt_digimv_niet_bij_een_actueel_verslag(
+    db_session, monkeypatch,
+):
+    """Draait de gewone route al binnen, dan kost een archiefaanroep alleen tijd
+    en tokens. Doeljaar bij watchlistjaar 2026 is verslagjaar 2025."""
+    company = _maak_company(db_session, naam="Actueel Zorgcentrum")
+    company.website_url = "https://actueel.test"
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=88,
+        context="88 medewerkers in 2025",
+        zekerheid="hoog",
+        reden="jaarverslag over het doeljaar",
+        bron_url="https://actueel.test/jaarverslag-2025.pdf",
+        bron_type="jaarverslag",
+    )
+
+    class Agent:
+        async def find_latest_source(self, *args, **kwargs):
+            return finding
+
+    monkeypatch.setattr(
+        monitoring_module, "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    async def digimv_mag_niet_draaien(*_args, **_kwargs):
+        raise AssertionError("DigiMV is bevraagd terwijl het verslag actueel is")
+
+    monkeypatch.setattr(
+        monitoring_module, "_zoek_digimv_document", digimv_mag_niet_draaien,
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+
+    run = db_session.query(ResearchRun).filter_by(company_id=company.id).one()
+    paden = {item["route"]: item for item in run.onderzoekspaden}
+    assert paden["digimv"]["status"] == "overgeslagen"
+    assert paden["digimv"]["statusreden"] == monitoring_module.DIGIMV_NIET_NODIG
+    assert paden["document"]["aantal_bronnen"] == 1
+
+
+@pytest.mark.asyncio
+async def test_digimv_verdringt_een_nieuwer_verslag_van_de_agent_niet(
+    db_session, monkeypatch,
+):
+    """De archiefroute is een aanvulling, geen vervanging: een nieuwer verslag
+    van de gewone route blijft de bron."""
+    company = _maak_company(db_session, naam="Zorgstichting Sint Anna")
+    company.website_url = "https://sintanna.test"
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=90,
+        context="90 medewerkers",
+        zekerheid="middel",
+        reden="nieuwste verslag op de eigen site",
+        bron_url="https://sintanna.test/jaarverslag-2024.pdf",
+        bron_type="jaarverslag",
+    )
+
+    class Agent:
+        async def find_latest_source(self, *args, **kwargs):
+            return finding
+
+    monkeypatch.setattr(
+        monitoring_module, "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+    monkeypatch.setattr(
+        monitoring_module, "get_settings",
+        lambda: SimpleNamespace(provider_mode="live"),
+    )
+
+    async def fake_digimv(*_args, **_kwargs):
+        return _digimv_document(boekjaar=2023)
+
+    monkeypatch.setattr(monitoring_module, "_zoek_digimv_document", fake_digimv)
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+
+    bron = db_session.query(BronKandidaat).filter_by(company_id=company.id).one()
+    assert bron.url == finding.bron_url
+    run = db_session.query(ResearchRun).filter_by(company_id=company.id).one()
+    paden = {item["route"]: item for item in run.onderzoekspaden}
+    assert paden["digimv"]["status"] == "afgerond"
+    assert paden["digimv"]["aantal_bronnen"] == 0
+    assert paden["document"]["aantal_bronnen"] == 1
+
+
+@pytest.mark.asyncio
+async def test_digimv_wordt_in_mockmodus_niet_bevraagd(db_session, monkeypatch):
+    """Er is geen mockprovider voor het archief; `zoek_digimv_documenten` praat
+    rechtstreeks met digimv13.desan.nl. De testsuite mag daar nooit langs."""
+    company = _maak_company(db_session, naam="Mockorganisatie")
+
+    class Agent:
+        async def find_latest_source(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setattr(
+        monitoring_module, "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    async def digimv_mag_niet_draaien(*_args, **_kwargs):
+        raise AssertionError("DigiMV is bevraagd in mock-modus")
+
+    monkeypatch.setattr(
+        monitoring_module, "_zoek_digimv_document", digimv_mag_niet_draaien,
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is False
+
+
+@pytest.mark.asyncio
+async def test_digimv_document_wint_op_wp_bewijs_en_erft_het_boekjaar(
+    monkeypatch,
+):
+    """Van de archiefdocumenten hoort het document met WP-bewijs voor te gaan.
+
+    DigiMV levert per organisatie meerdere stukken; de accountantsverklaring
+    bevat per definitie geen personeelscijfer (zie `digimv.py`). De ranking van
+    de batchflow maakt die keuze al, dus die wordt hier hergebruikt."""
+    company = SimpleNamespace(
+        naam="Zorgstichting Sint Anna",
+        gemeente="Venlo",
+        kvk_nummer=None,
+        vestigingsnummer="000012345678",
+    )
+    zonder_wp = _digimv_document(
+        verslagjaar=None, wp_gevonden=None, bewijsfragment=None,
+        titel="accountantsverklaring: Verklaring.pdf",
+    )
+    met_wp = _digimv_document(verslagjaar=None)
+
+    async def fake_zoek(context, max_documenten=3):
+        assert context.gevraagd_jaar == 2025
+        assert context.gemeente == "Venlo"
+        return [
+            SimpleNamespace(queries=["DigiMV direct: zonder wp"]),
+            SimpleNamespace(queries=["DigiMV direct: met wp"]),
+        ]
+
+    monkeypatch.setattr(monitoring_module, "zoek_digimv_documenten", fake_zoek)
+
+    async def fake_inspect(self, context, query, result):
+        return zonder_wp if "zonder" in query.query else met_wp
+
+    monkeypatch.setattr(
+        monitoring_module.LiveResearchTools, "inspect", fake_inspect,
+    )
+
+    document = await monitoring_module._zoek_digimv_document(
+        company, 2026, "https://sintanna.test",
+    )
+
+    assert document is not None
+    assert document.wp_gevonden == 1204
+    # `inspect` gaf verslagjaar=None terug; het boekjaar komt uit de URL.
+    assert document.verslagjaar == 2024
+
+
+@pytest.mark.asyncio
+async def test_digimv_bron_wordt_niet_op_de_naamheuristiek_afgewezen():
+    """Een archiefbestand heet `Jaardocument.pdf` op digimv13.desan.nl, dus de
+    naamheuristiek vindt de organisatienaam nergens en riep "verkeerde
+    organisatie". DigiMV identificeert scherper (exact KvK of unieke exacte
+    kernnaam, fail-closed bij naamgenoten), dus die afwijzing mag hier niet
+    staan. Wel als `possible_match`: DigiMV kent de rechtspersoon, niet deze
+    vestiging."""
+    document = _digimv_document(
+        bewijsfragment="Het aantal medewerkers bedroeg 1.204.",
+    )
+
+    validatie = monitoring_module._valideer_voor_monitoring(document)
+
+    assert validatie.is_afgewezen is False
+    assert validatie.identity_class == "possible_match"
+    assert validatie.validaties["digimv_archiefidentificatie"]["heuristiek"] == (
+        "mismatch"
+    )
+
+
+@pytest.mark.asyncio
+async def test_niet_digimv_bron_blijft_op_de_naamheuristiek_afgewezen():
+    """De uitzondering geldt alleen voor het archief zelf. Een willekeurige
+    PDF van een ander domein blijft afgewezen — dat is de Zorgboog-bescherming."""
+    document = replace(
+        _digimv_document(),
+        url="https://www.zorgboog.nl/Jaarverantwoording-Zorgboog-2023.pdf",
+        brontype="jaarverslag",
+        research_route="document",
+    )
+
+    validatie = monitoring_module._valideer_voor_monitoring(document)
+
+    assert validatie.is_afgewezen is True
+    assert "verkeerde organisatie" in validatie.afwijsredenen
 
 
 def test_run_monitoring_watchlist_slaat_actuele_organisaties_over(monkeypatch):

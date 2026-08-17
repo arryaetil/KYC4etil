@@ -215,10 +215,18 @@ describe("bronwaarschuwingen", () => {
     expect(labels).toContain("Geteld uit namenlijst");
   });
 
-  it("waarschuwt bij een afwijkend verslagjaar", () => {
+  it("noemt bij een ouder verslag beide jaartallen", () => {
     const labels = bronwaarschuwingen({verslagjaar: 2024, gevraagd_jaar: 2025})
       .map((item) => item.label);
-    expect(labels).toContain("Ander verslagjaar");
+    expect(labels).toContain("Verslag 2024, gevraagd is 2025");
+  });
+
+  it("onderscheidt een verslag dat nieuwer is dan gevraagd van een ouder", () => {
+    // Komt voor als een publicatiedatum uit de URL als verslagjaar is gelezen.
+    // "Ander verslagjaar" maakte dat niet zichtbaar.
+    const labels = bronwaarschuwingen({verslagjaar: 2026, gevraagd_jaar: 2025})
+      .map((item) => item.label);
+    expect(labels).toEqual(["Verslag 2026, nieuwer dan gevraagd"]);
   });
 
   it("waarschuwt niet bij een gelijk verslagjaar", () => {
@@ -256,6 +264,8 @@ describe("bronwaarschuwingen", () => {
   });
 
   it("onderdrukt afwijkend_verslagjaar, want het jaarsignaal zegt dat al", () => {
+    // Zowel de batchflow (source_reviewer) als de monitoring zet deze sleutel
+    // bij een ouder verslag; zonder onderdrukking staat de melding er twee keer.
     const labels = bronwaarschuwingen({
       wp_gevonden: 47,
       eenheid: "werkzame_personen",
@@ -263,7 +273,7 @@ describe("bronwaarschuwingen", () => {
       gevraagd_jaar: 2025,
       waarschuwingen: ["afwijkend_verslagjaar"],
     }).map((item) => item.label);
-    expect(labels).toEqual(["Ander verslagjaar"]);
+    expect(labels).toEqual(["Verslag 2024, gevraagd is 2025"]);
   });
 
   it("onderdrukt scope_breder_dan_vestiging, want de bereikchip zegt dat al", () => {

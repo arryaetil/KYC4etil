@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 import time
+from dataclasses import replace
 from pathlib import PurePosixPath
 from urllib.parse import unquote, urlsplit
 
@@ -17,9 +18,14 @@ from ..models import (
 )
 from ..pipeline.identity_scope import heuristic_scope_class
 from ..providers import get_providers
+from ..providers.base import AgentFinding
+from ..research.digimv import zoek_digimv_documenten
+from ..research.live_tools import LiveResearchTools
+from ..research.query_planner import QueryContext
 from ..research.ranking import rank_bronnen
+from ..research.types import PlannedQuery
 from ..research.urls import canonicaliseer_url
-from ..research.validation import SourceDocument, valideer_bron
+from ..research.validation import BronValidatie, SourceDocument, valideer_bron
 from ..research.usage import get_cost_summary, start_usage_tracking
 from .runner import _log as _log_stap
 from .runner import _now
@@ -43,43 +49,295 @@ STATUS_OUDER_VERSLAG = "ouder_verslag"
 STATUS_ONGEWIJZIGD = "ongewijzigd"
 
 
+def _mag_ouder_verslag_bewaren(document: SourceDocument) -> bool:
+    """Is dit een verslag over een ouder jaar dan gevraagd, en niets ergers?
+
+    `valideer_bron` wijst een afwijkend verslagjaar hard af. Voor de
+    batchpipeline is dat juist: die zoekt gericht het verslag over één jaar.
+    Monitoring stelt een andere vraag — "wat is het nieuwste dat er is?" — en
+    verloor daardoor elke oudere vondst voordat die de reviewer bereikte:
+    `rank_bronnen` sloeg de afgewezen bron over, waarna `_sla_moderne_bron_op`
+    terugkeerde vóór het opslaan. Gemeten op de watchlist van 10-08-2026 had van
+    de 26 organisaties op verslagjaar 2024 en de 13 op 2023 er 0 een
+    beoordeelbare bronkaart; de URL stond alleen op de monitoringkaart.
+
+    Alleen ouder wordt bewaard. Een verslagjaar boven het gevraagde jaar komt in
+    de praktijk alleen voor als een publicatiedatum uit de URL is gelezen (DSV:
+    `.../filings/3363/2026/RNS/...`); dat als verslagjaar op een bronkaart zetten
+    zou een feit beweren dat we niet hebben.
+    """
+    return (
+        document.verslagjaar is not None
+        and document.gevraagd_jaar is not None
+        and document.verslagjaar < document.gevraagd_jaar
+    )
+
+
+def _is_digimv_archiefdocument(document: SourceDocument) -> bool:
+    return document.research_route == "digimv"
+
+
+def _valideer_voor_monitoring(document: SourceDocument) -> BronValidatie:
+    """Zelfde validatie als de batchpipeline, met twee lokale uitzonderingen.
+
+    Beide gebeuren hier en niet in `valideer_bron`: die is gedeeld met de
+    batchpipeline. Beide hebben daar ook een tegenhanger — de batchflow
+    neutraliseert dezelfde twee motieven in `research/source_reviewer.py`, waar
+    een LLM-reviewer de bron alsnog beoordeelt. Monitoring heeft die reviewer
+    niet en moet het dus deterministisch doen.
+
+    1. Een ouder verslagjaar blijft beoordeelbaar, met dezelfde
+       waarschuwingssleutel `afwijkend_verslagjaar` als de batchflow gebruikt,
+       zodat de reviewer één begrip ziet in plaats van twee. Zie
+       `_mag_ouder_verslag_bewaren`.
+
+    2. Een document uit het DigiMV-archief wordt niet afgewezen op de
+       naamheuristiek. Die heuristiek zoekt de organisatienaam in titel en
+       bewijsfragment, en een archiefbestand heet `Jaardocument.pdf` op
+       `digimv13.desan.nl` — dus luidde het oordeel "verkeerde organisatie"
+       precies zo vaak als de naam toevallig in het geciteerde zinnetje stond.
+       DigiMV zelf identificeert scherper: `digimv.py::_selecteer_organisatie`
+       geeft alleen documenten terug bij een exact KvK-nummer of een unieke
+       exacte kernnaam, en is fail-closed bij meerdere naamgenoten.
+       `source_reviewer.py` doet hetzelfde voor de gestructureerde DUO-bron.
+
+       Bewust géén `exact_entity`: DigiMV identificeert de rechtspersoon, niet
+       deze vestiging, en de watchlist heeft 0 KvK-nummers — de match loopt daar
+       dus over de kernnaam. De bron gaat naar de reviewer als
+       `possible_match` ("Mogelijk ander bedrijf", amber) met de identificatie
+       in `validaties`, zodat er niets wordt beweerd wat we niet weten.
+    """
+    validatie = valideer_bron(document)
+    if not validatie.is_afgewezen:
+        return validatie
+
+    resterend = list(validatie.afwijsredenen)
+    waarschuwingen = list(validatie.waarschuwingen)
+    validaties = dict(validatie.validaties)
+    identity_class = validatie.identity_class
+
+    if "verkeerd verslagjaar" in resterend and _mag_ouder_verslag_bewaren(document):
+        resterend.remove("verkeerd verslagjaar")
+        waarschuwingen.append("afwijkend_verslagjaar")
+    if (
+        "verkeerde organisatie" in resterend
+        and _is_digimv_archiefdocument(document)
+    ):
+        resterend.remove("verkeerde organisatie")
+        identity_class = "possible_match"
+        validaties["digimv_archiefidentificatie"] = {
+            "reden": "exacte organisatietreffer in het openbare DigiMV-archief",
+            "heuristiek": validatie.identity_class,
+        }
+
+    # Blijft er één motief over, dan wijst de bron af zoals hij was: de
+    # oorspronkelijke afwijsredenen blijven staan als reden voor de reviewer.
+    if resterend:
+        return validatie
+    return replace(
+        validatie,
+        identity_class=identity_class,
+        is_afgewezen=False,
+        afwijsredenen=[],
+        validaties=validaties,
+        waarschuwingen=waarschuwingen,
+    )
+
+
+# Reden waarom de DigiMV-route niet is uitgevoerd; None betekent: wél gedaan.
+DIGIMV_NIET_NODIG = "de jaarverslag-agent vond het verslag over het doeljaar al"
+DIGIMV_ALLEEN_LIVE = "het DigiMV-archief wordt alleen in live-modus bevraagd"
+
+
+def _monitoring_onderzoekspaden(
+    winnende_route: str,
+    digimv_statusreden: str | None,
+) -> list[dict]:
+    """Welke routes deze controle werkelijk heeft gelopen.
+
+    Stond hardcoded op `["document"]`, ook toen dat het enige pad was — het
+    paneel "Onderzoeksroutes" vertelde de reviewer dus altijd hetzelfde,
+    ongeacht wat er gebeurde. Vorm volgt `routers/research.py::_onderzoekspaden`
+    en `supervisor.py::route_statussen`, zodat monitoring- en batchruns in
+    dezelfde UI hetzelfde lezen. Oude runs met tekstpaden blijven werken: die
+    router zet een losse string zelf om.
+    """
+    return [
+        {
+            "route": "document",
+            "verplicht": True,
+            "status": "afgerond",
+            "reden": "de jaarverslag-agent zoekt het nieuwste jaarverslag",
+            "aantal_bronnen": 1 if winnende_route == "document" else 0,
+        },
+        {
+            "route": "digimv",
+            # Niet verplicht: een organisatie die niet in DigiMV staat levert
+            # vanzelf niets op. Dat is geen technische mislukking.
+            "verplicht": False,
+            "status": "overgeslagen" if digimv_statusreden else "afgerond",
+            "statusreden": digimv_statusreden or (
+                "document uit het archief gebruikt"
+                if winnende_route == "digimv"
+                else "geen bruikbaar archiefdocument gevonden"
+            ),
+            "reden": (
+                "het DigiMV-archief bevat de jaarverantwoording van "
+                "zorgorganisaties"
+            ),
+            "aantal_bronnen": 1 if winnende_route == "digimv" else 0,
+        },
+    ]
+
+
+def _als_agentfinding(document: SourceDocument) -> AgentFinding:
+    """Een onderzocht DigiMV-document in de vorm die deze controle al kent.
+
+    Zo hoeft de vergelijkingslogica hieronder (nieuwer verslagjaar, gewijzigde
+    URL, nieuw WP-getal) niet te weten waar de bron vandaan komt.
+    """
+    return AgentFinding(
+        wp_gevonden=document.wp_gevonden,
+        context=document.bewijsfragment,
+        # Monitoring rekent geen confidence uit; dit veld hoort bij het
+        # AgentFinding-contract en wordt hier door niets gelezen.
+        zekerheid="laag",
+        reden="rechtstreeks document uit het openbare DigiMV-archief",
+        bron_url=document.url,
+        bron_type="jaarverslag",
+        is_fte=document.eenheid == "fte",
+        peilmoment=document.informatie_peilmoment,
+        bron_pagina=document.bron_pagina,
+        raw=document.raw_data or {},
+    )
+
+
+async def _zoek_digimv_document(
+    company: Company,
+    jaar: int,
+    website_url: str | None,
+) -> SourceDocument | None:
+    """Het beste jaarverantwoordingsdocument uit het openbare DigiMV-archief.
+
+    Monitoring vroeg DigiMV nooit iets: `check_company_jaarverslag` riep alleen
+    de jaarverslag-agent aan. Voor zorgorganisaties is dat de sterkste
+    verklaring voor de 108 van de 205 watchlist-organisaties zonder bron — hun
+    jaarverantwoording staat niet op de eigen website maar in dit archief.
+
+    Bewust alleen deze ene sectorroute en niet het hele routeplan-apparaat: een
+    organisatie die niet in DigiMV staat levert vanzelf niets op, dus de lookup
+    is zijn eigen sectorbepaling. Een aparte sectorbepaling zou hier ook zwak
+    zijn: alle 205 organisaties missen een SBI-code en de naamfallback herkent
+    er 14 van de 32 zorgorganisaties (zie `research/sector_probe.py`).
+    """
+    context = QueryContext(
+        naam=company.naam,
+        gevraagd_jaar=jaar - 1,
+        website_url=website_url,
+        gemeente=company.gemeente,
+        huidig_jaar=jaar,
+        kvk_nummer=company.kvk_nummer,
+        vestigingsnummer=company.vestigingsnummer,
+    )
+
+    async def _veilig(coroutine, wat: str):
+        """Een falende archiefaanroep mag de controle niet stoppen, wel opvallen."""
+        try:
+            return await coroutine
+        except Exception as exc:
+            logging.getLogger("monitoring").warning(
+                "DigiMV %s mislukt voor %s (%s: %s)",
+                wat, company.naam, type(exc).__name__, str(exc)[:200],
+            )
+            return None
+
+    resultaten = await _veilig(zoek_digimv_documenten(context), "archiefzoekopdracht")
+    if not resultaten:
+        return None
+
+    tools = LiveResearchTools()
+    onderzocht = await asyncio.gather(*[
+        _veilig(
+            tools.inspect(
+                context,
+                PlannedQuery(
+                    "digimv",
+                    result.queries[0],
+                    "rechtstreeks document uit het openbare DigiMV-archief",
+                ),
+                result,
+            ),
+            "documentinspectie",
+        )
+        for result in resultaten
+    ])
+    documenten = [
+        # Het boekjaar staat in de archief-URL (`?year=`) en is het jaar
+        # waaronder DigiMV het document heeft aangeleverd gekregen. De
+        # bestandsnaam noemt vaak geen jaartal, waardoor `inspect` op None
+        # uitkomt — en zonder verslagjaar kan de monitoring niet zien of dit
+        # verslag actueel is.
+        replace(
+            document,
+            verslagjaar=_documentjaar(document.url) or document.verslagjaar,
+        )
+        for document in onderzocht if document is not None
+    ]
+    if not documenten:
+        return None
+    # Dezelfde ranking als de batchflow, zodat het document met echt WP-bewijs
+    # voorgaat op de accountantsverklaring ernaast.
+    ranked = rank_bronnen([
+        _valideer_voor_monitoring(document) for document in documenten
+    ])
+    return ranked[0].document if ranked else None
+
+
 def _sla_moderne_bron_op(
     db: Session,
     company: Company,
     jaar: int,
     finding,
+    document: SourceDocument | None = None,
+    onderzoekspaden: list[dict] | None = None,
 ) -> None:
-    """Maak een reviewbare bronkandidaat in het canonieke bronnenmodel."""
+    """Maak een reviewbare bronkandidaat in het canonieke bronnenmodel.
+
+    `document` is gevuld wanneer de bron al als SourceDocument is onderzocht (de
+    DigiMV-route). Dan houdt de bron zijn eigen brontype en concern-scope, in
+    plaats van hier opnieuw als website-jaarverslag te worden opgebouwd.
+    """
     gevraagd_jaar = jaar - 1
-    titel = unquote(PurePosixPath(urlsplit(finding.bron_url).path).name)
-    document = SourceDocument(
-        naam=company.naam,
-        company_website_url=(
-            (company.enrichment.website_url if company.enrichment else None)
-            or company.website_url
-        ),
-        url=finding.bron_url,
-        titel=titel or "Gevonden jaarverslag",
-        brontype="jaarverslag",
-        documenttype="jaarverslag",
-        gevraagd_jaar=gevraagd_jaar,
-        verslagjaar=_documentjaar(finding.bron_url),
-        informatie_peilmoment=finding.peilmoment,
-        wp_gevonden=finding.wp_gevonden,
-        eenheid=(
-            "fte" if finding.is_fte
-            else "werkzame_personen"
-            if finding.wp_gevonden is not None
-            else None
-        ),
-        bewijsfragment=finding.context,
-        bron_pagina=finding.bron_pagina,
-        scope_class=heuristic_scope_class(
-            finding.is_limburg_specifiek,
-            "jaarverslag",
-        ),
-    )
-    ranked = rank_bronnen([valideer_bron(document)])
+    if document is None:
+        titel = unquote(PurePosixPath(urlsplit(finding.bron_url).path).name)
+        document = SourceDocument(
+            naam=company.naam,
+            company_website_url=(
+                (company.enrichment.website_url if company.enrichment else None)
+                or company.website_url
+            ),
+            url=finding.bron_url,
+            titel=titel or "Gevonden jaarverslag",
+            brontype="jaarverslag",
+            documenttype="jaarverslag",
+            gevraagd_jaar=gevraagd_jaar,
+            verslagjaar=_documentjaar(finding.bron_url),
+            informatie_peilmoment=finding.peilmoment,
+            wp_gevonden=finding.wp_gevonden,
+            eenheid=(
+                "fte" if finding.is_fte
+                else "werkzame_personen"
+                if finding.wp_gevonden is not None
+                else None
+            ),
+            bewijsfragment=finding.context,
+            bron_pagina=finding.bron_pagina,
+            scope_class=heuristic_scope_class(
+                finding.is_limburg_specifiek,
+                "jaarverslag",
+            ),
+        )
+    ranked = rank_bronnen([_valideer_voor_monitoring(document)])
     run = ResearchRun(
         company_id=company.id,
         batch_id=company.batch_id,
@@ -87,7 +345,10 @@ def _sla_moderne_bron_op(
         gevraagd_jaar=gevraagd_jaar,
         status="completed",
         resultaat_status="review_nodig" if ranked else "niet_gevonden",
-        onderzoekspaden=["document"],
+        onderzoekspaden=(
+            onderzoekspaden
+            or _monitoring_onderzoekspaden("document", DIGIMV_NIET_NODIG)
+        ),
         configuratie={"bron": "jaarverslag_monitoring"},
         started_at=_now(),
         completed_at=_now(),
@@ -121,7 +382,9 @@ def _sla_moderne_bron_op(
         score_breakdown=bron.score_breakdown,
         validaties=bron.validaties,
         waarschuwingen=bron.waarschuwingen,
-        raw_data=finding.raw or None,
+        # Een al onderzocht document (DigiMV) draagt zijn eigen herkomst mee;
+        # bij de agentroute staat die alleen in de finding.
+        raw_data=document.raw_data or (finding.raw if finding else None) or None,
         status="voorgesteld",
         rang=1,
     ))
@@ -220,9 +483,11 @@ def _wp_is_nieuw_voor_bron(
 
 async def check_company_jaarverslag(db: Session, company: Company, jaar: int) -> bool:
     """Controleert of er een nieuw jaarverslag is t.o.v. de laatst bekende bron.
-    De laatst bekende bron_url wordt altijd bijgewerkt zodra de agent er één vindt,
-    ook als er geen WP-getal uit te halen was — zo houdt de monitoring altijd een
-    actuele link naar het meest recente jaarverslag bij. Een candidate wordt alleen
+    De laatst bekende bron_url wordt bijgewerkt zodra de agent er één vindt, ook
+    als er geen WP-getal uit te halen was — zo houdt de monitoring altijd een
+    actuele link naar het meest recente jaarverslag bij. Uitzondering: een vondst
+    zonder herkenbaar verslagjaar verdringt geen gedateerde baseline, want dan
+    zou het bekende jaartal verdwijnen. Een candidate wordt alleen
     aangemaakt/bijgewerkt als er zowel een nieuwe URL als een bruikbaar WP-getal is.
     Retourneert True als er een wijziging is vastgesteld (nieuwe URL, met of zonder
     WP-getal)."""
@@ -292,6 +557,43 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         if finding and finding.bron_url
         else None
     )
+
+    # DigiMV hangt ná de jaarverslag-agent en niet ernaast: het is een
+    # aanvulling voor wanneer de gewone route geen verslag over het doeljaar
+    # vindt. Draait de agent al binnen, dan kost een archiefaanroep alleen
+    # tijd en tokens.
+    digimv_document = None
+    digimv_statusreden = DIGIMV_NIET_NODIG
+    if gevonden_jaar is None or gevonden_jaar < jaar - 1:
+        if get_settings().provider_mode == "live":
+            digimv_statusreden = None
+            digimv_document = await _zoek_digimv_document(
+                company, jaar, website_url,
+            )
+        else:
+            # Er is geen mockprovider voor het DigiMV-archief; net als de
+            # seedbronnen in `research/service.py` draait deze route daarom
+            # alleen live.
+            digimv_statusreden = DIGIMV_ALLEEN_LIVE
+    if digimv_document is not None:
+        # `_zoek_digimv_document` heeft het boekjaar al uit de archief-URL
+        # gehaald; hier niet opnieuw afleiden, anders kunnen de bronkaart en de
+        # monitoringstatus een ander jaartal tonen voor hetzelfde document.
+        digimv_jaar = digimv_document.verslagjaar or 0
+        agent_jaar = gevonden_jaar or 0
+        # Gelijkspel op jaartal gaat naar DigiMV zodra alleen dáár een WP-getal
+        # uit komt: de jaarverantwoording is het document dat het aantal
+        # werkzame personen bevat, en dat is de reden om deze route te lopen.
+        if digimv_jaar > agent_jaar or (
+            digimv_jaar == agent_jaar
+            and digimv_document.wp_gevonden is not None
+            and (finding is None or finding.wp_gevonden is None)
+        ):
+            finding = _als_agentfinding(digimv_document)
+            gevonden_jaar = digimv_jaar or None
+        else:
+            digimv_document = None
+
     zelfde_gevalideerde_bron = bool(
         finding
         and finding.bron_url
@@ -392,8 +694,17 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
             and url_gewijzigd
         )
     )
-    status.laatste_bron_url = finding.bron_url
-    status.laatste_verslagjaar = gevonden_jaar
+    # Een vondst zonder herkenbaar verslagjaar mag een gedateerde baseline niet
+    # verdringen. De check hierboven vangt alleen een aantoonbaar ouder jaar op;
+    # bij `gevonden_jaar is None` liep de controle daar zo langs, waarna deze
+    # regels het jaartal op None zetten. Een organisatie met het verslag over
+    # 2025 zakte daardoor stil terug naar "verslag zonder jaartal" en de goede
+    # URL was weg. Zulke jaarloze overzichtspagina's zijn geen randgeval: op de
+    # watchlist van 10-08-2026 staan er 3 met een URL zonder jaartal.
+    # De vondst zelf gaat hieronder gewoon als bronkandidaat naar de reviewer.
+    if gevonden_jaar is not None or bestaand_jaar is None:
+        status.laatste_bron_url = finding.bron_url
+        status.laatste_verslagjaar = gevonden_jaar
 
     wp_is_nieuw = _wp_is_nieuw_voor_bron(
         db,
@@ -409,7 +720,17 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
 
     wijzigingsstatus = "new" if verslag_is_nieuw else "updated"
 
-    _sla_moderne_bron_op(db, company, jaar, finding)
+    _sla_moderne_bron_op(
+        db,
+        company,
+        jaar,
+        finding,
+        document=digimv_document,
+        onderzoekspaden=_monitoring_onderzoekspaden(
+            "digimv" if digimv_document is not None else "document",
+            digimv_statusreden,
+        ),
+    )
 
     _log(
         db,
