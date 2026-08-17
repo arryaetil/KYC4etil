@@ -135,11 +135,21 @@ Gemeenten publiceren "jaarstukken" of een "programmaverantwoording", geen
 watchlist bevat 16 gemeenten plus provincie, waterschap en veiligheidsregio.
 De queryvocabulaire staat in `query_planner.py`.
 
-### E. Serper-aanroepen staan niet in de kostenrapportage
+### E. Ingetrokken: Serper stond wél in de kostenrapportage
 
-`get_cost_summary()` gaf `providers: {openai_tokens: ...}` en verder niets,
-terwijl er wel gezocht is. Controles zonder PDF-extractie rapporteren daardoor
-0 cent. De kosten van een monitoringronde worden dus onderschat.
+Eerst opgeschreven als bevinding ("Serper-aanroepen worden niet geteld"), maar
+dat was een fout in mijn eigen meetscript. `providers/search.py` roept
+`record_provider_call("serper_search", kosten_micro_usd=1_000)` netjes aan. Ik
+las `get_cost_summary()` uit in het ouderproces, waar `start_usage_tracking()`
+nooit is aangeroepen — `check_batch_jaarverslagen` doet dat per organisatie in
+een eigen task. Vandaar een leeg overzicht.
+
+Wat er wél overblijft, is een afrondingseffect: `totaal_cents` is
+`round(micro_usd / 10_000)`, dus twee Serper-aanroepen (1.000 micro-USD elk)
+worden per organisatie 0 cent. Een rondetotaal dat per organisatie afgeronde
+centen optelt, valt daardoor te laag uit. `usage.py::neem_token_delta`
+documenteert precies deze afweging voor pipelinestappen; voor een rondetotaal
+zou je de micro-USD moeten optellen in plaats van de centen.
 
 ## Wat een misser meestal wél is
 
