@@ -57,10 +57,10 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
             {company.verslagjaar ? (
               <span className="text-sm font-medium text-ink">
                 Verslagjaar {company.verslagjaar}
-                {/* Zonder deze regel moet de reviewer zelf onthouden welk jaar
-                    gevraagd is om te zien of dit verslag nog achterloopt. */}
+                {/* Zonder deze regel moet de reviewer zelf onthouden om welk jaar
+                    het gaat, om te zien of dit verslag nog achterloopt. */}
                 {company.doeljaar && company.verslagjaar < company.doeljaar
-                  ? ` — gevraagd is ${company.doeljaar}`
+                  ? ` — peiljaar ${company.doeljaar}`
                   : ""}
               </span>
             ) : null}

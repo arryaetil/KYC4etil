@@ -324,7 +324,7 @@ export function peilmomentRelatie(candidate, {gevraagdJaar = null} = {}) {
     const achter = gevraagdJaar != null && jaar.jaar < gevraagdJaar;
     return {
       term: "Verslagjaar",
-      label: achter ? `${jaar.jaar} — gevraagd is ${gevraagdJaar}` : `${jaar.jaar}`,
+      label: achter ? `${jaar.jaar} — peiljaar ${gevraagdJaar}` : `${jaar.jaar}`,
       toon: achter ? "aandacht" : "neutraal",
     };
   }
@@ -422,9 +422,9 @@ const FORMELE_DOCUMENTTYPEN = new Set([
   "jaarverslag", "jaarrekening", "bestuursverslag", "pdf_document",
 ]);
 
-/** "2025" als het jaar bekend is, anders een omschrijving die net zo leest. */
-function jaarnaam(gevraagdJaar) {
-  return gevraagdJaar ? String(gevraagdJaar) : "het gevraagde jaar";
+/** "peiljaar 2025", of een omschrijving die net zo leest zonder jaartal. */
+function peiljaarnaam(gevraagdJaar) {
+  return gevraagdJaar ? `peiljaar ${gevraagdJaar}` : "het peiljaar";
 }
 
 /**
@@ -503,7 +503,7 @@ export function onderzoeksadvies(
     const leidendJaar = bronjaar(leidend)?.jaar ?? null;
     if (gevraagdJaar != null && leidendJaar != null && leidendJaar < gevraagdJaar) {
       letOp.push(
-        `Het sterkste cijfer komt uit ${leidendJaar}; gevraagd is ${gevraagdJaar}.`,
+        `Het sterkste cijfer komt uit ${leidendJaar}, peiljaar is ${gevraagdJaar}.`,
       );
     }
   }
@@ -541,7 +541,7 @@ export function onderzoeksadvies(
         toelichting:
           "Hetzelfde getal over meerdere jaren bevestigt elkaar niet — het "
           + "wijst er eerder op dat één bron de andere heeft overgenomen. "
-          + `Kies de bron die het dichtst bij ${jaarnaam(gevraagdJaar)} ligt.`,
+          + `Kies de bron die het dichtst bij ${peiljaarnaam(gevraagdJaar)} ligt.`,
         toon: "aandacht",
         letOp,
       };
@@ -596,7 +596,7 @@ export function onderzoeksadvies(
         toelichting:
           "De getallen verschillen, maar ze gaan over verschillende jaren — "
           + "dat kan groei zijn en hoeft geen tegenspraak te betekenen. "
-          + `Neem het cijfer dat het dichtst bij ${jaarnaam(gevraagdJaar)} ligt.`,
+          + `Neem het cijfer dat het dichtst bij ${peiljaarnaam(gevraagdJaar)} ligt.`,
         toon: "aandacht",
         letOp,
       };

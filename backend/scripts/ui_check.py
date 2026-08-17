@@ -260,19 +260,19 @@ def _controleer_achterlopende_vondst(page, c: Controle) -> None:
     page.wait_for_timeout(2500)
     page.screenshot(path=str(UITVOER / "08-ouder-verslag.png"), full_page=True)
     c.meld(
-        page.is_visible("text=/Verslagjaar \\d{4} — gevraagd is \\d{4}/"),
-        "vondstkaart zet het verslagjaar naast het gevraagde jaar",
+        page.is_visible("text=/Verslagjaar \\d{4} — peiljaar \\d{4}/"),
+        "vondstkaart zet het verslagjaar naast het peiljaar",
     )
     # Het jaar van de bron staat op precies één plek: de regel Verslagjaar (of
     # Peilmoment bij een website). Stond het er even op drie plekken in drie
     # formuleringen, wat het langslopen van kaarten juist moeilijker maakte.
     c.meld(
-        page.is_visible("text=/\\d{4} — gevraagd is \\d{4}/"),
-        "de Verslagjaar-regel zet het bronjaar naast het gevraagde jaar",
+        page.is_visible("text=/\\d{4} — peiljaar \\d{4}/"),
+        "de Verslagjaar-regel zet het bronjaar naast het peiljaar",
     )
     c.meld(
-        not page.is_visible("text=/Verslag \\d{4}, gevraagd is \\d{4}/"),
-        "geen losse chip die hetzelfde nog eens zegt",
+        not page.is_visible("text=/gevraagd is \\d{4}/"),
+        "het woord 'gevraagd' staat nergens meer op de kaart",
     )
     # Het samenvattend oordeel staat bóven de bronkaarten; zonder eigen assertie
     # zou een leeg of stukgelopen kaartje groen blijven.

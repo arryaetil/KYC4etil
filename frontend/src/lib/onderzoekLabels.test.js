@@ -241,7 +241,7 @@ describe("bronwaarschuwingen", () => {
     expect(labels).toEqual([]);
     expect(peilmomentRelatie(
       {verslagjaar: 2024, documenttype: "jaarverslag"}, {gevraagdJaar: 2025},
-    )).toEqual({term: "Verslagjaar", label: "2024 — gevraagd is 2025", toon: "aandacht"});
+    )).toEqual({term: "Verslagjaar", label: "2024 — peiljaar 2025", toon: "aandacht"});
   });
 
   it("zwijgt over een verslag dat nieuwer is dan gevraagd", () => {
@@ -636,7 +636,7 @@ describe("onderzoeksadvies", () => {
       [metGetal(412, {verslagjaar: 2024})], {gevraagdJaar: 2025},
     );
     expect(advies.kop).toBe("Eén bron met een getal: 412 WP (2024)");
-    expect(advies.letOp).toContain("Het sterkste cijfer komt uit 2024; gevraagd is 2025.");
+    expect(advies.letOp).toContain("Het sterkste cijfer komt uit 2024, peiljaar is 2025.");
   });
 
   it("waarschuwt niet als het cijfer uit het gevraagde jaar komt", () => {
