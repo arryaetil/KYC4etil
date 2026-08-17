@@ -48,9 +48,9 @@ async def test_digimv_zoekt_direct_en_dedupliceert_bestanden(monkeypatch):
     assert len(resultaten) == 2
     assert resultaten[0].providers == ["digimv_direct"]
     assert "documentId=11" in resultaten[0].url
-    # Peiljaar 2025 → boekjaar 2024: de jaarverantwoording over 2025 bestaat
-    # pas na 31 mei 2026. Op het peiljaar zelf antwoordt DigiMV met HTTP 500.
-    assert "year=2024" in resultaten[0].url
+    # Gevraagd verslagjaar 2025 → boekjaar 2025. Dat is het jaar waar de vraag
+    # over gaat; de documentlink moet dat boekjaar noemen, anders is hij dood.
+    assert "year=2025" in resultaten[0].url
 
 
 @pytest.mark.asyncio
@@ -72,11 +72,15 @@ async def test_digimv_weigert_ambigue_naam_zonder_exacte_identiteit(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_digimv_vraagt_nooit_het_peiljaar_zelf_op(monkeypatch):
-    """Regressie: `year=gevraagd_jaar` gaf altijd HTTP 500.
+async def test_digimv_begint_bij_het_gevraagde_verslagjaar(monkeypatch):
+    """Het gevraagde verslagjaar is meteen het eerste boekjaar.
 
-    `gevraagd_jaar` is `batch.jaar` (2026) en DigiMV archiveert per boekjaar.
-    Daardoor faalde elke aanroep stil: 16 inzetten in productie, 0 bronnen.
+    Deze functie telde twee jaar terug, uit de tijd dat `gevraagd_jaar` het
+    peiljaar was (`batch.jaar`); op het peiljaar zelf antwoordt DigiMV met HTTP
+    500. Inmiddels geven `service.py` en de monitoring `batch.jaar - 1` door,
+    dus het verslagjaar, en sloeg het terugtellen één jaar te ver door. Gemeten
+    op 17-08-2026 bij MeanderGroep: met boekjaren [2024, 2023] kwam het verslag
+    over 2024 terug, met [2025, 2024] dat over 2025 — dat lag er dus wél.
     """
     bevraagde_jaren: list[str] = []
 
@@ -88,12 +92,41 @@ async def test_digimv_vraagt_nooit_het_peiljaar_zelf_op(monkeypatch):
     monkeypatch.setattr("app.research.digimv.httpx.AsyncClient", _JaarClient)
     await zoek_digimv_documenten(QueryContext(
         naam="Stichting Voorbeeldzorg", gemeente="Heerlen",
-        gevraagd_jaar=2026, kvk_nummer="12345678",
+        gevraagd_jaar=2025, kvk_nummer="12345678",
     ))
 
     assert bevraagde_jaren, "er moet minstens één zoekopdracht uitgaan"
-    assert "2026" not in bevraagde_jaren
     assert bevraagde_jaren[0] == "2025"
+
+
+@pytest.mark.asyncio
+async def test_digimv_loopt_niet_vast_op_een_boekjaar_dat_nog_niet_bestaat(
+    monkeypatch,
+):
+    """Een aanroeper die per ongeluk het peiljaar doorgeeft, mag niet leeglopen.
+
+    DigiMV antwoordt op een toekomstig boekjaar met HTTP 500. Dat mag geen
+    exception opleveren en ook geen leeg resultaat: het tweede kandidaatboekjaar
+    hoort het bruikbare antwoord te geven."""
+    bevraagde_jaren: list[str] = []
+
+    class _ToekomstClient(_Client):
+        async def get(self, *args, **kwargs):
+            jaar = kwargs["params"]["year"]
+            bevraagde_jaren.append(jaar)
+            if jaar == "2026":
+                raise RuntimeError("HTTP 500: boekjaar bestaat nog niet")
+            return _Response()
+
+    monkeypatch.setattr("app.research.digimv.httpx.AsyncClient", _ToekomstClient)
+    resultaten = await zoek_digimv_documenten(QueryContext(
+        naam="Stichting Voorbeeldzorg", gemeente="Heerlen",
+        gevraagd_jaar=2026, kvk_nummer="12345678",
+    ))
+
+    assert bevraagde_jaren[0] == "2026"
+    assert "2025" in bevraagde_jaren
+    assert resultaten and "year=2025" in resultaten[0].url
 
 
 @pytest.mark.asyncio

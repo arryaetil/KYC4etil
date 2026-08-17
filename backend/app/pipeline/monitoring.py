@@ -255,19 +255,8 @@ async def _zoek_digimv_document(
             )
             return None
 
-    # `digimv.py::_kandidaat_boekjaren` telt twee jaar terug vanáf het gevraagde
-    # jaar, want dat veld was destijds het peiljaar (`batch.jaar`, 2026) en het
-    # boekjaar daarvan bestaat nog niet. Inmiddels geeft de flow `batch.jaar - 1`
-    # door, waardoor het archief om boekjaar 2024 en 2023 wordt gevraagd — nooit
-    # om het doeljaar zelf. Gemeten op 17-08-2026 bij MeanderGroep: met 2025 komt
-    # het verslag over 2024 terug, met 2026 het verslag over 2025, dat er dus wél
-    # ligt (jaarverantwoording over boekjaar X is uiterlijk 31 mei X+1 aangeleverd).
-    # Daarom één jaar hoger zoeken, en met het doeljaar inspecteren zodat de
-    # verslagjaarvergelijking blijft kloppen. De batchflow heeft deze afwijking
-    # ook; dat staat in `app/research/` en is niet aan deze module.
     resultaten = await _veilig(
-        zoek_digimv_documenten(replace(context, gevraagd_jaar=jaar)),
-        "archiefzoekopdracht",
+        zoek_digimv_documenten(context), "archiefzoekopdracht",
     )
     if not resultaten:
         return None

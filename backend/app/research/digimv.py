@@ -88,17 +88,30 @@ def _document_url(document_id: int, jaar: int) -> str:
 
 
 def _kandidaat_boekjaren(gevraagd_jaar: int) -> list[int]:
-    """DigiMV archiveert per boekjaar, niet per peiljaar.
+    """DigiMV archiveert per boekjaar; `gevraagd_jaar` is het gevraagde verslagjaar.
 
-    De jaarverantwoording over boekjaar X wordt pas uiterlijk 31 mei van X+1
-    aangeleverd. Voor peiljaar 2026 is boekjaar 2025 dus het recentste dat kan
-    bestaan — en `gevraagd_jaar` zelf bestaat per definitie nog niet. De API
-    antwoordt op een toekomstig jaar met HTTP 500, en omdat `gevraagd_jaar`
-    gelijk is aan `batch.jaar` (2026) faalde élke aanroep: 16 inzetten in
-    productie, 0 bronnen. Vandaar terugtellen, met één jaar extra speling voor
-    organisaties die het recentste boekjaar nog niet hebben aangeleverd.
+    Het gevraagde verslagjaar is meteen het gezochte boekjaar, met één jaar
+    speling erachter voor organisaties die het recentste boekjaar nog niet
+    hebben aangeleverd (de jaarverantwoording over boekjaar X komt uiterlijk
+    31 mei van X+1 binnen).
+
+    Deze functie telde eerder twee jaar terug, omdat `gevraagd_jaar` destijds
+    het peiljaar was (`batch.jaar`): op het peiljaar zelf antwoordt DigiMV met
+    HTTP 500, waardoor élke aanroep stil faalde — 16 inzetten in productie, 0
+    bronnen. Inmiddels geven zowel `service.py` als de monitoring `batch.jaar - 1`
+    door, dus het verslagjaar zelf. Daarmee sloeg het terugtellen één jaar te
+    ver door. Gemeten op 17-08-2026 bij Stichting MeanderGroep Zuid-Limburg,
+    verslagjaar 2025 gevraagd:
+
+        oude boekjaren [2024, 2023] -> "Bestuursverslag.pdf", boekjaar 2024
+        nieuwe boekjaren [2025, 2024] -> "Jaarverslag 2025 definitief
+                                          gestempeld", boekjaar 2025
+
+    Het verslag over het gevraagde jaar lag er dus wél. Een aanroeper die
+    alsnog een peiljaar doorgeeft, loopt niet vast: `_zoek_rijen` vangt de
+    HTTP 500 op en het tweede boekjaar levert dan het bruikbare antwoord.
     """
-    return [gevraagd_jaar - 1, gevraagd_jaar - 2]
+    return [gevraagd_jaar, gevraagd_jaar - 1]
 
 
 async def _zoek_rijen(client, naam: str, town: str, jaar: int) -> list[dict]:

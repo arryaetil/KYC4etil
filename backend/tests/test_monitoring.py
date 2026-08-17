@@ -1500,10 +1500,9 @@ async def test_digimv_document_wint_op_wp_bewijs_en_erft_het_boekjaar(
     met_wp = _digimv_document(verslagjaar=None)
 
     async def fake_zoek(context, max_documenten=3):
-        # Eén jaar hoger dan het doeljaar: `_kandidaat_boekjaren` telt twee jaar
-        # terug vanaf dit veld, dus met 2025 zou het archief alleen boekjaar 2024
-        # en 2023 aanbieden en het verslag over het doeljaar nooit.
-        assert context.gevraagd_jaar == 2026
+        # Het doeljaar, niet het peiljaar: `_kandidaat_boekjaren` neemt dit veld
+        # als eerste boekjaar en zoekt daarna één jaar terug.
+        assert context.gevraagd_jaar == 2025
         assert context.gemeente == "Venlo"
         return [
             SimpleNamespace(queries=["DigiMV direct: zonder wp"]),
