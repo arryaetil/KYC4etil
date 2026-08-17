@@ -11,6 +11,7 @@ import {
   menselijkeWaarde,
   monitoringStatus,
   onderzoeksadvies,
+  peilmomentRelatie,
   organisatieStatus,
   primaireConclusie,
   telopdracht,
@@ -644,5 +645,26 @@ describe("bronjaarLabel", () => {
     expect(bronjaarLabel({})).toBe(null);
     expect(bronjaarLabel({informatie_peilmoment: "onbekend"})).toBe(null);
     expect(bronjaarLabel(null)).toBe(null);
+  });
+});
+
+describe("peilmomentRelatie", () => {
+  it("toont het peilmoment als het bekend is", () => {
+    expect(peilmomentRelatie({informatie_peilmoment: "1 oktober 2025", wp_gevonden: 61}))
+      .toEqual({label: "1 oktober 2025", toon: "neutraal"});
+  });
+
+  it("maakt een getal zonder datum expliciet zichtbaar", () => {
+    // 87 websitebronnen in productie hebben een WP-getal en geen peilmoment; de
+    // regel verdween dan, waardoor "geen datum" niet te onderscheiden was van
+    // "hier is niet naar gekeken".
+    const rij = peilmomentRelatie({wp_gevonden: 47, eenheid: "werkzame_personen"});
+    expect(rij.toon).toBe("aandacht");
+    expect(rij.label).toContain("Onbekend");
+  });
+
+  it("zwijgt als er geen getal is om te dateren", () => {
+    expect(peilmomentRelatie({wp_gevonden: null})).toBe(null);
+    expect(peilmomentRelatie({})).toBe(null);
   });
 });

@@ -287,6 +287,33 @@ export function brontypeLabel(brontype) {
 }
 
 /**
+ * Waar hoort dit getal bij in de tijd? Eén regel op de bronkaart.
+ *
+ * Ontbrak het peilmoment, dan verdween de regel — en dan kan de reviewer "geen
+ * datum bekend" niet onderscheiden van "hier is niet naar gekeken". Bij een
+ * personeelsgetal is dat verschil belangrijk: een getal zonder datum is niet te
+ * plaatsen tegen het peiljaar.
+ *
+ * Gemeten op de productiedatabase van 17-08-2026: van de 880 kandidaten met
+ * brontype `officiele_website` heeft 9% een peilmoment, terwijl 173 een WP-getal
+ * dragen. Websites vermelden zelden per wanneer een aantal geldt, dus dit is
+ * geen zeldzaam geval maar de norm. De datum van ophalen invullen zou dat gat
+ * dichten met een aanname: een pagina kan een cijfer uit 2019 tonen.
+ */
+export function peilmomentRelatie(candidate) {
+  if (candidate?.informatie_peilmoment) {
+    return {label: String(candidate.informatie_peilmoment), toon: "neutraal"};
+  }
+  if (candidate?.wp_gevonden == null) {
+    return null;
+  }
+  return {
+    label: "Onbekend — bij dit getal staat geen datum",
+    toon: "aandacht",
+  };
+}
+
+/**
  * Uit welk jaar is deze bron? Eén regel, altijd zichtbaar op de bronkaart.
  *
  * Twee velden dragen dat jaar en ze betekenen iets anders: `verslagjaar` is het

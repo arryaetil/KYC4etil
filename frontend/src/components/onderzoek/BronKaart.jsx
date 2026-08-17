@@ -4,7 +4,7 @@ import {classNames} from "../../lib/format.js";
 import {
   TOON_STYLE, bedrijfRelatie, bereikLabel, bereikRelatie, bewijsRelatie,
   bronjaarLabel, bronwaarschuwingen, brontypeLabel, identiteitLabel,
-  menselijkeWaarde, primaireConclusie, telopdracht,
+  menselijkeWaarde, peilmomentRelatie, primaireConclusie, telopdracht,
 } from "../../lib/onderzoekLabels.js";
 
 const TOON_TEKST = {
@@ -28,7 +28,8 @@ function Signaal({label, toon}) {
 function Kaartrij({label, waarde}) {
   return (
     <div className="flex gap-3">
-      <dt className="w-16 shrink-0 text-slate-500">{label}</dt>
+      {/* w-20 en niet w-16: "Peilmoment" is het langste label en brak anders af. */}
+      <dt className="w-20 shrink-0 text-slate-500">{label}</dt>
       <dd className={classNames("flex-1", TOON_TEKST[waarde.toon])}>
         <span
           aria-hidden="true"
@@ -67,6 +68,7 @@ export function BronKaart({
   const bereik = bereikLabel(candidate.scope_class);
   const waarschuwingen = bronwaarschuwingen({...candidate, gevraagd_jaar: gevraagdJaar});
   const bronjaar = bronjaarLabel(candidate);
+  const peilmomentRij = peilmomentRelatie(candidate);
   const telling = telopdracht(candidate);
   const beoordeeld = ["geaccepteerd", "alternatief", "afgewezen"].includes(candidate.status);
 
@@ -126,12 +128,10 @@ export function BronKaart({
         <Kaartrij label="Bewijs" waarde={bewijsRij} />
         {/* Het peilmoment hoort bij het getal, niet bij het document: een
             jaarverslag over 2025 kan een stand per 1 oktober noemen. Stond
-            eerder alleen in de dichtgeklapte onderbouwing. */}
-        {candidate.informatie_peilmoment ? (
-          <Kaartrij
-            label="Peilmoment"
-            waarde={{label: candidate.informatie_peilmoment, toon: "neutraal"}}
-          />
+            eerder alleen in de dichtgeklapte onderbouwing, en verdween helemaal
+            als het onbekend was — juist bij websites de norm. */}
+        {peilmomentRij ? (
+          <Kaartrij label="Peilmoment" waarde={peilmomentRij} />
         ) : null}
         <Kaartrij label="Actie" waarde={{label: waarde.actie, toon: "neutraal"}} />
       </dl>
