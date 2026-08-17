@@ -263,18 +263,19 @@ def _controleer_achterlopende_vondst(page, c: Controle) -> None:
         page.is_visible("text=/Verslagjaar \\d{4} — gevraagd is \\d{4}/"),
         "vondstkaart zet het verslagjaar naast het gevraagde jaar",
     )
+    # Het jaar van de bron staat op precies één plek: de regel Verslagjaar (of
+    # Peilmoment bij een website). Stond het er even op drie plekken in drie
+    # formuleringen, wat het langslopen van kaarten juist moeilijker maakte.
     c.meld(
-        page.is_visible("text=/Verslag \\d{4}, gevraagd is \\d{4}/"),
-        "bronkaart waarschuwt met beide jaartallen",
+        page.is_visible("text=/\\d{4} — gevraagd is \\d{4}/"),
+        "de Verslagjaar-regel zet het bronjaar naast het gevraagde jaar",
+    )
+    c.meld(
+        not page.is_visible("text=/Verslag \\d{4}, gevraagd is \\d{4}/"),
+        "geen losse chip die hetzelfde nog eens zegt",
     )
     # Het samenvattend oordeel staat bóven de bronkaarten; zonder eigen assertie
     # zou een leeg of stukgelopen kaartje groen blijven.
-    # Het jaar van de bron hoort zonder klik zichtbaar te zijn: of een bron over
-    # het goede jaar gaat is de eerste vraag bij een jaarverslag.
-    c.meld(
-        page.is_visible("text=/verslagjaar \\d{4}|peilmoment \\d{4}/"),
-        "bronkaart noemt het jaar van de bron zonder openklappen",
-    )
     advies = page.locator("section[aria-label='Samenvattend oordeel']").first
     c.meld(advies.count() > 0, "samenvattend oordeel staat boven de bronnen")
     if advies.count():

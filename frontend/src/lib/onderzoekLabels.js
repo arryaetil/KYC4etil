@@ -289,10 +289,20 @@ export function brontypeLabel(brontype) {
 /**
  * Waar hoort dit getal bij in de tijd? Eén regel op de bronkaart.
  *
- * Ontbrak het peilmoment, dan verdween de regel — en dan kan de reviewer "geen
- * datum bekend" niet onderscheiden van "hier is niet naar gekeken". Bij een
- * personeelsgetal is dat verschil belangrijk: een getal zonder datum is niet te
- * plaatsen tegen het peiljaar.
+ * Dit is de ENIGE plek op de kaart waar het jaar van een bron staat. Het stond
+ * er even op drie: in de kop naast het brontype, in deze regel, en als chip
+ * onder het citaat ("Verslag 2024, gevraagd is 2025") — drie formuleringen van
+ * één feit, op drie hoogtes. Wie de kaarten langsloopt moet zijn oog op één
+ * plek kunnen houden, dus het staat hier en nergens anders. Het achterlopen op
+ * het gevraagde jaar staat in dezelfde regel, want dat gaat over hetzelfde.
+ *
+ * De regel staat er altijd, ook zonder datum en ook zonder getal. Verdween hij,
+ * dan kan de reviewer "geen datum bekend" niet onderscheiden van "hier is niet
+ * naar gekeken". Bij een personeelsgetal is dat verschil belangrijk: een getal
+ * zonder datum is niet te plaatsen tegen het peiljaar. En bij een bron zonder
+ * getal is de datering even goed een openstaande vraag — dat de regel daar
+ * eerder wegviel, maakte een half onderzochte bron ononderscheidbaar van een
+ * bron waarin niets te vinden was.
  *
  * Gemeten op de productiedatabase van 17-08-2026: van de 880 kandidaten met
  * brontype `officiele_website` heeft 9% een peilmoment, terwijl 173 een WP-getal
@@ -300,20 +310,38 @@ export function brontypeLabel(brontype) {
  * geen zeldzaam geval maar de norm. De datum van ophalen invullen zou dat gat
  * dichten met een aanname: een pagina kan een cijfer uit 2019 tonen.
  */
-export function peilmomentRelatie(candidate) {
-  if (candidate?.informatie_peilmoment) {
-    return {label: String(candidate.informatie_peilmoment), toon: "neutraal"};
+export function peilmomentRelatie(candidate, {gevraagdJaar = null} = {}) {
+  if (!candidate) return null;
+  const jaar = bronjaar(candidate);
+
+  // Een jaarverslag heeft een verslagjaar, geen peilmoment — het label van de
+  // regel past zich aan in plaats van dat er een tweede regel bij komt.
+  if (jaar?.soort === "verslagjaar") {
+    const achter = gevraagdJaar != null && jaar.jaar < gevraagdJaar;
+    return {
+      term: "Verslagjaar",
+      label: achter ? `${jaar.jaar} — gevraagd is ${gevraagdJaar}` : `${jaar.jaar}`,
+      toon: achter ? "aandacht" : "neutraal",
+    };
   }
-  if (candidate?.wp_gevonden == null) {
-    return null;
+  if (candidate.informatie_peilmoment) {
+    return {
+      term: "Peilmoment",
+      label: String(candidate.informatie_peilmoment),
+      toon: "neutraal",
+    };
   }
   const aanwijzing = jaaraanwijzing(candidate);
   if (aanwijzing) {
     // Toon "aandacht", niet "neutraal": dit jaartal dateert de bron en niet het
     // getal. Een teampagina uit 2023 kan een cijfer van eerder tonen.
-    return {label: `${aanwijzing.jaar} — ${aanwijzing.herkomst}`, toon: "aandacht"};
+    return {
+      term: "Peilmoment",
+      label: `${aanwijzing.jaar} — ${aanwijzing.herkomst}`,
+      toon: "aandacht",
+    };
   }
-  return {label: "Onbekend", toon: "aandacht"};
+  return {term: "Peilmoment", label: "Niet bekend", toon: "aandacht"};
 }
 
 /**
@@ -368,26 +396,32 @@ function jaaraanwijzing(candidate) {
  * alleen in de dichtgeklapte onderbouwing, dus moest de reviewer per kaart
  * openklappen om te zien of een bron over het goede jaar ging.
  */
-export function bronjaarLabel(candidate) {
+export function bronjaar(candidate) {
   if (candidate?.verslagjaar && isVerslagbron(candidate)) {
-    return `verslagjaar ${candidate.verslagjaar}`;
+    return {jaar: candidate.verslagjaar, soort: "verslagjaar"};
   }
   const peilmoment = String(candidate?.informatie_peilmoment || "");
-  const jaar = peilmoment.match(/(19|20)\d{2}/);
-  if (jaar) {
-    return `peilmoment ${jaar[0]}`;
+  const gevonden = peilmoment.match(/(19|20)\d{2}/);
+  if (gevonden) {
+    return {jaar: Number(gevonden[0]), soort: "peilmoment"};
   }
   // Zonder opgegeven peilmoment de aanwijzing uit de bron zelf. Websites geven
   // zelden aan per wanneer een aantal geldt (9% van 880 kandidaten met
   // brontype `officiele_website`, gemeten 17-08-2026), dus zonder deze
   // terugval blijft de kaart van een website vrijwel altijd jaarloos.
   const aanwijzing = jaaraanwijzing(candidate);
-  return aanwijzing ? `peilmoment ${aanwijzing.jaar}` : null;
+  return aanwijzing ? {jaar: aanwijzing.jaar, soort: "peilmoment"} : null;
 }
+
 
 const FORMELE_DOCUMENTTYPEN = new Set([
   "jaarverslag", "jaarrekening", "bestuursverslag", "pdf_document",
 ]);
+
+/** "2025" als het jaar bekend is, anders een omschrijving die net zo leest. */
+function jaarnaam(gevraagdJaar) {
+  return gevraagdJaar ? String(gevraagdJaar) : "het gevraagde jaar";
+}
 
 /**
  * Eén oordeel boven de bronnenlijst: wat is er gevonden en hoe hard is het.
@@ -405,8 +439,18 @@ const FORMELE_DOCUMENTTYPEN = new Set([
  * `letOp` bevat de voorbehouden die bij het gevonden bewijs horen. Ze staan los
  * van de hoofdregel omdat ze het oordeel niet veranderen maar wel meewegen:
  * een concerncijfer blijft een concerncijfer, ook als twee bronnen het noemen.
+ *
+ * Het jaar van een bron telt mee in het oordeel, niet alleen in de losse
+ * kaarten. Twee redenen. Ten eerste is "zo recent mogelijk" onderdeel van wat
+ * een bron waard maakt: een bevestigd getal uit 2019 is zwakker bewijs dan één
+ * getal uit het gevraagde jaar. Ten tweede is een verschil tussen twee getallen
+ * over twee jaren geen tegenspraak maar groei — dat als "bronnen spreken elkaar
+ * tegen" presenteren stuurt de reviewer op zoek naar een fout die er niet is.
  */
-export function onderzoeksadvies(items, {onderzoekspaden = []} = {}) {
+export function onderzoeksadvies(
+  items,
+  {onderzoekspaden = [], gevraagdJaar = null} = {},
+) {
   const bronnen = (items || []).filter((item) => item.status !== "afgewezen");
   if (!bronnen.length) {
     const mislukt = onderzoekspaden.filter((pad) => pad.status === "mislukt");
@@ -450,6 +494,14 @@ export function onderzoeksadvies(items, {onderzoekspaden = []} = {}) {
     if (["nederland", "concern", "instelling"].includes(leidend.scope_class)) {
       letOp.push("Het cijfer geldt breder dan deze vestiging.");
     }
+    // Dezelfde grens als de chip op de bronkaart (`bronwaarschuwingen`), zodat
+    // het oordeel boven de lijst niet iets anders zegt dan de kaart eronder.
+    const leidendJaar = bronjaar(leidend)?.jaar ?? null;
+    if (gevraagdJaar != null && leidendJaar != null && leidendJaar < gevraagdJaar) {
+      letOp.push(
+        `Het sterkste cijfer komt uit ${leidendJaar}; gevraagd is ${gevraagdJaar}.`,
+      );
+    }
   }
   if (bronnen.some((item) => item.eenheid === "fte") && !metWp.length) {
     letOp.push("Er is alleen een FTE-cijfer; FTE is geen WP.");
@@ -469,9 +521,30 @@ export function onderzoeksadvies(items, {onderzoekspaden = []} = {}) {
     };
   }
 
+  const jaren = [...new Set(
+    metWp.map((item) => bronjaar(item)?.jaar).filter((jaar) => jaar != null),
+  )];
+  const nieuwste = jaren.length ? Math.max(...jaren) : null;
+
   if (waarden.length === 1 && metWp.length >= 2) {
+    if (jaren.length > 1) {
+      // Hetzelfde getal over verschillende jaren is zwakker bewijs, geen
+      // sterker: waarschijnlijk heeft één bron de andere overgeschreven, of
+      // staat er ergens een verouderd cijfer.
+      return {
+        kop: `${metWp.length} bronnen noemen ${waarden[0]} WP, maar over `
+          + `verschillende jaren (${[...jaren].sort().join(", ")})`,
+        toelichting:
+          "Hetzelfde getal over meerdere jaren bevestigt elkaar niet — het "
+          + "wijst er eerder op dat één bron de andere heeft overgenomen. "
+          + `Kies de bron die het dichtst bij ${jaarnaam(gevraagdJaar)} ligt.`,
+        toon: "aandacht",
+        letOp,
+      };
+    }
     return {
-      kop: `${metWp.length} bronnen noemen hetzelfde aantal: ${waarden[0]} WP`,
+      kop: `${metWp.length} bronnen noemen hetzelfde aantal: ${waarden[0]} WP`
+        + (nieuwste ? ` (${nieuwste})` : ""),
       toelichting:
         "Dat is de sterkste bevestiging die deze werkbank kan geven — "
         + "onafhankelijke bronnen die op hetzelfde getal uitkomen.",
@@ -480,19 +553,65 @@ export function onderzoeksadvies(items, {onderzoekspaden = []} = {}) {
     };
   }
   if (waarden.length > 1) {
+    // Zijn de getallen van verschillende jaren, dan is dit geen tegenspraak.
+    const perWaarde = waarden.map((waarde) => {
+      const bron = metWp.find((item) => item.wp_gevonden === waarde);
+      const jaar = bronjaar(bron)?.jaar ?? null;
+      return {waarde, jaar};
+    });
+    const gedateerd = perWaarde.filter((item) => item.jaar != null);
+    const ongedateerd = perWaarde.filter((item) => item.jaar == null);
+    // Zonder jaartallen blijft de compacte opsomming staan ("47 en 52 WP");
+    // pas als er een jaar bij hoort krijgt elk getal zijn eigen achtervoegsel.
+    const beschrijving = gedateerd.length
+      ? perWaarde
+        .map((item) => `${item.waarde} WP${item.jaar ? ` (${item.jaar})` : ""}`)
+        .join(" en ")
+      : `${waarden.join(" en ")} WP`;
+    if (ongedateerd.length) {
+      letOp.push(
+        ongedateerd.length === 1
+          ? `Bij ${ongedateerd[0].waarde} WP staat geen jaar; dat getal is niet te plaatsen.`
+          : `Bij ${ongedateerd.length} getallen staat geen jaar.`,
+      );
+    }
+
+    const jarenVanWaarden = [...new Set(gedateerd.map((item) => item.jaar))];
+    if (jarenVanWaarden.length >= 2) {
+      // Een deel van het verschil is uit de tijd te verklaren, dus "tegenspraak"
+      // is hier het verkeerde woord. De nieuwste komt vooraan te staan: dat is
+      // het cijfer waar de reviewer meestal naartoe wil.
+      const nieuwsteBron = gedateerd
+        .slice()
+        .sort((a, b) => b.jaar - a.jaar)[0];
+      return {
+        kop: waarden.length > 2
+          ? `${waarden.length} verschillende getallen — nieuwste: `
+            + `${nieuwsteBron.waarde} WP (${nieuwsteBron.jaar})`
+          : `Verschillende peilmomenten: ${beschrijving}`,
+        toelichting:
+          "De getallen verschillen, maar ze gaan over verschillende jaren — "
+          + "dat kan groei zijn en hoeft geen tegenspraak te betekenen. "
+          + `Neem het cijfer dat het dichtst bij ${jaarnaam(gevraagdJaar)} ligt.`,
+        toon: "aandacht",
+        letOp,
+      };
+    }
     return {
-      kop: `Bronnen spreken elkaar tegen: ${waarden.join(" en ")} WP`,
+      kop: `Bronnen spreken elkaar tegen: ${beschrijving}`,
       toelichting:
-        "Verschillende bronnen noemen een ander aantal. Vergelijk de "
-        + "peilmomenten en de scope voordat je er één kiest.",
+        "Verschillende bronnen noemen een ander aantal over hetzelfde jaar. "
+        + "Vergelijk de scope en het citaat voordat je er één kiest.",
       toon: "aandacht",
       letOp,
     };
   }
   if (metWp.length === 1) {
     const bron = metWp[0];
+    const jaar = bronjaar(bron)?.jaar ?? null;
     return {
-      kop: `Eén bron met een getal: ${bron.wp_gevonden} WP`,
+      kop: `Eén bron met een getal: ${bron.wp_gevonden} WP`
+        + (jaar ? ` (${jaar})` : ""),
       toelichting: bron.bewijsfragment
         ? "Er is één getal, met een citaat erbij. Controleer het citaat en de scope."
         : "Er is één getal, maar zonder citaat. Open de bron om het te verifiëren.",
@@ -569,12 +688,15 @@ export function menselijkeWaarde(candidate) {
     };
   }
   if (candidate?.documenttype === "duo_personeel_personen") {
+    // Terugval voor kandidaten van vóór de DUO-tak in `_menselijke_waarde`;
+    // dezelfde strekking, zodat oude en nieuwe runs niet anders lezen.
+    const codes = (candidate.raw_data?.instellingscodes || []).join(", ");
     return {
       rol: "duo_personeelsbron",
       label: "DUO-personeelscijfer",
       actie: candidate.wp_gevonden == null
-        ? "Controleer de deelinstellingen; DUO-waarden zijn bewust niet opgeteld."
-        : "Controleer of de DUO-instelling en het bereik overeenkomen met de registratievestiging.",
+        ? `Open het DUO-bestand (Excel) en beoordeel welke instellingscode${codes ? ` (${codes})` : ""} bij deze vestiging hoort; de waarden zijn bewust niet opgeteld.`
+        : `Open het DUO-bestand (Excel)${codes ? ` en zoek instellingscode ${codes}` : ""}. DUO telt onderwijspersoneel per instelling, niet per locatie.`,
     };
   }
   if (
@@ -620,26 +742,10 @@ export function menselijkeWaarde(candidate) {
 export function bronwaarschuwingen(candidate) {
   if (!candidate) return [];
   const items = [];
-  // Alleen wanneer een verslagbron achterloopt. Twee gevallen die hier eerder
-  // wél een chip kregen en die geschrapt zijn:
-  //
-  // - een verslagjaar boven het gevraagde jaar. Dat komt in de praktijk uit een
-  //   publicatiedatum in de URL, en "nieuwer dan gevraagd" is geen probleem dat
-  //   de reviewer moet oplossen.
-  // - een website of nieuwsartikel. Die hebben geen verslagjaar in de zin van
-  //   "gaat over dit jaar", dus "dit verslag loopt achter" zei daar niets.
-  //   Het jaar van zulke bronnen staat als peilmoment op de kaart.
-  if (
-    candidate.gevraagd_jaar != null
-    && candidate.verslagjaar != null
-    && candidate.verslagjaar < candidate.gevraagd_jaar
-    && isVerslagbron(candidate)
-  ) {
-    items.push({
-      label: `Verslag ${candidate.verslagjaar}, gevraagd is ${candidate.gevraagd_jaar}`,
-      toon: "aandacht",
-    });
-  }
+  // Geen chip meer over het verslagjaar. Die zei hetzelfde als de regel
+  // Verslagjaar bovenin ("2024 — gevraagd is 2025"), maar in andere woorden en
+  // op een andere hoogte op de kaart. Eén feit hoort op één plek te staan;
+  // wie tien kaarten langsloopt moet zijn oog niet hoeven verplaatsen.
   for (const waarschuwing of candidate.waarschuwingen || []) {
     const sleutel = String(waarschuwing);
     if (sleutel in WAARSCHUWING) {

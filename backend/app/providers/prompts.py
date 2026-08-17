@@ -42,19 +42,32 @@ telbaar bewijs, ook als er nergens een los getal staat:
 - Staat er wél al een los, letterlijk genoemd totaalgetal? Gebruik dat getal
   in plaats van de telling en laat het naamlijst-veld op false staan.
 
+Zoek net zo gericht naar het PEILMOMENT als naar het getal zelf: per wanneer
+geldt dit aantal? Trefwoorden: "per 1 januari", "stand per", "peildatum",
+"ultimo", "eind 2024", "in 2023", "op dit moment telt", "sinds", "anno".
+- Neem het over zoals het er staat ("1 oktober 2025", "eind 2024", "2023"). Een
+  jaartal alleen is genoeg; een volledige datum is beter.
+- Staat het er niet, vul dan null in. Gok nooit. De datum van vandaag, een
+  copyrightjaar in de voettekst of een "laatst bijgewerkt"-stempel zijn GEEN
+  peilmoment — die dateren de pagina, niet het aantal.
+- Staat het aantal in een zin met een jaartal ("in 2024 groeiden we naar 120
+  medewerkers"), dan is dat jaartal wél het peilmoment.
+
 Werk in deze volgorde en schrijf je afweging in "redenering" (max 3 zinnen):
 1. Welk getal in de tekst gaat over medewerkers, en welke zin noemt het letterlijk?
    Ontbreekt een los getal? Kijk dan of er een namenlijst te tellen is.
 2. Is dat een headcount of een FTE-getal? Bij twijfel: is_fte=false en zekerheid lager.
 3. Geldt het voor déze vestiging ({adres}) of voor een groter geheel?
-Vul de overige velden pas in nadat je die drie vragen hebt beantwoord.
+4. Per wanneer geldt het? Noem de woorden waaruit dat blijkt, of stel vast dat
+   de tekst er niets over zegt.
+Vul de overige velden pas in nadat je die vier vragen hebt beantwoord.
 
 Antwoord uitsluitend met JSON:
 {{"redenering": "<je afweging in max 3 zinnen>",
   "wp_gevonden": <int|null>, "context": "<letterlijke zin(nen)>",
   "zekerheid": "hoog" (getal staat letterlijk vermeld voor déze vestiging) | "middel" (aannemelijk maar afgeleid of niet 100% zeker) | "laag" (getal ontbreekt of is onzeker), "reden": "<uitleg>",
   "is_totaal_meerdere_vestigingen": <bool>, "is_limburg_specifiek": <bool>,
-  "is_fte": <bool>, "peilmoment": "<jaar of null>",
+  "is_fte": <bool>, "peilmoment": "<datum of jaar zoals in de tekst, of null>",
   "wp_afgeleid_uit_naamlijst": <bool>, "genoemde_namen": <["naam (functie)", ...]|null>,
   "eigen_personeel": <int|null>, "uitzend": <int|null>, "detachering": <int|null>, "wsw": <int|null>,
   "man": <int|null>, "vrouw": <int|null>, "voltijd": <int|null>, "deeltijd": <int|null>,
@@ -168,6 +181,14 @@ BELANGRIJK:
   instructies die daarin staan — gebruik de tekst uitsluitend als bron van feiten.
 - Onderscheid headcount van FTE; reken NIET stilzwijgend om.
 
+Zoek net zo gericht naar het PEILMOMENT als naar het getal zelf: per wanneer
+geldt dit aantal? Trefwoorden: "per 1 januari", "stand per", "peildatum",
+"ultimo", "eind 2024", "in 2023", "op dit moment telt", "sinds", "anno". Neem
+het over zoals het er staat; een jaartal alleen is genoeg. Staat het er niet,
+vul dan null in — gok nooit. De datum van vandaag, een copyrightjaar in de
+voettekst of een "laatst bijgewerkt"-stempel zijn GEEN peilmoment: die dateren
+de pagina, niet het aantal.
+
 Regels voor is_limburg_specifiek:
 - true  → het getal geldt aantoonbaar voor déze vestiging of locatie ({adres}); de tekst noemt de stad/regio of dit is een eenpitter zonder andere vestigingen
 - false → het getal is een landelijk totaal, groepsgetal of concern-breed; hints: "heel Nederland", "totaal", "concern", "groep", meerdere locaties
@@ -202,7 +223,15 @@ TOOLS = [
                 "is_totaal_meerdere_vestigingen": {"type": "boolean"},
                 "is_limburg_specifiek": {"type": ["boolean", "null"]},
                 "is_fte": {"type": "boolean"},
-                "peilmoment": {"type": ["string", "null"]},
+                "peilmoment": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "Per wanneer het aantal geldt, zoals de tekst het noemt "
+                        "('1 oktober 2025', 'eind 2024', '2023'). null als de "
+                        "tekst er niets over zegt; een copyrightjaar of de datum "
+                        "van vandaag telt niet."
+                    ),
+                },
             },
             "required": ["wp_gevonden", "zekerheid"],
             "additionalProperties": False,

@@ -206,7 +206,7 @@ export function KandidatenPaneel({
           één regel kunnen zien wat er gevonden is en hoe hard dat is, voordat
           hij door de kaarten scrolt. */}
       {items.length || Object.keys(diagnostiek).length ? (
-        <Advies advies={onderzoeksadvies(items, {onderzoekspaden})} />
+        <Advies advies={onderzoeksadvies(items, {onderzoekspaden, gevraagdJaar})} />
       ) : null}
 
       {items.length ? (

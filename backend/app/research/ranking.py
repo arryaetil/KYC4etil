@@ -111,6 +111,29 @@ def _menselijke_waarde(bron: BronValidatie) -> dict[str, str]:
         and document.eenheid == "werkzame_personen"
         and bool(document.bewijsfragment)
     )
+    if document.documenttype == "duo_personeel_personen":
+        # Zonder eigen tak viel DUO door naar "Register- of sectorbron", met de
+        # actie "controleer organisatie-identiteit en vestigingsscope". Dat zegt
+        # niet wat de reviewer hier voor zich heeft: één landelijk Excel-bestand
+        # per sector, waaruit dit getal op instellingscode is gefilterd. De
+        # frontend had die tak wel, maar deze waarde overschrijft die.
+        codes = (document.raw_data or {}).get("instellingscodes") or []
+        codetekst = ", ".join(codes)
+        return {
+            "rol": "duo_personeelsbron",
+            "label": "DUO-personeelscijfer",
+            "actie": (
+                "Open het DUO-bestand (Excel, tabblad owtype-best-instelling) en "
+                f"beoordeel welke instellingscode ({codetekst}) bij deze "
+                "vestiging hoort; de waarden zijn bewust niet opgeteld omdat "
+                "personen bij meerdere instellingen kunnen meetellen."
+                if document.wp_gevonden is None
+                else "Open het DUO-bestand (Excel, tabblad owtype-best-instelling) "
+                f"en zoek instellingscode {codetekst}. Controleer of die "
+                "instelling deze vestiging dekt: DUO telt onderwijspersoneel per "
+                "instelling, niet per locatie."
+            ),
+        }
     telopdracht = bron.validaties.get("naamlijst_telling_aan_reviewer")
     if telopdracht:
         namen = telopdracht.get("genoemde_namen") or []
