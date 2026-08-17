@@ -307,10 +307,51 @@ export function peilmomentRelatie(candidate) {
   if (candidate?.wp_gevonden == null) {
     return null;
   }
-  return {
-    label: "Onbekend — bij dit getal staat geen datum",
-    toon: "aandacht",
-  };
+  const aanwijzing = jaaraanwijzing(candidate);
+  if (aanwijzing) {
+    // Toon "aandacht", niet "neutraal": dit jaartal dateert de bron en niet het
+    // getal. Een teampagina uit 2023 kan een cijfer van eerder tonen.
+    return {label: `${aanwijzing.jaar} — ${aanwijzing.herkomst}`, toon: "aandacht"};
+  }
+  return {label: "Onbekend", toon: "aandacht"};
+}
+
+/**
+ * Is dit een bron met een verslagjaar, of alleen met een peilmoment?
+ *
+ * Een jaarverslag gaat over een jaar; een website of nieuwsartikel niet. Bij
+ * zo'n bron is "verslagjaar" het verkeerde woord en "dit verslag loopt achter"
+ * een zinloze mededeling — een teampagina is geen verslag over 2023.
+ */
+function isVerslagbron(candidate) {
+  return (
+    FORMELE_DOCUMENTTYPEN.has(candidate?.documenttype)
+    || ["jaarverslag", "digimv"].includes(candidate?.brontype)
+  );
+}
+
+/**
+ * Uit welk jaar lijkt deze bron te zijn, en waaraan zie je dat?
+ *
+ * Voor een jaarverslag is het jaar een vaststelling; bij een website of
+ * nieuwsartikel is het een aanwijzing. Die aanwijzing wordt hier wél getoond —
+ * hem verzwijgen omdat hij niet hard is laat de reviewer met niets achter,
+ * terwijl `/nieuws/2023/...` een bruikbaar signaal is. De herkomst staat erbij
+ * zodat de reviewer zelf kan wegen hoe hard het jaartal is.
+ *
+ * Volgorde: het jaar in de URL gaat vóór `verslagjaar`, want bij een
+ * niet-verslagbron komt dat veld uit een jaartal ergens in de paginatekst en
+ * krijgt het gevraagde jaar daar de voorkeur — een pagina die "2025" noemt
+ * heet dan van 2025 te zijn.
+ */
+function jaaraanwijzing(candidate) {
+  if (candidate?.jaar_uit_url) {
+    return {jaar: candidate.jaar_uit_url, herkomst: "jaar uit de link"};
+  }
+  if (candidate?.verslagjaar) {
+    return {jaar: candidate.verslagjaar, herkomst: "jaar uit de bron"};
+  }
+  return null;
 }
 
 /**
@@ -328,12 +369,20 @@ export function peilmomentRelatie(candidate) {
  * openklappen om te zien of een bron over het goede jaar ging.
  */
 export function bronjaarLabel(candidate) {
-  if (candidate?.verslagjaar) {
+  if (candidate?.verslagjaar && isVerslagbron(candidate)) {
     return `verslagjaar ${candidate.verslagjaar}`;
   }
   const peilmoment = String(candidate?.informatie_peilmoment || "");
   const jaar = peilmoment.match(/(19|20)\d{2}/);
-  return jaar ? `peilmoment ${jaar[0]}` : null;
+  if (jaar) {
+    return `peilmoment ${jaar[0]}`;
+  }
+  // Zonder opgegeven peilmoment de aanwijzing uit de bron zelf. Websites geven
+  // zelden aan per wanneer een aantal geldt (9% van 880 kandidaten met
+  // brontype `officiele_website`, gemeten 17-08-2026), dus zonder deze
+  // terugval blijft de kaart van een website vrijwel altijd jaarloos.
+  const aanwijzing = jaaraanwijzing(candidate);
+  return aanwijzing ? `peilmoment ${aanwijzing.jaar}` : null;
 }
 
 const FORMELE_DOCUMENTTYPEN = new Set([
@@ -571,19 +620,23 @@ export function menselijkeWaarde(candidate) {
 export function bronwaarschuwingen(candidate) {
   if (!candidate) return [];
   const items = [];
+  // Alleen wanneer een verslagbron achterloopt. Twee gevallen die hier eerder
+  // wél een chip kregen en die geschrapt zijn:
+  //
+  // - een verslagjaar boven het gevraagde jaar. Dat komt in de praktijk uit een
+  //   publicatiedatum in de URL, en "nieuwer dan gevraagd" is geen probleem dat
+  //   de reviewer moet oplossen.
+  // - een website of nieuwsartikel. Die hebben geen verslagjaar in de zin van
+  //   "gaat over dit jaar", dus "dit verslag loopt achter" zei daar niets.
+  //   Het jaar van zulke bronnen staat als peilmoment op de kaart.
   if (
     candidate.gevraagd_jaar != null
     && candidate.verslagjaar != null
-    && candidate.gevraagd_jaar !== candidate.verslagjaar
+    && candidate.verslagjaar < candidate.gevraagd_jaar
+    && isVerslagbron(candidate)
   ) {
-    // Noem beide jaren. "Ander verslagjaar" liet de reviewer zelf uitzoeken
-    // welk jaar er dan gevraagd was, en verzweeg of dit verslag ouder of
-    // nieuwer is. Monitoring bewaart oudere verslagen sinds kort bewust als
-    // beoordeelbare bron, dus dat onderscheid moet op de kaart staan.
     items.push({
-      label: candidate.verslagjaar < candidate.gevraagd_jaar
-        ? `Verslag ${candidate.verslagjaar}, gevraagd is ${candidate.gevraagd_jaar}`
-        : `Verslag ${candidate.verslagjaar}, nieuwer dan gevraagd`,
+      label: `Verslag ${candidate.verslagjaar}, gevraagd is ${candidate.gevraagd_jaar}`,
       toon: "aandacht",
     });
   }

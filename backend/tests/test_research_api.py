@@ -83,6 +83,57 @@ def test_candidates_normaliseert_oude_onderzoekspaden(client, db_session):
     assert client.get(f"/research/runs/{run.id}").json()["onderzoekspaden"] == verwacht
 
 
+def test_candidates_dateren_een_website_op_het_jaar_in_de_url(client, db_session):
+    """Het jaartal uit de URL komt mee, ook bij kandidaten die er al stonden.
+
+    Het wordt bij het uitserveren afgeleid en niet opgeslagen, juist zodat het
+    voor bestaande bronnen meteen geldt. `verslagjaar` blijft leeg: dat veld
+    stuurt validatie en ranking aan, en een nieuwsartikel is geen verslag.
+    """
+    company = _maak_company(db_session)
+    run = ResearchRun(
+        company_id=company.id,
+        batch_id=company.batch_id,
+        doel="bronjaar",
+        status="completed",
+    )
+    db_session.add(run)
+    db_session.flush()
+    db_session.add_all([
+        BronKandidaat(
+            research_run_id=run.id,
+            company_id=company.id,
+            url="https://nieuws.example/nieuws/2023/05/voorbeeld-groeit",
+            canonical_url="https://nieuws.example/nieuws/2023/05/voorbeeld-groeit",
+            brontype="media",
+            documenttype="nieuwsartikel",
+            status="voorgesteld",
+            rang=1,
+        ),
+        BronKandidaat(
+            research_run_id=run.id,
+            company_id=company.id,
+            url="https://voorbeeldzorg.nl/over-ons/team",
+            canonical_url="https://voorbeeldzorg.nl/over-ons/team",
+            brontype="officiele_website",
+            documenttype="teampagina",
+            status="voorgesteld",
+            rang=2,
+        ),
+    ])
+    db_session.commit()
+
+    response = client.get(f"/research/companies/{company.id}/candidates")
+
+    assert response.status_code == 200
+    per_url = {item["url"]: item for item in response.json()["items"]}
+    nieuwsartikel = per_url["https://nieuws.example/nieuws/2023/05/voorbeeld-groeit"]
+    assert nieuwsartikel["jaar_uit_url"] == 2023
+    assert nieuwsartikel["verslagjaar"] is None
+    # Geen jaartal in de URL blijft eerlijk leeg in plaats van een aanname.
+    assert per_url["https://voorbeeldzorg.nl/over-ons/team"]["jaar_uit_url"] is None
+
+
 def test_reviewer_kan_een_primaire_bron_per_run_accepteren(client, db_session):
     company = _maak_company(db_session)
     run = ResearchRun(

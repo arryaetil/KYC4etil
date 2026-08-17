@@ -232,23 +232,36 @@ describe("bronwaarschuwingen", () => {
   });
 
   it("noemt bij een ouder verslag beide jaartallen", () => {
-    const labels = bronwaarschuwingen({verslagjaar: 2024, gevraagd_jaar: 2025})
+    const labels = bronwaarschuwingen({
+      verslagjaar: 2024, gevraagd_jaar: 2025, documenttype: "jaarverslag",
+    })
       .map((item) => item.label);
     expect(labels).toContain("Verslag 2024, gevraagd is 2025");
   });
 
-  it("onderscheidt een verslag dat nieuwer is dan gevraagd van een ouder", () => {
-    // Komt voor als een publicatiedatum uit de URL als verslagjaar is gelezen.
-    // "Ander verslagjaar" maakte dat niet zichtbaar.
-    const labels = bronwaarschuwingen({verslagjaar: 2026, gevraagd_jaar: 2025})
-      .map((item) => item.label);
-    expect(labels).toEqual(["Verslag 2026, nieuwer dan gevraagd"]);
+  it("zwijgt over een verslag dat nieuwer is dan gevraagd", () => {
+    // Komt uit een publicatiedatum in de URL en is geen probleem dat de
+    // reviewer moet oplossen.
+    const labels = bronwaarschuwingen({
+      verslagjaar: 2026, gevraagd_jaar: 2025, documenttype: "jaarverslag",
+    }).map((item) => item.label);
+    expect(labels).toEqual([]);
+  });
+
+  it("zegt niets over een verslagjaar bij een website of nieuwsartikel", () => {
+    // Een teampagina is geen verslag over 2023, dus "dit verslag loopt achter"
+    // is daar een zinloze mededeling. Het jaar staat als peilmoment op de kaart.
+    const labels = bronwaarschuwingen({
+      verslagjaar: 2023, gevraagd_jaar: 2025,
+      brontype: "officiele_website", documenttype: "teampagina",
+    }).map((item) => item.label);
+    expect(labels).toEqual([]);
   });
 
   it("waarschuwt niet bij een gelijk verslagjaar", () => {
     const labels = bronwaarschuwingen({
       verslagjaar: 2025, gevraagd_jaar: 2025, wp_gevonden: 47,
-      eenheid: "werkzame_personen",
+      eenheid: "werkzame_personen", documenttype: "jaarverslag",
     }).map((item) => item.label);
     expect(labels).toEqual([]);
   });
@@ -287,6 +300,7 @@ describe("bronwaarschuwingen", () => {
       eenheid: "werkzame_personen",
       verslagjaar: 2024,
       gevraagd_jaar: 2025,
+      documenttype: "jaarverslag",
       waarschuwingen: ["afwijkend_verslagjaar"],
     }).map((item) => item.label);
     expect(labels).toEqual(["Verslag 2024, gevraagd is 2025"]);
@@ -624,8 +638,51 @@ describe("onderzoeksadvies", () => {
 });
 
 describe("bronjaarLabel", () => {
-  it("noemt het verslagjaar als dat bekend is", () => {
-    expect(bronjaarLabel({verslagjaar: 2025})).toBe("verslagjaar 2025");
+  it("noemt het verslagjaar bij een verslagbron", () => {
+    expect(bronjaarLabel({verslagjaar: 2025, documenttype: "jaarverslag"}))
+      .toBe("verslagjaar 2025");
+  });
+
+  it("noemt hetzelfde jaar bij een website een peilmoment", () => {
+    // "verslagjaar" is bij een teampagina het verkeerde woord, maar het jaar
+    // zelf moet de reviewer wel zien.
+    expect(bronjaarLabel({
+      verslagjaar: 2025, brontype: "officiele_website", documenttype: "teampagina",
+    })).toBe("peilmoment 2025");
+    expect(bronjaarLabel({
+      brontype: "media", informatie_peilmoment: "2024",
+    })).toBe("peilmoment 2024");
+  });
+
+  it("dateert een website zonder peilmoment op het jaar in de link", () => {
+    // Het gat dat dit dicht: een nieuwsartikel zonder opgegeven peilmoment had
+    // helemaal geen jaar op de kaart, terwijl de URL het jaartal draagt.
+    expect(bronjaarLabel({
+      brontype: "media", documenttype: "nieuwsartikel", jaar_uit_url: 2023,
+    })).toBe("peilmoment 2023");
+  });
+
+  it("laat het jaar in de link voorgaan op het jaar uit de paginatekst", () => {
+    // `verslagjaar` komt bij een website uit een jaartal ergens in de tekst,
+    // met voorkeur voor het gevraagde jaar. De URL is het hardere signaal.
+    expect(bronjaarLabel({
+      brontype: "officiele_website", documenttype: "webpagina",
+      verslagjaar: 2025, jaar_uit_url: 2021,
+    })).toBe("peilmoment 2021");
+  });
+
+  it("laat een opgegeven peilmoment voorgaan op het jaar in de link", () => {
+    expect(bronjaarLabel({
+      brontype: "media", jaar_uit_url: 2023, informatie_peilmoment: "1 juni 2022",
+    })).toBe("peilmoment 2022");
+  });
+
+  it("gebruikt het jaar in de link niet bij een verslagbron", () => {
+    // Daar staat het verslagjaar al, en dat is de vaststelling.
+    expect(bronjaarLabel({
+      brontype: "jaarverslag", documenttype: "jaarverslag",
+      verslagjaar: 2024, jaar_uit_url: 2025,
+    })).toBe("verslagjaar 2024");
   });
 
   it("valt terug op het jaar uit het peilmoment", () => {
@@ -637,8 +694,10 @@ describe("bronjaarLabel", () => {
   it("noemt welk van de twee je ziet: ze kunnen verschillen", () => {
     // Een jaarverslag over 2025 met een stand per 1 oktober 2025; het
     // verslagjaar gaat voor, want dat is het jaar van de bron zelf.
-    expect(bronjaarLabel({verslagjaar: 2025, informatie_peilmoment: "1 oktober 2024"}))
-      .toBe("verslagjaar 2025");
+    expect(bronjaarLabel({
+      verslagjaar: 2025, documenttype: "jaarverslag",
+      informatie_peilmoment: "1 oktober 2024",
+    })).toBe("verslagjaar 2025");
   });
 
   it("zwijgt als er geen jaar bekend is", () => {
@@ -660,7 +719,22 @@ describe("peilmomentRelatie", () => {
     // "hier is niet naar gekeken".
     const rij = peilmomentRelatie({wp_gevonden: 47, eenheid: "werkzame_personen"});
     expect(rij.toon).toBe("aandacht");
-    expect(rij.label).toContain("Onbekend");
+    expect(rij.label).toBe("Onbekend");
+  });
+
+  it("noemt de aanwijzing uit de bron, met waar die vandaan komt", () => {
+    // "Onbekend" terwijl de URL /nieuws/2023/ is, is te weinig gezegd. Het
+    // blijft toon "aandacht": dit dateert de bron, niet het getal.
+    expect(peilmomentRelatie({wp_gevonden: 47, jaar_uit_url: 2023}))
+      .toEqual({label: "2023 — jaar uit de link", toon: "aandacht"});
+    expect(peilmomentRelatie({wp_gevonden: 47, verslagjaar: 2022}))
+      .toEqual({label: "2022 — jaar uit de bron", toon: "aandacht"});
+  });
+
+  it("laat een echt peilmoment voorgaan op de aanwijzing", () => {
+    expect(peilmomentRelatie({
+      wp_gevonden: 47, informatie_peilmoment: "31 december 2024", jaar_uit_url: 2026,
+    })).toEqual({label: "31 december 2024", toon: "neutraal"});
   });
 
   it("zwijgt als er geen getal is om te dateren", () => {

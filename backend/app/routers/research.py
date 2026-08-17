@@ -16,7 +16,7 @@ from ..models import (
 )
 from ..research.service import maak_research_run, run_research_run
 from ..providers.live import USER_AGENT
-from ..research.urls import canonicaliseer_url
+from ..research.urls import canonicaliseer_url, jaar_uit_url
 
 router = APIRouter(
     prefix="/research",
@@ -94,6 +94,12 @@ def _candidate_dict(
         "brontype": candidate.brontype,
         "documenttype": candidate.documenttype,
         "verslagjaar": candidate.verslagjaar,
+        # Afgeleid bij het uitserveren en niet opgeslagen: het is een lezing van
+        # de URL, geen vondst van het onderzoek. Zo geldt het meteen voor alle
+        # kandidaten die er al staan, en kan het nooit in de scoring of in een
+        # validatie belanden — `verslagjaar` doet dat wél (een afwijkend
+        # verslagjaar wijst `valideer_bron` hard af).
+        "jaar_uit_url": jaar_uit_url(candidate.url),
         "publicatiedatum": (
             candidate.publicatiedatum.isoformat()
             if candidate.publicatiedatum else None

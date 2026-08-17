@@ -2,7 +2,6 @@
 en reconciliatie-/confidence-logica, maar draait buiten een handmatige batch-run om."""
 import asyncio
 import logging
-import re
 import time
 from dataclasses import replace
 from pathlib import PurePosixPath
@@ -25,6 +24,7 @@ from ..research.query_planner import QueryContext
 from ..research.ranking import rank_bronnen
 from ..research.types import PlannedQuery
 from ..research.urls import canonicaliseer_url
+from ..research.urls import jaar_uit_url as _documentjaar
 from ..research.validation import BronValidatie, SourceDocument, valideer_bron
 from ..research.usage import get_cost_summary, start_usage_tracking
 from .runner import _log as _log_stap
@@ -408,30 +408,6 @@ def _sla_moderne_bron_op(
         status="voorgesteld",
         rang=1,
     ))
-
-
-def _documentjaar(url: str | None) -> int | None:
-    if not url:
-        return None
-    decoded = unquote(url)
-    jaren = [
-        int(match)
-        for match in re.findall(
-            r"(?<!\d)(20\d{2})(?!\d)",
-            decoded,
-        )
-    ]
-    # Sommige zoekproviders verwijderen het procentteken uit `%20`, waardoor
-    # `Jaarverslag%202025` als `Jaarverslag202025` terugkomt. Herstel alleen
-    # het jaartal aan het einde van zo'n aaneengesloten cijferreeks.
-    jaren.extend(
-        int(cijferreeks[-4:])
-        for cijferreeks in re.findall(r"\d{5,8}", decoded)
-        if cijferreeks[-4:].startswith("20")
-    )
-    # Bestandsnamen beginnen vaak met een publicatiedatum en eindigen met het
-    # verslagjaar, bv. 20250604_..._Jaarverslag_2024.pdf.
-    return jaren[-1] if jaren else None
 
 
 def _trek_afgewezen_bron_in(

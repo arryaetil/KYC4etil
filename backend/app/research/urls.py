@@ -1,6 +1,6 @@
 """URL-normalisatie voor deduplicatie zonder broninformatie kwijt te raken."""
 import re
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 
 _TRACKING_PARAMETERS = {
@@ -45,6 +45,42 @@ def canonicaliseer_url(url: str) -> str:
         query,
         "",
     ))
+
+
+def jaar_uit_url(url: str | None) -> int | None:
+    """Het jaartal dat in een URL zit, of None.
+
+    Stond eerder als `_documentjaar` in de monitoring, waar het het verslagjaar
+    uit een PDF-bestandsnaam haalt. Het is dezelfde vraag als bij een website of
+    nieuwsartikel — "uit welk jaar is dit?" — dus staat de berekening hier één
+    keer in plaats van twee keer met net andere uitkomsten.
+
+    Het is een aanwijzing, geen vaststelling: een pad als `/nieuws/2023/...`
+    dateert het bericht, maar een cijfer op die pagina kan ouder zijn. Daarom
+    voedt dit alleen de weergave en nooit de scoring, en zegt de bronkaart erbij
+    dat het jaartal uit de link komt.
+    """
+    if not url:
+        return None
+    decoded = unquote(url)
+    jaren = [
+        int(match)
+        for match in re.findall(
+            r"(?<!\d)(20\d{2})(?!\d)",
+            decoded,
+        )
+    ]
+    # Sommige zoekproviders verwijderen het procentteken uit `%20`, waardoor
+    # `Jaarverslag%202025` als `Jaarverslag202025` terugkomt. Herstel alleen
+    # het jaartal aan het einde van zo'n aaneengesloten cijferreeks.
+    jaren.extend(
+        int(cijferreeks[-4:])
+        for cijferreeks in re.findall(r"\d{5,8}", decoded)
+        if cijferreeks[-4:].startswith("20")
+    )
+    # Bestandsnamen beginnen vaak met een publicatiedatum en eindigen met het
+    # verslagjaar, bv. 20250604_..._Jaarverslag_2024.pdf.
+    return jaren[-1] if jaren else None
 
 
 # Domeinen die per definitie geen primair WP-bewijs kunnen leveren en die nu
