@@ -636,7 +636,7 @@ describe("onderzoeksadvies", () => {
       [metGetal(412, {verslagjaar: 2024})], {gevraagdJaar: 2025},
     );
     expect(advies.kop).toBe("Eén bron met een getal: 412 WP (2024)");
-    expect(advies.letOp).toContain("Het sterkste cijfer komt uit 2024, peiljaar is 2025.");
+    expect(advies.letOp).toContain("Het sterkste cijfer komt uit 2024.");
   });
 
   it("waarschuwt niet als het cijfer uit het gevraagde jaar komt", () => {

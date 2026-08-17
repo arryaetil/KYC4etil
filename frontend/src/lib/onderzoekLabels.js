@@ -503,7 +503,7 @@ export function onderzoeksadvies(
     const leidendJaar = bronjaar(leidend)?.jaar ?? null;
     if (gevraagdJaar != null && leidendJaar != null && leidendJaar < gevraagdJaar) {
       letOp.push(
-        `Het sterkste cijfer komt uit ${leidendJaar}, peiljaar is ${gevraagdJaar}.`,
+        `Het sterkste cijfer komt uit ${leidendJaar}.`,
       );
     }
   }
