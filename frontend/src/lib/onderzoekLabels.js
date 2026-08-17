@@ -287,6 +287,181 @@ export function brontypeLabel(brontype) {
 }
 
 /**
+ * Uit welk jaar is deze bron? Eén regel, altijd zichtbaar op de bronkaart.
+ *
+ * Twee velden dragen dat jaar en ze betekenen iets anders: `verslagjaar` is het
+ * jaar waar het document over gaat, `informatie_peilmoment` het moment waarop
+ * het getal betrekking heeft. Ze kunnen verschillen (een jaarverslag over 2025
+ * met een personeelsstand per 1 oktober 2025), dus het label zegt welk van de
+ * twee je ziet in plaats van er stilzwijgend één jaartal van te maken.
+ *
+ * Gemeten op de productiedatabase van 17-08-2026: van de 1.281 bronkandidaten
+ * heeft 479 een verslagjaar en 213 een peilmoment. Beide stonden tot nu toe
+ * alleen in de dichtgeklapte onderbouwing, dus moest de reviewer per kaart
+ * openklappen om te zien of een bron over het goede jaar ging.
+ */
+export function bronjaarLabel(candidate) {
+  if (candidate?.verslagjaar) {
+    return `verslagjaar ${candidate.verslagjaar}`;
+  }
+  const peilmoment = String(candidate?.informatie_peilmoment || "");
+  const jaar = peilmoment.match(/(19|20)\d{2}/);
+  return jaar ? `peilmoment ${jaar[0]}` : null;
+}
+
+const FORMELE_DOCUMENTTYPEN = new Set([
+  "jaarverslag", "jaarrekening", "bestuursverslag", "pdf_document",
+]);
+
+/**
+ * Eén oordeel boven de bronnenlijst: wat is er gevonden en hoe hard is het.
+ *
+ * Bewust deterministisch en niet door een model geschreven. Dit kaartje zegt
+ * precies hoe betrouwbaar het bewijs is, en dat is de laatste plek waar een
+ * gegenereerde formulering iets mag beweren dat de bronnen niet dragen. Alle
+ * signalen liggen al in de kandidaten: het getal, de eenheid, het citaat, de
+ * identiteit, het bereik en het verslagjaar.
+ *
+ * De kleurdiscipline van deze module geldt ook hier: groen alléén als de
+ * reviewer zelf een bron heeft gekozen, amber voor "controleer dit", en geen
+ * enkele groene toon voor een uitkomst die de agent zelf heeft bedacht.
+ *
+ * `letOp` bevat de voorbehouden die bij het gevonden bewijs horen. Ze staan los
+ * van de hoofdregel omdat ze het oordeel niet veranderen maar wel meewegen:
+ * een concerncijfer blijft een concerncijfer, ook als twee bronnen het noemen.
+ */
+export function onderzoeksadvies(items, {onderzoekspaden = []} = {}) {
+  const bronnen = (items || []).filter((item) => item.status !== "afgewezen");
+  if (!bronnen.length) {
+    const mislukt = onderzoekspaden.filter((pad) => pad.status === "mislukt");
+    if (mislukt.length) {
+      return {
+        kop: "Geen bronnen, en het zoeken liep vast",
+        toelichting:
+          `${mislukt.length === 1 ? "Eén route" : `${mislukt.length} routes`} `
+          + "kon technisch niet worden uitgevoerd, dus „niets gevonden” is "
+          + "hier geen conclusie. Opnieuw zoeken is de moeite waard.",
+        toon: "fout",
+        letOp: mislukt.map((pad) => `${pad.route}: ${pad.statusreden || pad.status}`),
+      };
+    }
+    return {
+      kop: "Geen bruikbare bron gevonden",
+      toelichting:
+        "Er is niets openbaars gevonden waarop een WP-getal te baseren valt. "
+        + "Voeg zelf een bron toe of zet deze vestiging op de bellijst.",
+      toon: "aandacht",
+      letOp: [],
+    };
+  }
+
+  const gekozen = bronnen.find((item) => item.status === "geaccepteerd");
+  const metWp = bronnen.filter(
+    (item) => item.wp_gevonden != null && item.eenheid === "werkzame_personen",
+  );
+  const waarden = [...new Set(metWp.map((item) => item.wp_gevonden))];
+  const letOp = [];
+
+  // Voorbehouden bij het sterkste bewijs, niet bij de hele stapel: de reviewer
+  // beslist op de bovenste kaart.
+  const leidend = gekozen || metWp[0] || bronnen[0];
+  if (leidend) {
+    if (leidend.identity_class === "mismatch") {
+      letOp.push("De sterkste bron lijkt bij een ander bedrijf te horen.");
+    } else if (!["exact_entity", "same_brand_or_group"].includes(leidend.identity_class)) {
+      letOp.push("Van de sterkste bron is niet vastgesteld dat het dit bedrijf is.");
+    }
+    if (["nederland", "concern", "instelling"].includes(leidend.scope_class)) {
+      letOp.push("Het cijfer geldt breder dan deze vestiging.");
+    }
+  }
+  if (bronnen.some((item) => item.eenheid === "fte") && !metWp.length) {
+    letOp.push("Er is alleen een FTE-cijfer; FTE is geen WP.");
+  }
+  if (metWp.length && metWp.every((item) => !item.bewijsfragment)) {
+    letOp.push("Geen enkel getal is met een citaat onderbouwd.");
+  }
+
+  if (gekozen) {
+    return {
+      kop: gekozen.wp_gevonden != null
+        ? `Bron gekozen: ${gekozen.wp_gevonden} WP`
+        : "Bron gekozen",
+      toelichting: "Je hebt deze vestiging al beoordeeld.",
+      toon: "gekozen",
+      letOp,
+    };
+  }
+
+  if (waarden.length === 1 && metWp.length >= 2) {
+    return {
+      kop: `${metWp.length} bronnen noemen hetzelfde aantal: ${waarden[0]} WP`,
+      toelichting:
+        "Dat is de sterkste bevestiging die deze werkbank kan geven — "
+        + "onafhankelijke bronnen die op hetzelfde getal uitkomen.",
+      toon: "neutraal",
+      letOp,
+    };
+  }
+  if (waarden.length > 1) {
+    return {
+      kop: `Bronnen spreken elkaar tegen: ${waarden.join(" en ")} WP`,
+      toelichting:
+        "Verschillende bronnen noemen een ander aantal. Vergelijk de "
+        + "peilmomenten en de scope voordat je er één kiest.",
+      toon: "aandacht",
+      letOp,
+    };
+  }
+  if (metWp.length === 1) {
+    const bron = metWp[0];
+    return {
+      kop: `Eén bron met een getal: ${bron.wp_gevonden} WP`,
+      toelichting: bron.bewijsfragment
+        ? "Er is één getal, met een citaat erbij. Controleer het citaat en de scope."
+        : "Er is één getal, maar zonder citaat. Open de bron om het te verifiëren.",
+      toon: bron.bewijsfragment ? "neutraal" : "aandacht",
+      letOp,
+    };
+  }
+
+  const telopdrachten = bronnen.filter(
+    (item) => item.validaties?.naamlijst_telling_aan_reviewer,
+  );
+  if (telopdrachten.length) {
+    return {
+      kop: "Een namenlijst gevonden, geen telling",
+      toelichting:
+        "Het afgeleide aantal is ingetrokken omdat de lijst niet het "
+        + "personeelsbestand van deze vestiging is. Tel zelf op de bron.",
+      toon: "aandacht",
+      letOp,
+    };
+  }
+  const formeel = bronnen.filter(
+    (item) => FORMELE_DOCUMENTTYPEN.has(item.documenttype),
+  );
+  if (formeel.length) {
+    return {
+      kop: `${formeel.length === 1 ? "Een formeel document" : `${formeel.length} formele documenten`}, maar geen getal`,
+      toelichting:
+        "De documenten zijn er wel; er is geen personeelsgetal uit gelezen. "
+        + "Doorzoek ze op medewerkers, personeel, werknemers en fte.",
+      toon: "aandacht",
+      letOp,
+    };
+  }
+  return {
+    kop: `${bronnen.length === 1 ? "Eén bron" : `${bronnen.length} bronnen`}, geen personeelsgetal`,
+    toelichting:
+      "Er is context gevonden, maar geen aantal werkzame personen. Bekijk of "
+      + "een van de bronnen naar een sterkere primaire bron verwijst.",
+    toon: "aandacht",
+    letOp,
+  };
+}
+
+/**
  * Een namenlijst die niet het personeelsbestand van déze vestiging is, levert
  * geen WP-voorstel maar een telopdracht op. De namen zijn al vastgelegd door de
  * agent, zodat de reviewer ze naast de bron kan leggen in plaats van opnieuw te

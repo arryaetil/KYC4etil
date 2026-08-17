@@ -3,8 +3,8 @@ import {Check, ChevronDown, ChevronUp, Eye, X} from "lucide-react";
 import {classNames} from "../../lib/format.js";
 import {
   TOON_STYLE, bedrijfRelatie, bereikLabel, bereikRelatie, bewijsRelatie,
-  bronwaarschuwingen, brontypeLabel, identiteitLabel, menselijkeWaarde,
-  primaireConclusie, telopdracht,
+  bronjaarLabel, bronwaarschuwingen, brontypeLabel, identiteitLabel,
+  menselijkeWaarde, primaireConclusie, telopdracht,
 } from "../../lib/onderzoekLabels.js";
 
 const TOON_TEKST = {
@@ -66,6 +66,7 @@ export function BronKaart({
   const identiteit = identiteitLabel(candidate.identity_class);
   const bereik = bereikLabel(candidate.scope_class);
   const waarschuwingen = bronwaarschuwingen({...candidate, gevraagd_jaar: gevraagdJaar});
+  const bronjaar = bronjaarLabel(candidate);
   const telling = telopdracht(candidate);
   const beoordeeld = ["geaccepteerd", "alternatief", "afgewezen"].includes(candidate.status);
 
@@ -85,6 +86,14 @@ export function BronKaart({
         <span className="truncate text-xs text-slate-400">
           {herkomst(candidate.url)}
         </span>
+        {/* Het jaar van de bron staat vooraan en niet in de onderbouwing: of een
+            bron over het goede jaar gaat is de eerste vraag bij een jaarverslag,
+            en die hoort niet achter een klik te zitten. */}
+        {bronjaar ? (
+          <span className="whitespace-nowrap text-xs tabular-nums text-slate-500">
+            {bronjaar}
+          </span>
+        ) : null}
         {candidate.status === "geaccepteerd" ? (
           <span className="ml-auto inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-900">
             <Check size={11} />Gekozen
@@ -115,6 +124,15 @@ export function BronKaart({
         <Kaartrij label="Bedrijf" waarde={bedrijf} />
         <Kaartrij label="Bereik" waarde={bereikRij} />
         <Kaartrij label="Bewijs" waarde={bewijsRij} />
+        {/* Het peilmoment hoort bij het getal, niet bij het document: een
+            jaarverslag over 2025 kan een stand per 1 oktober noemen. Stond
+            eerder alleen in de dichtgeklapte onderbouwing. */}
+        {candidate.informatie_peilmoment ? (
+          <Kaartrij
+            label="Peilmoment"
+            waarde={{label: candidate.informatie_peilmoment, toon: "neutraal"}}
+          />
+        ) : null}
         <Kaartrij label="Actie" waarde={{label: waarde.actie, toon: "neutraal"}} />
       </dl>
 
@@ -234,12 +252,8 @@ export function BronKaart({
               <dd className="inline">{candidate.publicatiedatum}</dd>
             </div>
           ) : null}
-          {candidate.informatie_peilmoment ? (
-            <div>
-              <dt className="inline font-medium text-slate-600">Peilmoment: </dt>
-              <dd className="inline">{candidate.informatie_peilmoment}</dd>
-            </div>
-          ) : null}
+          {/* Peilmoment staat nu in de altijd zichtbare regels hierboven; hier
+              herhalen zou dezelfde constatering twee keer op de kaart zetten. */}
           <div>
             <dt className="inline font-medium text-slate-600">Bron-URL: </dt>
             <dd className="inline break-all">

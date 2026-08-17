@@ -267,6 +267,22 @@ def _controleer_achterlopende_vondst(page, c: Controle) -> None:
         page.is_visible("text=/Verslag \\d{4}, gevraagd is \\d{4}/"),
         "bronkaart waarschuwt met beide jaartallen",
     )
+    # Het samenvattend oordeel staat bóven de bronkaarten; zonder eigen assertie
+    # zou een leeg of stukgelopen kaartje groen blijven.
+    # Het jaar van de bron hoort zonder klik zichtbaar te zijn: of een bron over
+    # het goede jaar gaat is de eerste vraag bij een jaarverslag.
+    c.meld(
+        page.is_visible("text=/verslagjaar \\d{4}|peilmoment \\d{4}/"),
+        "bronkaart noemt het jaar van de bron zonder openklappen",
+    )
+    advies = page.locator("section[aria-label='Samenvattend oordeel']").first
+    c.meld(advies.count() > 0, "samenvattend oordeel staat boven de bronnen")
+    if advies.count():
+        tekst = advies.inner_text()
+        c.meld(
+            "WP" in tekst or "geen" in tekst.lower(),
+            f"oordeel vat het bewijs samen ({tekst.splitlines()[0][:60]})",
+        )
     routes = page.locator("summary:has-text('Onderzoeksroutes')")
     if routes.count() == 0:
         return c.overgeslagen("geen routeoverzicht bij deze organisatie")

@@ -3,6 +3,39 @@ import {Plus, RefreshCw, Search} from "lucide-react";
 import {Alert} from "../Alert.jsx";
 import {BronKaart} from "./BronKaart.jsx";
 import {Diagnostiek} from "./Diagnostiek.jsx";
+import {classNames} from "../../lib/format.js";
+import {TOON_STYLE, onderzoeksadvies} from "../../lib/onderzoekLabels.js";
+
+/**
+ * Samenvattend oordeel boven de bronnenlijst. Eén kop, één toelichting en de
+ * voorbehouden die bij het bewijs horen — geen tweede opsomming van wat de
+ * bronkaarten zelf al zeggen.
+ */
+function Advies({advies}) {
+  return (
+    <section
+      aria-label="Samenvattend oordeel"
+      className={classNames(
+        "mb-4 rounded-md border px-3 py-3",
+        TOON_STYLE[advies.toon] || TOON_STYLE.neutraal,
+      )}
+    >
+      <p className="text-sm font-semibold">{advies.kop}</p>
+      <p className="mt-1 max-w-[70ch] text-sm leading-relaxed opacity-90">
+        {advies.toelichting}
+      </p>
+      {advies.letOp.length ? (
+        <ul className="mt-2 space-y-0.5 text-xs">
+          {advies.letOp.map((punt) => (
+            <li key={punt} className="before:mr-1 before:content-['—']">
+              {punt}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
 
 export function KandidatenPaneel({
   api, company, batchJaar, geselecteerdeBronId, onSelecteerBron, onGewijzigd,
@@ -167,6 +200,13 @@ export function KandidatenPaneel({
             ))}
           </ul>
         </details>
+      ) : null}
+
+      {/* Het oordeel staat boven de bronnen, niet eronder: de reviewer moet in
+          één regel kunnen zien wat er gevonden is en hoe hard dat is, voordat
+          hij door de kaarten scrolt. */}
+      {items.length || Object.keys(diagnostiek).length ? (
+        <Advies advies={onderzoeksadvies(items, {onderzoekspaden})} />
       ) : null}
 
       {items.length ? (

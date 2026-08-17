@@ -4,11 +4,13 @@ import {
   bereikLabel,
   bereikRelatie,
   bewijsRelatie,
+  bronjaarLabel,
   bronwaarschuwingen,
   brontypeLabel,
   identiteitLabel,
   menselijkeWaarde,
   monitoringStatus,
+  onderzoeksadvies,
   organisatieStatus,
   primaireConclusie,
   telopdracht,
@@ -520,5 +522,127 @@ describe("telopdracht", () => {
 
     expect(telling.uitleg).toContain("leidinglaag");
     expect(telling.namen).toEqual([]);
+  });
+});
+
+describe("onderzoeksadvies", () => {
+  const metGetal = (wp, extra = {}) => ({
+    wp_gevonden: wp, eenheid: "werkzame_personen",
+    bewijsfragment: `${wp} medewerkers`, identity_class: "exact_entity",
+    scope_class: "vestiging", documenttype: "jaarverslag", status: "voorgesteld",
+    ...extra,
+  });
+
+  it("noemt twee bronnen met hetzelfde getal de sterkste bevestiging", () => {
+    const advies = onderzoeksadvies([metGetal(47), metGetal(47)]);
+    expect(advies.kop).toBe("2 bronnen noemen hetzelfde aantal: 47 WP");
+    expect(advies.toon).toBe("neutraal");
+    expect(advies.letOp).toEqual([]);
+  });
+
+  it("meldt het als bronnen elkaar tegenspreken", () => {
+    const advies = onderzoeksadvies([metGetal(47), metGetal(52)]);
+    expect(advies.kop).toBe("Bronnen spreken elkaar tegen: 47 en 52 WP");
+    expect(advies.toon).toBe("aandacht");
+  });
+
+  it("onderscheidt één getal met citaat van één zonder", () => {
+    expect(onderzoeksadvies([metGetal(47)]).toon).toBe("neutraal");
+    const zonder = onderzoeksadvies([metGetal(47, {bewijsfragment: null})]);
+    expect(zonder.toon).toBe("aandacht");
+    expect(zonder.letOp).toContain("Geen enkel getal is met een citaat onderbouwd.");
+  });
+
+  it("zegt dat er niets bruikbaars is als er geen bronnen zijn", () => {
+    const advies = onderzoeksadvies([]);
+    expect(advies.kop).toBe("Geen bruikbare bron gevonden");
+    expect(advies.toon).toBe("aandacht");
+  });
+
+  it("noemt een vastgelopen route geen conclusie", () => {
+    // "Niets gevonden" en "we konden niet kijken" zijn verschillende dingen.
+    const advies = onderzoeksadvies([], {
+      onderzoekspaden: [
+        {route: "document", status: "mislukt", statusreden: "alle zoekopdrachten mislukten"},
+      ],
+    });
+    expect(advies.kop).toBe("Geen bronnen, en het zoeken liep vast");
+    expect(advies.toon).toBe("fout");
+    expect(advies.letOp[0]).toContain("document");
+  });
+
+  it("meldt formele documenten zonder getal", () => {
+    const advies = onderzoeksadvies([
+      {documenttype: "jaarverslag", status: "voorgesteld", identity_class: "exact_entity"},
+    ]);
+    expect(advies.kop).toBe("Een formeel document, maar geen getal");
+  });
+
+  it("geeft alleen de gekozen-toon als de reviewer zelf koos", () => {
+    const advies = onderzoeksadvies([metGetal(47, {status: "geaccepteerd"})]);
+    expect(advies.kop).toBe("Bron gekozen: 47 WP");
+    expect(advies.toon).toBe("gekozen");
+    // Zonder keuze nooit groen: dat zou een menselijk oordeel suggereren.
+    expect(onderzoeksadvies([metGetal(47), metGetal(47)]).toon).not.toBe("gekozen");
+  });
+
+  it("laat een afgewezen bron niet meetellen als bewijs", () => {
+    const advies = onderzoeksadvies([
+      metGetal(47, {status: "afgewezen"}),
+      metGetal(52),
+    ]);
+    expect(advies.kop).toBe("Eén bron met een getal: 52 WP");
+  });
+
+  it("waarschuwt bij een concerncijfer en bij onbewezen identiteit", () => {
+    const advies = onderzoeksadvies([
+      metGetal(2400, {scope_class: "concern", identity_class: "possible_match"}),
+    ]);
+    expect(advies.letOp).toContain("Het cijfer geldt breder dan deze vestiging.");
+    expect(advies.letOp).toContain(
+      "Van de sterkste bron is niet vastgesteld dat het dit bedrijf is.",
+    );
+  });
+
+  it("meldt FTE apart, want FTE is geen WP", () => {
+    const advies = onderzoeksadvies([
+      {wp_gevonden: 31, eenheid: "fte", documenttype: "jaarverslag",
+       status: "voorgesteld", identity_class: "exact_entity"},
+    ]);
+    expect(advies.letOp).toContain("Er is alleen een FTE-cijfer; FTE is geen WP.");
+  });
+
+  it("houdt een ingetrokken namenlijst-telling een telopdracht", () => {
+    const advies = onderzoeksadvies([
+      {documenttype: "teampagina", status: "voorgesteld",
+       identity_class: "exact_entity",
+       validaties: {naamlijst_telling_aan_reviewer: {afgeleid_aantal: 12}}},
+    ]);
+    expect(advies.kop).toBe("Een namenlijst gevonden, geen telling");
+  });
+});
+
+describe("bronjaarLabel", () => {
+  it("noemt het verslagjaar als dat bekend is", () => {
+    expect(bronjaarLabel({verslagjaar: 2025})).toBe("verslagjaar 2025");
+  });
+
+  it("valt terug op het jaar uit het peilmoment", () => {
+    expect(bronjaarLabel({informatie_peilmoment: "1 oktober 2025"}))
+      .toBe("peilmoment 2025");
+    expect(bronjaarLabel({informatie_peilmoment: "2024"})).toBe("peilmoment 2024");
+  });
+
+  it("noemt welk van de twee je ziet: ze kunnen verschillen", () => {
+    // Een jaarverslag over 2025 met een stand per 1 oktober 2025; het
+    // verslagjaar gaat voor, want dat is het jaar van de bron zelf.
+    expect(bronjaarLabel({verslagjaar: 2025, informatie_peilmoment: "1 oktober 2024"}))
+      .toBe("verslagjaar 2025");
+  });
+
+  it("zwijgt als er geen jaar bekend is", () => {
+    expect(bronjaarLabel({})).toBe(null);
+    expect(bronjaarLabel({informatie_peilmoment: "onbekend"})).toBe(null);
+    expect(bronjaarLabel(null)).toBe(null);
   });
 });
