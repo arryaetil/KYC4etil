@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 from urllib.parse import urlsplit
 
+from ..config import get_settings
 from ..pipeline.identity_scope import (
     domain_matches_company,
     heuristic_identity_class,
@@ -119,6 +120,24 @@ def draag_naamlijsttelling_over_aan_reviewer(
     return validatie
 
 
+def _duo_jaar_is_aanvaardbaar_ouder(document: SourceDocument) -> bool:
+    """Mag deze DUO-bron met een ouder meetjaar tóch beoordeeld worden?
+
+    Alleen DUO, en alleen binnen `peilmoment_max_leeftijd_jaren` — dezelfde
+    grens die de confidence gebruikt voor "een jaar verschil is normaal".
+    Twee jaar achter blijft een afwijzing: dan is er inmiddels nieuwere DUO-data
+    en kijkt de reviewer naar een achterhaald bestand.
+
+    `duo.lees_personeelswaarden` pakt zelf al het nieuwste jaar dat niet ná het
+    gevraagde jaar ligt, en `_relevance_score` beloont een gelijk jaar. Het
+    gevraagde jaar wint dus vanzelf zodra DUO het publiceert.
+    """
+    if document.documenttype != "duo_personeel_personen":
+        return False
+    grens = get_settings().peilmoment_max_leeftijd_jaren
+    return 0 < (document.gevraagd_jaar - document.verslagjaar) <= grens
+
+
 def valideer_bron(document: SourceDocument) -> BronValidatie:
     context = " ".join(filter(None, [
         document.titel,
@@ -149,7 +168,15 @@ def valideer_bron(document: SourceDocument) -> BronValidatie:
         and document.verslagjaar is not None
         and document.gevraagd_jaar != document.verslagjaar
     ):
-        afwijsredenen.append("verkeerd verslagjaar")
+        if _duo_jaar_is_aanvaardbaar_ouder(document):
+            # DUO meet op 1 oktober en publiceert met vertraging, dus voor het
+            # lopende peiljaar bestaat er per definitie nog niets. De harde
+            # afwijzing liet zo'n bron helemaal niet op de kaart komen, terwijl
+            # het cijfer wel beoordeelbaar is. Het jaartal staat op de kaart, dus
+            # de reviewer ziet waar hij naar kijkt.
+            waarschuwingen.append("duo_jaar_achter")
+        else:
+            afwijsredenen.append("verkeerd verslagjaar")
     if document.eenheid == "fte":
         waarschuwingen.append("fte_geen_wp")
     if document.documenttype == "duo_personeel_personen":

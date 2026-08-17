@@ -56,6 +56,10 @@ const WAARSCHUWING = {
   duo_definitie_wijkt_af_van_wp: {
     label: "DUO-definitie — controleer tegen WP", toon: "aandacht",
   },
+  // Geen chip: de regel Peilmoment noemt het DUO-jaar al, en waaróm dat een
+  // jaar achterloopt (DUO meet op 1 oktober en publiceert later) is geen
+  // reviewbeslissing maar een eigenschap van de bron.
+  duo_jaar_achter: null,
   wp_afgeleid_uit_naamlijst: {
     label: "Geteld uit namenlijst", toon: "aandacht",
   },

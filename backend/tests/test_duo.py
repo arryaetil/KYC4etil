@@ -7,12 +7,15 @@ from openpyxl import Workbook
 from pydantic import ValidationError
 
 from app.research.duo import (
+    DuoPersoneelswaarde,
     DuoVestiging,
     bouw_duo_bron,
     lees_personeelswaarden,
     vind_vestigingen,
 )
 from app.research.query_planner import QueryContext
+from app.research.ranking import rank_bronnen
+from app.research.validation import valideer_bron
 from app.research.source_reviewer import IntelligentSourceReviewer
 
 
@@ -136,6 +139,71 @@ def test_een_instelling_wordt_direct_duo_bewijs():
     assert bron.scope_class == "vestiging"
     assert bron.research_route == "duo"
     assert bron.raw_data["instellingscodes"] == ["23HH"]
+
+
+def test_duo_mag_een_jaar_achterlopen_maar_niet_twee():
+    """DUO meet op 1 oktober en publiceert met vertraging.
+
+    Voor het lopende peiljaar bestaat er dus per definitie nog geen DUO-cijfer.
+    De harde afwijzing op "verkeerd verslagjaar" liet zo'n bron helemaal niet op
+    de kaart komen, terwijl het cijfer beoordeelbaar is. Twee jaar achter blijft
+    wel een afwijzing: dan is er inmiddels nieuwere DUO-data.
+    """
+    vestiging = _vestiging(
+        instellingscode="23HH", vestigingscode="23HH00",
+        naam="Praktijkonderwijs Roermond", plaats="Roermond", gemeente="Roermond",
+    )
+
+    def bron_voor(duo_jaar: int):
+        context = QueryContext(
+            naam="Praktijkonderwijs Roermond", gemeente="Roermond",
+            gevraagd_jaar=2025, sbi_code="85311",
+        )
+        document = bouw_duo_bron(
+            context, [vestiging], [vestiging],
+            {"23HH": DuoPersoneelswaarde(
+                instellingscode="23HH", jaar=duo_jaar, aantal_personen=35,
+            )},
+            "https://duo.nl/personeel-vo.xlsx",
+        )
+        return valideer_bron(document)
+
+    gelijk = bron_voor(2025)
+    assert gelijk.is_afgewezen is False
+    assert "duo_jaar_achter" not in gelijk.waarschuwingen
+
+    een_jaar = bron_voor(2024)
+    assert een_jaar.is_afgewezen is False
+    assert "duo_jaar_achter" in een_jaar.waarschuwingen
+
+    twee_jaar = bron_voor(2023)
+    assert twee_jaar.is_afgewezen is True
+    assert "verkeerd verslagjaar" in twee_jaar.afwijsredenen
+
+
+def test_duo_van_het_gevraagde_jaar_scoort_hoger_dan_een_jaar_ouder():
+    """"Liefst het gevraagde jaar" hoort in de rangschikking te zitten, niet in
+    een afwijzing: een ouder cijfer mag getoond worden, maar zakt wel."""
+    vestiging = _vestiging(
+        instellingscode="23HH", vestigingscode="23HH00",
+        naam="Praktijkonderwijs Roermond", plaats="Roermond", gemeente="Roermond",
+    )
+    context = QueryContext(
+        naam="Praktijkonderwijs Roermond", gemeente="Roermond",
+        gevraagd_jaar=2025, sbi_code="85311",
+    )
+    scores = []
+    for duo_jaar in (2025, 2024):
+        document = bouw_duo_bron(
+            context, [vestiging], [vestiging],
+            {"23HH": DuoPersoneelswaarde(
+                instellingscode="23HH", jaar=duo_jaar, aantal_personen=35,
+            )},
+            "https://duo.nl/personeel-vo.xlsx",
+        )
+        scores.append(rank_bronnen([valideer_bron(document)])[0].ranking_score)
+
+    assert scores[0] > scores[1]
 
 
 def test_meerdere_instellingscodes_worden_niet_opgeteld():
