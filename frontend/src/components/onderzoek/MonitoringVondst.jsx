@@ -57,6 +57,11 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
             {company.verslagjaar ? (
               <span className="text-sm font-medium text-ink">
                 Verslagjaar {company.verslagjaar}
+                {/* Zonder deze regel moet de reviewer zelf onthouden welk jaar
+                    gevraagd is om te zien of dit verslag nog achterloopt. */}
+                {company.doeljaar && company.verslagjaar < company.doeljaar
+                  ? ` — gevraagd is ${company.doeljaar}`
+                  : ""}
               </span>
             ) : null}
             <button
@@ -83,7 +88,14 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
       )}
 
       <p className="mt-3 text-xs text-slate-400">
-        Status: {status.label}. Monitoring vindt bronnen; kiezen doe je zelf.
+        Status: {status.label}.
+        {/* Secundair, want het zegt iets over de vórige ronde en niet over de
+            actualiteit van het verslag. Als hoofdstatus zette het juist
+            verouderde vondsten bovenaan. */}
+        {company.nieuwe_bevinding
+          ? " Gewijzigd sinds de vorige controle."
+          : ""}
+        {" "}Monitoring vindt bronnen; kiezen doe je zelf.
       </p>
     </section>
   );

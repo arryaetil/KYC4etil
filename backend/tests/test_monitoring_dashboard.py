@@ -24,8 +24,9 @@ def test_monitoring_status_zonder_watchlist_geeft_lege_staat(client):
 
     assert response.status_code == 200
     assert response.json() == {
-        "batch": None, "totaal": 0, "gecontroleerd": 0,
+        "batch": None, "doeljaar": None, "totaal": 0, "gecontroleerd": 0,
         "bronnen_gevonden": 0, "bronnen_ontbreken": 0,
+        "actueel": 0, "verouderd": 0, "ontbreekt": 0, "jaren_verdeling": [],
         "nieuwe_bevindingen": 0, "fouten": 0, "companies": [],
     }
 
@@ -155,7 +156,7 @@ def test_monitoring_run_start_achtergrondtaak(client, db_session, monkeypatch):
     gestart = []
 
     def fake_run_monitoring_watchlist_background(
-        limit=None, offset=0,
+        limit=None, offset=0, hercontroleer_actuele=False,
     ) -> None:
         gestart.append((limit, offset))
 
@@ -169,6 +170,7 @@ def test_monitoring_run_start_achtergrondtaak(client, db_session, monkeypatch):
         "batch_id": batch_id,
         "aantal_companies": 1,
         "offset": 0,
+        "overgeslagen_actueel": 0,
     }
     assert gestart == [(None, 0)]
 
@@ -190,7 +192,7 @@ def test_monitoring_run_met_limit_beperkt_aantal_companies(client, db_session, m
     gestart = []
 
     def fake_run_monitoring_watchlist_background(
-        limit=None, offset=0,
+        limit=None, offset=0, hercontroleer_actuele=False,
     ) -> None:
         gestart.append((limit, offset))
 
@@ -204,6 +206,7 @@ def test_monitoring_run_met_limit_beperkt_aantal_companies(client, db_session, m
         "batch_id": batch_id,
         "aantal_companies": 2,
         "offset": 0,
+        "overgeslagen_actueel": 0,
     }
     assert gestart == [(2, 0)]
 
@@ -220,7 +223,7 @@ def test_monitoring_run_met_limit_groter_dan_watchlist_gebruikt_totaal(client, d
     monkeypatch.setattr(
         monitoring_router,
         "run_monitoring_watchlist_background",
-        lambda limit=None, offset=0: None,
+        lambda limit=None, offset=0, hercontroleer_actuele=False: None,
     )
 
     response = client.post("/monitoring/run?limit=50")
@@ -230,6 +233,7 @@ def test_monitoring_run_met_limit_groter_dan_watchlist_gebruikt_totaal(client, d
         "batch_id": batch_id,
         "aantal_companies": 1,
         "offset": 0,
+        "overgeslagen_actueel": 0,
     }
 
 
@@ -250,7 +254,8 @@ def test_monitoring_run_met_offset_start_bij_latere_organisatie(
     monkeypatch.setattr(
         monitoring_router,
         "run_monitoring_watchlist_background",
-        lambda limit=None, offset=0: gestart.append((limit, offset)),
+        lambda limit=None, offset=0, hercontroleer_actuele=False:
+            gestart.append((limit, offset)),
     )
 
     response = client.post("/monitoring/run?limit=2&offset=2")
@@ -260,6 +265,7 @@ def test_monitoring_run_met_offset_start_bij_latere_organisatie(
         "batch_id": batch_id,
         "aantal_companies": 2,
         "offset": 2,
+        "overgeslagen_actueel": 0,
     }
     assert gestart == [(2, 2)]
 
@@ -309,3 +315,159 @@ def test_monitoring_status_geeft_bewijsplek_van_de_gevonden_bron(client, db_sess
     assert vondst["laatste_bron_url"] == url
     assert vondst["bron_pagina"] == 14
     assert vondst["bewijsfragment"] == "47 medewerkers in dienst"
+
+
+def _watchlist_met_verslagjaren(client, db_session, naam, jaar, organisaties):
+    """Zet een watchlist op waarin elke organisatie een bekend verslagjaar heeft.
+
+    `organisaties` is een dict naam -> (bron_url, verslagjaar). Een lege URL
+    betekent: nooit een bron gevonden.
+    """
+    _zorg_voor_test_user(db_session)
+    csv = "naam\n" + "\n".join(organisaties) + "\n"
+    upload = client.post(
+        f"/batches/upload?naam={naam}&jaar={jaar}&monitoringlijst=true",
+        files={"file": ("orgs.csv", BytesIO(csv.encode()), "text/csv")},
+    )
+    assert upload.status_code == 200
+    batch_id = upload.json()["batch_id"]
+    companies = {
+        c.naam: c for c in db_session.query(Company).filter_by(batch_id=batch_id)
+    }
+    nu = datetime.now(timezone.utc).replace(tzinfo=None)
+    for organisatie, (url, verslagjaar) in organisaties.items():
+        db_session.add(JaarverslagMonitoring(
+            company_id=companies[organisatie].id,
+            laatste_bron_url=url or None,
+            laatste_verslagjaar=verslagjaar,
+            laatst_gecontroleerd_op=nu,
+        ))
+    db_session.commit()
+    return batch_id, companies
+
+
+def test_monitoring_deelt_organisaties_in_op_verslagjaar(client, db_session):
+    """De hoofdvraag: van hoeveel hebben we het verslag over het doeljaar.
+
+    Watchlistjaar 2026 betekent doeljaar 2025 — een jaarverslag over jaar X
+    verschijnt pas in X+1. Een bron zonder herkenbaar jaartal telt niet als
+    actueel: we weten dan niet of hij over het doeljaar gaat.
+    """
+    _watchlist_met_verslagjaren(client, db_session, "jaarbuckets", 2026, {
+        "Actueel": ("https://x.test/jaarverslag-2025.pdf", 2025),
+        "Ouder": ("https://x.test/jaarverslag-2024.pdf", 2024),
+        "Zonder jaartal": ("https://x.test/jaarverslagsite/", None),
+        "Niets gevonden": ("", None),
+    })
+
+    data = client.get("/monitoring").json()
+
+    assert data["doeljaar"] == 2025
+    assert data["actueel"] == 1
+    assert data["verouderd"] == 2
+    assert data["ontbreekt"] == 1
+    assert data["jaren_verdeling"] == [
+        {"verslagjaar": 2025, "aantal": 1},
+        {"verslagjaar": 2024, "aantal": 1},
+        {"verslagjaar": None, "aantal": 1},
+    ]
+
+    per_naam = {c["naam"]: c for c in data["companies"]}
+    assert per_naam["Actueel"]["jaarstatus"] == "actueel"
+    assert per_naam["Ouder"]["jaarstatus"] == "verouderd"
+    assert per_naam["Zonder jaartal"]["jaarstatus"] == "verouderd"
+    assert per_naam["Niets gevonden"]["jaarstatus"] == "ontbreekt"
+    assert per_naam["Actueel"]["doeljaar"] == 2025
+
+
+def test_verslag_nieuwer_dan_het_doeljaar_is_niet_verouderd(client, db_session):
+    """DSV kwam op verslagjaar 2026 uit doordat `_documentjaar` de
+    publicatiedatum uit de URL las (`/filings/3363/2026/RNS/..._2026-02-04_`).
+    Zo'n bron in de bak "verouderd" zetten is aantoonbaar onjuist; hij blijft
+    wel als los jaar zichtbaar in de verdeling."""
+    _watchlist_met_verslagjaren(client, db_session, "toekomstjaar", 2026, {
+        "Te nieuw gelezen": ("https://x.test/filings/2026/rns_2026-02-04", 2026),
+    })
+
+    data = client.get("/monitoring").json()
+
+    assert data["actueel"] == 1
+    assert data["verouderd"] == 0
+    assert data["jaren_verdeling"] == [{"verslagjaar": 2026, "aantal": 1}]
+
+
+def test_nieuwe_bevinding_bepaalt_de_jaarstatus_niet(client, db_session):
+    """Een vondst die veranderde sinds de vorige ronde kan best een oud
+    verslag zijn: op de watchlist van 10-08-2026 waren de enige twee
+    organisaties met deze markering allebei van verslagjaar 2023. De markering
+    blijft in de payload staan, maar mag de indeling niet sturen."""
+    _, companies = _watchlist_met_verslagjaren(
+        client, db_session, "delta-vs-jaar", 2026,
+        {"Oude vondst": ("https://x.test/jaarverslag-2023.pdf", 2023)},
+    )
+    company = companies["Oude vondst"]
+    db_session.add(PipelineRun(
+        batch_id=company.batch_id, company_id=company.id,
+        stap="jaarverslag_monitoring", status="new", duur_ms=100,
+    ))
+    db_session.commit()
+
+    data = client.get("/monitoring").json()
+    vondst = {c["naam"]: c for c in data["companies"]}["Oude vondst"]
+
+    assert vondst["nieuwe_bevinding"] is True
+    assert vondst["jaarstatus"] == "verouderd"
+    assert data["actueel"] == 0
+    assert data["verouderd"] == 1
+
+
+def test_monitoring_run_slaat_organisaties_met_het_doeljaar_over(
+    client, db_session, monkeypatch,
+):
+    """Wat binnen is hoeft niet opnieuw gezocht te worden.
+
+    Een verslag over jaar X verschijnt in X+1, dus zodra het verslag over het
+    doeljaar er is kan een volgende ronde niets nieuwers vinden. Op de
+    watchlist van 10-08-2026 gold dat voor 51 van de 205 organisaties.
+    """
+    _, companies = _watchlist_met_verslagjaren(
+        client, db_session, "skip-actueel", 2026, {
+            "Actueel": ("https://x.test/jaarverslag-2025.pdf", 2025),
+            "Ouder": ("https://x.test/jaarverslag-2023.pdf", 2023),
+            "Niets": ("", None),
+        },
+    )
+    gestart = []
+    monkeypatch.setattr(
+        monitoring_router, "run_monitoring_watchlist_background",
+        lambda limit=None, offset=0, hercontroleer_actuele=False: gestart.append(
+            (limit, offset, hercontroleer_actuele),
+        ),
+    )
+
+    data = client.post("/monitoring/run").json()
+
+    assert data["overgeslagen_actueel"] == 1
+    assert data["aantal_companies"] == 2
+    assert gestart == [(None, 0, False)]
+
+
+def test_monitoring_run_kan_actuele_organisaties_alsnog_hercontroleren(
+    client, db_session, monkeypatch,
+):
+    _watchlist_met_verslagjaren(client, db_session, "hercontrole", 2026, {
+        "Actueel": ("https://x.test/jaarverslag-2025.pdf", 2025),
+    })
+    gestart = []
+    monkeypatch.setattr(
+        monitoring_router, "run_monitoring_watchlist_background",
+        lambda limit=None, offset=0, hercontroleer_actuele=False: gestart.append(
+            (limit, offset, hercontroleer_actuele),
+        ),
+    )
+
+    data = client.post("/monitoring/run?hercontroleer_actuele=true").json()
+
+    assert data["overgeslagen_actueel"] == 0
+    assert data["aantal_companies"] == 1
+    assert gestart == [(None, 0, True)]

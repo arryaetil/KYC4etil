@@ -12,18 +12,26 @@ import {useIsXl} from "../lib/useBreakpoint.js";
 
 /**
  * Monitoring heeft een eigen vocabulaire: de agent vindt hooguit een
- * jaarverslag, niemand kiest hier een bron.
+ * jaarverslag, niemand kiest hier een bron. De indeling volgt het
+ * verslagjaar — hebben we het verslag over het doeljaar, alleen een ouder
+ * verslag, of niets — en niet wat de laatste ronde toevallig veranderde.
  */
-const MONITORING_OPTIES = [
-  {waarde: "nieuwe_vondst", label: "Nieuwe vondst"},
-  {waarde: "gevonden", label: "Jaarverslag gevonden"},
-  {waarde: "niet_gevonden", label: "Geen jaarverslag gevonden"},
-  {waarde: "mislukt", label: "Controle mislukt"},
-];
+function monitoringOpties(doeljaar) {
+  return [
+    {
+      waarde: "actueel",
+      label: doeljaar ? `Verslag ${doeljaar} binnen` : "Actueel verslag",
+    },
+    {waarde: "verouderd", label: "Alleen een ouder verslag"},
+    {waarde: "ontbreekt", label: "Geen jaarverslag gevonden"},
+    {waarde: "mislukt", label: "Controle mislukt"},
+  ];
+}
 
 const MONITORING_TELLERS = [
-  {sleutel: "nieuwe_vondst", label: "nieuwe vondst"},
-  {sleutel: "gevonden", label: "met jaarverslag"},
+  {sleutel: "actueel", label: "actueel"},
+  {sleutel: "verouderd", label: "verouderd"},
+  {sleutel: "ontbreekt", label: "ontbreekt"},
 ];
 
 export function MonitoringView({api}) {
@@ -75,10 +83,17 @@ export function MonitoringView({api}) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-3 border-b border-line px-4 py-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-2">
         <span className="text-sm font-medium text-ink">{batch.naam}</span>
+        {/* De hoofdvraag van deze module staat vooraan: van hoeveel
+            organisaties hebben we het verslag over het doeljaar. */}
+        <span className="text-xs tabular-nums text-slate-500">
+          {status.actueel} van {status.totaal} met verslag
+          {status.doeljaar ? ` ${status.doeljaar}` : ""}
+          {" · "}{status.verouderd} ouder{" · "}{status.ontbreekt} ontbreekt
+        </span>
         <span className="text-xs text-slate-400">
-          {status.gecontroleerd} van {status.totaal} gecontroleerd
+          {status.gecontroleerd} gecontroleerd
         </span>
         <IconButton
           icon={RefreshCw}
@@ -105,7 +120,7 @@ export function MonitoringView({api}) {
               setGeselecteerdeBron(null);
             }}
             statusVan={monitoringStatus}
-            statusOpties={MONITORING_OPTIES}
+            statusOpties={monitoringOpties(status.doeljaar)}
             tellers={MONITORING_TELLERS}
           />
         </aside>

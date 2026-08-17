@@ -105,21 +105,47 @@ export function organisatieStatus(company) {
  * Monitoring heeft een eigen vocabulaire. De agent vindt daar hooguit een
  * jaarverslag; niemand kiest een bron. Daarom bewust geen "Bron gekozen" en
  * geen groene toon — dat zou een menselijke keuze suggereren die er niet is.
+ *
+ * De status gaat over het verslagjaar, niet over de vorige controleronde.
+ * "Nieuwe vondst" stond hier eerder bovenaan, maar dat betekent "veranderd
+ * sinds de laatste keer": op de watchlist van 10-08-2026 kregen precies twee
+ * organisaties die badge en die stonden allebei op verslagjaar 2023, terwijl
+ * de 51 organisaties met een verslag over 2025 neutraal bleven. De
+ * delta-informatie blijft bestaan (`nieuwe_bevinding`), maar als secundair
+ * signaal naast de jaarstatus — zie MonitoringVondst.
+ *
+ * `jaarstatus` en `doeljaar` komen van de backend, zodat er één plek is waar
+ * "is dit verslag actueel?" wordt beslist.
  */
 export function monitoringStatus(company) {
   if (company?.fout) {
     return {sleutel: "mislukt", label: "Controle mislukt", toon: "fout"};
   }
-  if (company?.nieuwe_bevinding) {
-    return {sleutel: "nieuwe_vondst", label: "Nieuwe vondst", toon: "aandacht"};
-  }
-  if (company?.laatste_bron_url) {
+  // Terugval voor een respons van vóór het jaarstatus-contract: dan alleen
+  // "is er een bron", zonder een actualiteit te suggereren die we niet weten.
+  const jaarstatus = company?.jaarstatus
+    || (company?.laatste_bron_url ? "verouderd" : "ontbreekt");
+
+  if (jaarstatus === "actueel") {
     return {
-      sleutel: "gevonden", label: "Jaarverslag gevonden", toon: "neutraal",
+      sleutel: "actueel",
+      label: company?.doeljaar
+        ? `Verslag ${company.doeljaar} binnen`
+        : "Actueel verslag",
+      toon: "neutraal",
+    };
+  }
+  if (jaarstatus === "verouderd") {
+    return {
+      sleutel: "verouderd",
+      label: company?.verslagjaar
+        ? `Alleen verslag ${company.verslagjaar}`
+        : "Verslag zonder jaartal",
+      toon: "aandacht",
     };
   }
   return {
-    sleutel: "niet_gevonden",
+    sleutel: "ontbreekt",
     label: "Geen jaarverslag gevonden",
     toon: "aandacht",
   };

@@ -480,16 +480,41 @@ async def check_batch_jaarverslagen(batch_id: str, jaar: int, company_ids: list[
     ))
 
 
+def _heeft_doeljaar_al(status: JaarverslagMonitoring | None, doeljaar: int) -> bool:
+    """Is het verslag over het doeljaar al binnen?
+
+    Een jaarverslag over jaar X verschijnt pas in X+1, dus zodra het verslag
+    over `doeljaar` er is, kan een volgende ronde er niets nieuwers vinden.
+    Opnieuw zoeken kost dan alleen zoek- en modeltokens. Van de watchlist van
+    10-08-2026 had 51 van de 205 organisaties het verslag over 2025 al; die
+    zijn in elke daaropvolgende ronde tevergeefs opnieuw doorzocht.
+
+    `>=` en niet `==`: een hoger opgeslagen jaartal komt in de praktijk alleen
+    voor als een publicatiedatum als verslagjaar is gelezen, en ook dan valt
+    er niets nieuwers te halen.
+    """
+    return bool(
+        status
+        and status.laatste_bron_url
+        and status.laatste_verslagjaar is not None
+        and status.laatste_verslagjaar >= doeljaar
+    )
+
+
 def run_monitoring_watchlist_background(
     limit: int | None = None,
     offset: int = 0,
+    hercontroleer_actuele: bool = False,
 ) -> None:
     """Zoekt de gemarkeerde watchlist-batch op (Batch.is_monitoringlijst=True) en
     controleert alle organisaties daarin gelijktijdig op nieuwe jaarverslagen.
     Geen watchlist ingesteld of leeg -> stille no-op.
     limit beperkt (optioneel) het aantal gecontroleerde organisaties — bedoeld
     om tijdens testen/ontwikkelen niet steeds de volledige, live-kostbare
-    watchlist te hoeven doorlopen."""
+    watchlist te hoeven doorlopen.
+
+    Organisaties waarvan het verslag over het doeljaar al binnen is, worden
+    overgeslagen; `hercontroleer_actuele=True` doorzoekt ze alsnog."""
     db = SessionLocal()
     try:
         batch = db.query(Batch).filter_by(is_monitoringlijst=True).order_by(
@@ -497,6 +522,18 @@ def run_monitoring_watchlist_background(
         if batch is None:
             return
         batch_id, jaar = batch.id, batch.jaar
+        doeljaar = jaar - 1
+        al_actueel: set[str] = set()
+        if not hercontroleer_actuele:
+            al_actueel = {
+                status.company_id
+                for status in (
+                    db.query(JaarverslagMonitoring)
+                    .join(Company, Company.id == JaarverslagMonitoring.company_id)
+                    .filter(Company.batch_id == batch.id)
+                )
+                if _heeft_doeljaar_al(status, doeljaar)
+            }
         company_ids = [
             company_id
             for (company_id,) in (
@@ -505,6 +542,7 @@ def run_monitoring_watchlist_background(
                 .order_by(Company.created_at, Company.id)
                 .all()
             )
+            if company_id not in al_actueel
         ]
     finally:
         db.close()

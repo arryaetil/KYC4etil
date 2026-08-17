@@ -213,6 +213,29 @@ def _controleer_monitoring(page, c: Controle) -> None:
         not page.is_visible("text=Application error"),
         "monitoringmodule laadt zonder fout",
     )
+    # De indeling op verslagjaar is de kernvraag van deze module; zonder een
+    # eigen assertie zou een lege of stukgelopen kopregel groen blijven.
+    c.meld(
+        page.is_visible("text=/met verslag \\d{4}/"),
+        "kopregel noemt hoeveel organisaties het verslag over het doeljaar hebben",
+    )
+    c.meld(
+        page.is_visible("text=/\\d+ ouder/")
+        and page.is_visible("text=/\\d+ ontbreekt/"),
+        "kopregel splitst verouderd en ontbrekend uit",
+    )
+    filter_opties = page.locator(
+        "select[aria-label='Filter op status'] option",
+    ).all_inner_texts()
+    c.meld(
+        any(tekst.startswith("Verslag ") for tekst in filter_opties)
+        and "Alleen een ouder verslag" in filter_opties,
+        "statusfilter biedt de jaarbuckets aan",
+    )
+    c.meld(
+        "Nieuwe vondst" not in filter_opties,
+        "de oude delta-status staat niet meer als hoofdfilter",
+    )
     page.click("text=Onderzoek")
     page.wait_for_timeout(1500)
 

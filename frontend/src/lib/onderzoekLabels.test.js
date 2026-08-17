@@ -22,44 +22,73 @@ describe("monitoringStatus", () => {
     });
   });
 
-  it("meldt een nieuwe vondst met aandacht-toon", () => {
-    const status = monitoringStatus({
-      nieuwe_bevinding: true, laatste_bron_url: "https://x.nl/jaar.pdf",
-    });
-    expect(status).toEqual({
-      sleutel: "nieuwe_vondst", label: "Nieuwe vondst", toon: "aandacht",
+  it("noemt een verslag over het doeljaar actueel", () => {
+    expect(monitoringStatus({
+      jaarstatus: "actueel", doeljaar: 2025, verslagjaar: 2025,
+      laatste_bron_url: "https://x.nl/jaar-2025.pdf",
+    })).toEqual({
+      sleutel: "actueel", label: "Verslag 2025 binnen", toon: "neutraal",
     });
   });
 
-  it("meldt een gevonden jaarverslag neutraal, niet als gekozen bron", () => {
-    const status = monitoringStatus({laatste_bron_url: "https://x.nl/jaar.pdf"});
-    expect(status).toEqual({
-      sleutel: "gevonden", label: "Jaarverslag gevonden", toon: "neutraal",
+  it("noemt een ouder verslag met zijn eigen jaartal", () => {
+    expect(monitoringStatus({
+      jaarstatus: "verouderd", doeljaar: 2025, verslagjaar: 2023,
+      laatste_bron_url: "https://x.nl/jaar-2023.pdf",
+    })).toEqual({
+      sleutel: "verouderd", label: "Alleen verslag 2023", toon: "aandacht",
     });
-    expect(status.toon).not.toBe("gekozen");
+  });
+
+  it("meldt een bron zonder herkenbaar jaartal als zodanig", () => {
+    expect(monitoringStatus({
+      jaarstatus: "verouderd", doeljaar: 2025,
+      laatste_bron_url: "https://x.nl/jaarverslagsite/",
+    })).toEqual({
+      sleutel: "verouderd", label: "Verslag zonder jaartal", toon: "aandacht",
+    });
   });
 
   it("meldt aandacht als er niets is gevonden", () => {
-    expect(monitoringStatus({})).toEqual({
-      sleutel: "niet_gevonden",
+    expect(monitoringStatus({jaarstatus: "ontbreekt"})).toEqual({
+      sleutel: "ontbreekt",
       label: "Geen jaarverslag gevonden",
       toon: "aandacht",
     });
-    expect(monitoringStatus(null).sleutel).toBe("niet_gevonden");
+    expect(monitoringStatus(null).sleutel).toBe("ontbreekt");
   });
 
-  it("geeft een fout voorrang op een bevinding en op een gevonden bron", () => {
+  it("geeft nooit de gekozen-toon: monitoring kiest geen bron", () => {
+    expect(monitoringStatus({
+      jaarstatus: "actueel", doeljaar: 2025, verslagjaar: 2025,
+      laatste_bron_url: "https://x.nl/jaar.pdf",
+    }).toon).not.toBe("gekozen");
+  });
+
+  it("geeft een fout voorrang op elke jaarstatus", () => {
     expect(monitoringStatus({
       fout: "timeout",
-      nieuwe_bevinding: true,
+      jaarstatus: "actueel",
       laatste_bron_url: "https://x.nl/jaar.pdf",
     }).sleutel).toBe("mislukt");
   });
 
-  it("geeft een nieuwe bevinding voorrang op een reeds gevonden bron", () => {
+  it("laat een verandering sinds de vorige ronde de jaarstatus niet sturen", () => {
+    // Op de watchlist van 10-08-2026 waren de enige twee organisaties met
+    // nieuwe_bevinding allebei van verslagjaar 2023; als hoofdstatus zette
+    // dat juist de verouderde vondsten bovenaan.
     expect(monitoringStatus({
-      nieuwe_bevinding: true, laatste_bron_url: "https://x.nl/jaar.pdf",
-    }).sleutel).toBe("nieuwe_vondst");
+      nieuwe_bevinding: true, jaarstatus: "verouderd",
+      doeljaar: 2025, verslagjaar: 2023,
+      laatste_bron_url: "https://x.nl/jaar-2023.pdf",
+    }).sleutel).toBe("verouderd");
+  });
+
+  it("valt terug op bron-aanwezigheid zonder jaarstatus in de respons", () => {
+    expect(monitoringStatus({
+      laatste_bron_url: "https://x.nl/jaar.pdf",
+    }).sleutel).toBe("verouderd");
+    expect(monitoringStatus({}).sleutel).toBe("ontbreekt");
   });
 });
 

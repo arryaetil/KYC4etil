@@ -1022,3 +1022,64 @@ def test_monitoringcontrole_legt_kosten_vast():
 
     assert isinstance(run, PipelineRun)
     assert run.kosten_cents == 3
+
+
+def test_run_monitoring_watchlist_slaat_actuele_organisaties_over(monkeypatch):
+    """De echte kostenbesparing zit hier, niet in de router: een organisatie
+    waarvan het verslag over het doeljaar al binnen is, wordt niet opnieuw
+    doorzocht. Watchlistjaar 2026 betekent doeljaar 2025."""
+    from app.models import JaarverslagMonitoring
+    from app.pipeline.monitoring import run_monitoring_watchlist_background
+
+    db = SessionLocal()
+    try:
+        batch = Batch(naam="watchlist-skip-test", jaar=2026, totaal=3,
+                      is_monitoringlijst=True)
+        db.add(batch)
+        db.flush()
+        per_naam = {}
+        for naam in ("Actueel", "Ouder", "Niets"):
+            company = Company(batch_id=batch.id, naam=naam)
+            db.add(company)
+            db.flush()
+            per_naam[naam] = company.id
+        db.add_all([
+            JaarverslagMonitoring(
+                company_id=per_naam["Actueel"],
+                laatste_bron_url="https://x.test/jaarverslag-2025.pdf",
+                laatste_verslagjaar=2025,
+            ),
+            JaarverslagMonitoring(
+                company_id=per_naam["Ouder"],
+                laatste_bron_url="https://x.test/jaarverslag-2023.pdf",
+                laatste_verslagjaar=2023,
+            ),
+        ])
+        db.commit()
+
+        doorgegeven = []
+
+        async def fake_check_batch_jaarverslagen(
+            batch_id, jaar, company_ids, max_concurrent=8,
+        ):
+            doorgegeven.extend(company_ids)
+
+        monkeypatch.setattr(
+            "app.pipeline.monitoring.check_batch_jaarverslagen",
+            fake_check_batch_jaarverslagen,
+        )
+
+        run_monitoring_watchlist_background()
+        assert per_naam["Actueel"] not in doorgegeven
+        assert set(doorgegeven) == {per_naam["Ouder"], per_naam["Niets"]}
+
+        doorgegeven.clear()
+        run_monitoring_watchlist_background(hercontroleer_actuele=True)
+        assert per_naam["Actueel"] in doorgegeven
+        assert len(doorgegeven) == 3
+    finally:
+        db.query(JaarverslagMonitoring).delete()
+        db.query(Company).delete()
+        db.query(Batch).delete()
+        db.commit()
+        db.close()
