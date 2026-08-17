@@ -327,6 +327,37 @@ def _pagina_data_uit_html(html: str, url: str) -> dict:
     return {"tekst": tekst, "links": links}
 
 
+# Bot-challenges van Cloudflare en soortgelijke diensten leveren een geldige
+# HTTP 200 met een kort interstitial-pagina. Die tekst kwam als bron de
+# pipeline in: in de batch van 16-08 kregen vijf kandidaten
+# "Checking the site connection security" als bewijsfragment, compleet met een
+# toegewezen scope_class. Hallux leverde daardoor zeven kandidaten en nul WP,
+# terwijl dezelfde site vanaf een ander IP gewoon inhoud gaf.
+_CHALLENGE_MARKERS = (
+    "checking the site connection security",
+    "checking your browser before accessing",
+    "just a moment...",
+    "enable javascript and cookies to continue",
+    "attention required! | cloudflare",
+    "verify you are human",
+    "ddos protection by",
+)
+# Een challenge-pagina is per definitie kort. De lengte-eis voorkomt dat een
+# echte pagina die toevallig over Cloudflare schrijft wordt weggegooid.
+_MAX_CHALLENGE_TEKST = 1500
+
+
+def _is_bot_challenge(tekst: str) -> bool:
+    if len(tekst) > _MAX_CHALLENGE_TEKST:
+        return False
+    laag = tekst.lower()
+    return any(marker in laag for marker in _CHALLENGE_MARKERS)
+
+
+class BotChallengeError(RuntimeError):
+    """De site serveerde een bot-controle in plaats van inhoud."""
+
+
 async def _haal_pagina_op(url: str) -> dict:
     """Haalt een pagina op en geeft zowel de opgeschoonde tekst als de links terug
     die het model kan gebruiken om zelf verder te navigeren. Alleen links binnen
@@ -337,9 +368,16 @@ async def _haal_pagina_op(url: str) -> dict:
         r.raise_for_status()
         pagina = _pagina_data_uit_html(r.text, url)
 
+    plat_is_challenge = _is_bot_challenge(pagina["tekst"])
+
     if not settings.playwright_enabled:
+        if plat_is_challenge:
+            raise BotChallengeError(f"bot-controle in plaats van inhoud: {url}")
         return pagina
-    if not (settings.crawl4ai_altijd or len(pagina["tekst"]) < 500):
+    # Een challenge is óók een reden om te renderen: een echte browser komt er
+    # soms wel doorheen waar een kale HTTP-request wordt tegengehouden.
+    if not (settings.crawl4ai_altijd or plat_is_challenge
+            or len(pagina["tekst"]) < 500):
         return pagina
     try:
         rendered = await _haal_pagina_op_crawl4ai(url)
@@ -351,12 +389,27 @@ async def _haal_pagina_op(url: str) -> dict:
             "Renderen mislukt voor %s (%s: %s); platte HTTP-tekst gebruikt",
             url, type(exc).__name__, exc,
         )
+        if plat_is_challenge:
+            raise BotChallengeError(f"bot-controle in plaats van inhoud: {url}")
         return pagina
 
     if settings.crawl4ai_altijd:
         # Markdown mág korter zijn dan de platte tekst — dat is juist de winst:
         # PruningContentFilter haalt navigatie en boilerplate eruit vóórdat de
         # tekst tokens kost. Alleen terugvallen als er niets over blijft.
-        return rendered if len(rendered["tekst"]) >= _MIN_MARKDOWN_TEKST else pagina
-    # Fallbackmodus: renderen moest juist méér tekst opleveren dan platte HTTP.
-    return rendered if len(rendered["tekst"]) > len(pagina["tekst"]) else pagina
+        resultaat = (
+            rendered if len(rendered["tekst"]) >= _MIN_MARKDOWN_TEKST else pagina
+        )
+    else:
+        # Fallbackmodus: renderen moest juist méér tekst opleveren dan platte HTTP.
+        resultaat = (
+            rendered if len(rendered["tekst"]) > len(pagina["tekst"]) else pagina
+        )
+
+    # Ook ná renderen kan er een challenge staan. Die tekst als bron doorgeven
+    # levert een kandidaat op met "Checking the site connection security" als
+    # bewijsfragment; liever een expliciete ophaalfout, die de aanroepers al
+    # afhandelen.
+    if _is_bot_challenge(resultaat["tekst"]):
+        raise BotChallengeError(f"bot-controle in plaats van inhoud: {url}")
+    return resultaat

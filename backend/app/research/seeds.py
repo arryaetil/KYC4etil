@@ -8,6 +8,7 @@ als de documentzoektocht nog geen document met zowel het gevraagde
 verslagjaar als een WP-getal heeft opgeleverd — anders proberen twee
 onafhankelijke strategieën hetzelfde te vinden."""
 import asyncio
+import logging
 from dataclasses import replace
 
 from .digimv import zoek_digimv_documenten
@@ -42,10 +43,23 @@ async def verzamel_seed_documenten(
     seed_documents: list[SourceDocument] = []
     actieve_routes = actieve_routes or {"website", "document"}
 
-    async def _veilig(coroutine):
+    async def _veilig(coroutine, wat: str = "seed"):
+        """Een falende seedbron mag de run niet stoppen, maar wel opvallen.
+
+        Dit slikte elke fout stilzwijgend. Gevolg: "het register kende deze
+        organisatie niet" en "het document kwam er niet doorheen" waren van
+        buitenaf niet te onderscheiden. In de batch van 16-08 leverde de
+        DigiMV-route bij zeventien van de tweeëntwintig inzetten niets op,
+        terwijl dezelfde opdrachten lokaal wél documenten teruggaven — zonder
+        een spoor van de oorzaak.
+        """
         try:
             return await coroutine
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "seedbron %s mislukt voor %s (%s: %s)",
+                wat, context.naam, type(exc).__name__, str(exc)[:200],
+            )
             return None
 
     async def _digimv_documenten() -> list[SourceDocument]:
@@ -58,7 +72,7 @@ async def verzamel_seed_documenten(
                     "rechtstreeks document uit het openbare DigiMV-archief",
                 ),
                 result,
-            ))
+            ), "digimv_document")
             for result in resultaten
         ])
         return [
@@ -124,24 +138,24 @@ async def verzamel_seed_documenten(
         officiele_website, nieuwste_document, duo_bron, digimv_bronnen,
         lrk_bron, oude_bronnen,
     ) = await asyncio.gather(
-        _veilig(tools.find_officiele_website(context)),
+        _veilig(tools.find_officiele_website(context), "officiele_website"),
         (
-            _veilig(tools.find_nieuwste_officiele_document(context))
+            _veilig(tools.find_nieuwste_officiele_document(context), "document")
             if "document" in actieve_routes
             else asyncio.sleep(0, result=None)
         ),
         (
-            _veilig(vind_duo_personeelsbron(context))
+            _veilig(vind_duo_personeelsbron(context), "duo")
             if "duo" in actieve_routes
             else asyncio.sleep(0, result=None)
         ),
         (
-            _veilig(_digimv_documenten())
+            _veilig(_digimv_documenten(), "digimv")
             if "digimv" in actieve_routes
             else asyncio.sleep(0, result=[])
         ),
         (
-            _veilig(vind_lrk_bron(context))
+            _veilig(vind_lrk_bron(context), "lrk")
             if "lrk" in actieve_routes
             else asyncio.sleep(0, result=None)
         ),
@@ -165,7 +179,7 @@ async def verzamel_seed_documenten(
             for document in [nieuwste_document, *(digimv_bronnen or [])]
         )
     ):
-        jaarverslag = await _veilig(tools.find_jaarverslag(context))
+        jaarverslag = await _veilig(tools.find_jaarverslag(context), "jaarverslag")
         if jaarverslag is not None:
             seed_documents.append(jaarverslag)
 

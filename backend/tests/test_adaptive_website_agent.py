@@ -490,3 +490,94 @@ def test_html_route_oogst_ook_externe_pdf_links():
     assert "https://eigen.nl/team" in urls
     assert "https://cdn.example.org/jaarverslag-2025.pdf" in urls
     assert "https://partner.example.com/nieuws" not in urls
+
+
+def test_bot_challenge_wordt_herkend():
+    """Cloudflare-achtige interstitials kwamen als bron de pipeline in.
+
+    In de productiebatch van 16-08 kregen vijf kandidaten "Checking the site
+    connection security" als bewijsfragment, inclusief een toegewezen
+    scope_class. Hallux leverde daardoor zeven kandidaten en nul WP.
+    """
+    from app.providers.fetch import _is_bot_challenge
+
+    assert _is_bot_challenge("Checking the site connection security")
+    assert _is_bot_challenge("Just a moment...\nEnable JavaScript and cookies to continue")
+    assert _is_bot_challenge("Verify you are human by completing the action below.")
+    assert not _is_bot_challenge("Ons team bestaat uit 47 medewerkers.")
+    # Een lange, echte pagina die toevallig over Cloudflare schrijft moet
+    # gewoon blijven staan.
+    lang = "Wij gebruiken ddos protection by onze provider. " + ("inhoud " * 400)
+    assert not _is_bot_challenge(lang)
+
+
+@pytest.mark.asyncio
+async def test_challenge_pagina_levert_een_ophaalfout_op(monkeypatch):
+    """Liever een expliciete fout dan een kandidaat met een challenge als bewijs.
+
+    De aanroepers vangen ophaalfouten al af en vallen terug op de
+    zoekresultaat-snippet, wat altijd beter is dan de interstitial.
+    """
+    from app.providers import fetch
+
+    monkeypatch.setattr(fetch.settings, "playwright_enabled", False)
+
+    class _Response:
+        text = "<html><body>Checking the site connection security</body></html>"
+
+        def raise_for_status(self):
+            return None
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, *a, **k):
+            return _Response()
+
+    monkeypatch.setattr(fetch.httpx, "AsyncClient", _Client)
+    with pytest.raises(fetch.BotChallengeError):
+        await fetch._haal_pagina_op("https://hallux.nl/")
+
+
+@pytest.mark.asyncio
+async def test_challenge_laat_de_browser_het_alsnog_proberen(monkeypatch):
+    """Een echte browser komt soms wel door een controle waar kale HTTP faalt."""
+    from app.providers import fetch
+
+    monkeypatch.setattr(fetch.settings, "playwright_enabled", True)
+    monkeypatch.setattr(fetch.settings, "crawl4ai_altijd", False)
+
+    class _Response:
+        text = "<html><body>Checking the site connection security</body></html>"
+
+        def raise_for_status(self):
+            return None
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, *a, **k):
+            return _Response()
+
+    async def fake_render(url):
+        return {"tekst": "Ons team bestaat uit 47 medewerkers." * 20, "links": []}
+
+    monkeypatch.setattr(fetch.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(fetch, "_haal_pagina_op_crawl4ai", fake_render)
+
+    pagina = await fetch._haal_pagina_op("https://hallux.nl/")
+    assert "47 medewerkers" in pagina["tekst"]

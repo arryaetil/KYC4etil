@@ -225,7 +225,9 @@ def vereenvoudigde_zoeknaam(naam: str) -> str | None:
     return vereenvoudigd
 
 
-def plan_queries(context: QueryContext) -> list[PlannedQuery]:
+def plan_queries(
+    context: QueryContext, route_plan: list[dict] | None = None,
+) -> list[PlannedQuery]:
     """Bouwt korte, gerichte zoekopdrachten.
 
     Gemeten op de jaarverslagzoeker (tien organisaties die aantoonbaar
@@ -239,7 +241,13 @@ def plan_queries(context: QueryContext) -> list[PlannedQuery]:
     domein = _domein(context.website_url)
     huidig_jaar = context.huidig_jaar or datetime.now(timezone.utc).year
     queries: list[PlannedQuery] = []
-    actieve_routes = {item["route"] for item in plan_routes(context)}
+    # Het routeplan mag van buiten komen. Zonder dat argument berekende deze
+    # functie het zelf opnieuw, waardoor routes die de sectorprobe had
+    # toegevoegd nooit een zoekopdracht kregen: gepland, maar met nul queries
+    # uitgevoerd en daarna gerapporteerd als "overgeslagen".
+    actieve_routes = {
+        item["route"] for item in (route_plan or plan_routes(context))
+    }
 
     if domein:
         queries.extend([

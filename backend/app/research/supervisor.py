@@ -124,7 +124,7 @@ class ResearchSupervisor:
                     wp_bewijs_bij_stopbesluit.add(route)
 
         per_route_queries: dict[str, list[PlannedQuery]] = {}
-        for query in plan_queries(context):
+        for query in plan_queries(context, route_plan):
             if query.pad not in directe_routes:
                 per_route_queries.setdefault(query.pad, []).append(query)
         routevolgorde = [item["route"] for item in route_plan]
@@ -392,6 +392,17 @@ class ResearchSupervisor:
             if bruikbaar_per_route[route]:
                 status = "afgerond"
                 statusreden = "bruikbare bronnen gevonden"
+            elif route in directe_routes:
+                # Nul queries omdat het register de route rechtstreeks invulde,
+                # niet omdat we er niet aan toekwamen. Dit stond eerder als
+                # "overgeslagen — niet uitgevoerd binnen het querybudget", wat
+                # bij tien van de twaalf DUO-/DigiMV-routes in de laatste
+                # batch pertinent onwaar was.
+                status = "afgerond"
+                statusreden = (
+                    "rechtstreekse sectorspecifieke bron gevonden, "
+                    "maar niet bruikbaar bevonden"
+                )
             elif query_count == 0:
                 status = "overgeslagen"
                 statusreden = "niet uitgevoerd binnen het querybudget"
@@ -411,8 +422,14 @@ class ResearchSupervisor:
                 "aantal_bronnen": bruikbaar_per_route[route],
                 "aantal_queries": query_count,
             })
+        # Alleen een technische mislukking telt. "Overgeslagen" betekent dat
+        # het querybudget op was voordat de route aan de beurt kwam — een
+        # keuze over middelen, geen onvermogen om te kijken. Stichting
+        # Zorggroep Noord- en Midden-Limburg kwam zo als technisch onvolledig
+        # uit een run met zestien bruikbare bronnen; dat stuurt de reviewer
+        # verkeerd.
         technisch_onvolledig = any(
-            item["verplicht"] and item["status"] in {"mislukt", "overgeslagen"}
+            item["verplicht"] and item["status"] == "mislukt"
             for item in route_statussen
         )
         resultaat_status = (
