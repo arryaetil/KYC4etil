@@ -342,6 +342,13 @@ def _sla_moderne_bron_op(
                 finding.is_limburg_specifiek,
                 "jaarverslag",
             ),
+            # De extractievlaggen horen bij het document, want `valideer_bron`
+            # leest hieruit of het getal uit een namenlijst is geteld. Zonder dit
+            # bleef `draag_naamlijsttelling_over_aan_reviewer` uit en kwam een
+            # telling uit een namenlijst als hard WP-getal op de kaart: Stichting
+            # Dichterbij kreeg zo 16 werkzame personen uit de samenstelling van
+            # de ondernemingsraad.
+            raw_data=finding.raw or None,
         )
     ranked = rank_bronnen([_valideer_voor_monitoring(document)])
     run = ResearchRun(
@@ -364,22 +371,29 @@ def _sla_moderne_bron_op(
     if not ranked:
         return
     bron = ranked[0]
+    # Het document zoals de validatie het achterlaat, niet zoals het erin ging.
+    # `draag_naamlijsttelling_over_aan_reviewer` trekt een telling uit een
+    # namenlijst in door het getal uit het document te halen; die correctie zat
+    # in `bron.document` en werd hier overschreven door het origineel. Zolang
+    # monitoring `raw_data` niet meestuurde kon dat niet misgaan — sinds de
+    # WP-extractie wel.
+    bewijs = bron.document
     db.add(BronKandidaat(
         research_run_id=run.id,
         company_id=company.id,
-        url=document.url,
-        canonical_url=canonicaliseer_url(document.url),
-        titel=document.titel,
-        brontype=document.brontype,
-        documenttype=document.documenttype,
-        verslagjaar=document.verslagjaar,
-        informatie_peilmoment=document.informatie_peilmoment,
-        wp_gevonden=document.wp_gevonden,
-        eenheid=document.eenheid,
-        bewijsfragment=document.bewijsfragment,
-        bron_pagina=document.bron_pagina,
+        url=bewijs.url,
+        canonical_url=canonicaliseer_url(bewijs.url),
+        titel=bewijs.titel,
+        brontype=bewijs.brontype,
+        documenttype=bewijs.documenttype,
+        verslagjaar=bewijs.verslagjaar,
+        informatie_peilmoment=bewijs.informatie_peilmoment,
+        wp_gevonden=bewijs.wp_gevonden,
+        eenheid=bewijs.eenheid,
+        bewijsfragment=bewijs.bewijsfragment,
+        bron_pagina=bewijs.bron_pagina,
         identity_class=bron.identity_class,
-        scope_class=document.scope_class,
+        scope_class=bewijs.scope_class,
         autoriteit_score=bron.score_breakdown["autoriteit"],
         actualiteit_score=bron.score_breakdown["actualiteit"],
         identiteit_score=bron.score_breakdown["identiteit"],
@@ -390,7 +404,7 @@ def _sla_moderne_bron_op(
         waarschuwingen=bron.waarschuwingen,
         # Een al onderzocht document (DigiMV) draagt zijn eigen herkomst mee;
         # bij de agentroute staat die alleen in de finding.
-        raw_data=document.raw_data or (finding.raw if finding else None) or None,
+        raw_data=bewijs.raw_data or (finding.raw if finding else None) or None,
         status="voorgesteld",
         rang=1,
     ))
@@ -471,6 +485,63 @@ def _beste_moderne_jaarverslagbron(
     # die een exacte treffer op 2025 beloofde. Monitoring gebruikt het afgeleide
     # jaar dus alleen om te kiezen en om zijn eigen status te vullen.
     return max(geldig, key=lambda item: item[0])
+
+
+async def _lees_wp_uit_document(jaarverslag_agent, company_naam: str, finding):
+    """Haal het WP-getal uit een gevonden jaarverslag, als dat er nog niet is.
+
+    `find_latest_source` zoekt en valideert alleen de bron — zijn docstring zegt
+    het letterlijk: "monitoring hoeft geen WP-extractie". Dat klopte toen
+    monitoring niets anders deed dan een URL bijhouden. Sinds monitoring
+    beoordeelbare bronkandidaten aanmaakt, is dat een halve bronkaart: gemeten op
+    17-08-2026 leverde de documentroute 25 kaarten op met 0 WP-getallen, terwijl
+    de DigiMV-route (die wél door `inspect` gaat) er 8 van de 14 vulde. De
+    reviewer moest die 25 PDF's zelf openen.
+
+    Dezelfde extractie als de DigiMV-route dus: `run_with_pdf` van de
+    jaarverslag-agent. Kost ongeveer 1 cent per document en geen enkele
+    zoekopdracht — de URL is al bekend.
+
+    Een bestaand getal wordt nooit overschreven, en een mislukte extractie laat
+    de bron gewoon staan zoals hij was.
+    """
+    if finding is None or finding.wp_gevonden is not None or not finding.bron_url:
+        return finding
+    extractor = getattr(type(jaarverslag_agent), "run_with_pdf", None)
+    if extractor is None:
+        return finding
+    try:
+        # De naam gaat mee: `run_with_pdf` geeft die aan de extractie, en een
+        # jaarverslag van een concern noemt meerdere organisaties.
+        gelezen = await jaarverslag_agent.run_with_pdf(
+            company_naam, finding.bron_url,
+        )
+    except Exception as exc:
+        logging.getLogger("monitoring").warning(
+            "WP-extractie mislukt voor %s (%s: %s)",
+            finding.bron_url, type(exc).__name__, str(exc)[:200],
+        )
+        return finding
+    if gelezen is None or gelezen.wp_gevonden is None:
+        return finding
+    return replace(
+        finding,
+        wp_gevonden=gelezen.wp_gevonden,
+        context=gelezen.context,
+        is_fte=gelezen.is_fte,
+        peilmoment=gelezen.peilmoment,
+        bron_pagina=gelezen.bron_pagina,
+        is_limburg_specifiek=(
+            finding.is_limburg_specifiek
+            if finding.is_limburg_specifiek is not None
+            else gelezen.is_limburg_specifiek
+        ),
+        # De extractievlaggen meenemen, want `valideer_bron` leest hieruit of het
+        # getal uit een namenlijst komt. Zonder dat blijft de telopdracht-regel
+        # uit: Stichting Dichterbij kreeg zo `wp = 16` uit de samenstelling van
+        # de ondernemingsraad, met een citaat dat zelfverzekerd leest.
+        raw={**(finding.raw or {}), **(gelezen.raw or {})},
+    )
 
 
 def _heeft_al_een_bronkaart(
@@ -764,6 +835,13 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         else "new" if verslag_is_nieuw
         else "updated"
     )
+
+    # Pas hier, en niet eerder: we weten nu dat er echt een bronkaart komt, dus
+    # betalen we de extractie alleen als de reviewer er iets aan heeft.
+    if digimv_document is None:
+        finding = await _lees_wp_uit_document(
+            jaarverslag_agent, company.naam, finding,
+        )
 
     _sla_moderne_bron_op(
         db,

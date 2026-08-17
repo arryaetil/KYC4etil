@@ -1265,6 +1265,178 @@ async def test_bekende_bron_zonder_bronkaart_wordt_alsnog_beoordeelbaar(
     assert run.status == monitoring_module.STATUS_ONGEWIJZIGD
 
 
+# --- WP uitlezen uit het gevonden document ---
+
+def _agent_die_leest(finding, gelezen, aanroepen):
+    class Agent:
+        async def find_latest_source(self, *args, **kwargs):
+            return finding
+
+        async def run_with_pdf(self, naam, pdf_url):
+            aanroepen.append((naam, pdf_url))
+            return gelezen
+
+    return Agent()
+
+
+@pytest.mark.asyncio
+async def test_monitoring_leest_wp_uit_een_gevonden_jaarverslag(
+    db_session, monkeypatch,
+):
+    """`find_latest_source` zoekt alleen de bron ("monitoring hoeft geen
+    WP-extractie", zegt zijn docstring). Dat klopte toen monitoring niets anders
+    deed dan een URL bijhouden; nu het bronkaarten maakt, is dat een halve kaart.
+    Gemeten op 17-08-2026: de documentroute leverde 25 kaarten met 0 WP-getallen,
+    de DigiMV-route 8 van de 14."""
+    company = _maak_company(db_session, naam="Leesbaar Jaarverslag")
+    company.website_url = "https://leesbaar.test"
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=None,
+        context=None,
+        zekerheid="laag",
+        reden="nieuwste jaarverslag",
+        bron_url="https://leesbaar.test/jaarverslag-2025.pdf",
+        bron_type="jaarverslag",
+    )
+    gelezen = AgentFinding(
+        wp_gevonden=412,
+        context="Per 31 december 2025 waren er 412 medewerkers in dienst.",
+        zekerheid="hoog",
+        reden="headcountzin",
+        bron_url=finding.bron_url,
+        bron_type="jaarverslag",
+        peilmoment="2025-12-31",
+        bron_pagina=23,
+        raw={"wp_gevonden": 412},
+    )
+    aanroepen = []
+    monkeypatch.setattr(
+        monitoring_module, "get_providers",
+        lambda: (None, None, _agent_die_leest(finding, gelezen, aanroepen), None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+
+    # De organisatienaam gaat mee: een concernjaarverslag noemt meerdere namen.
+    assert aanroepen == [(company.naam, finding.bron_url)]
+    bron = db_session.query(BronKandidaat).filter_by(company_id=company.id).one()
+    assert bron.wp_gevonden == 412
+    assert bron.eenheid == "werkzame_personen"
+    assert bron.bron_pagina == 23
+    assert bron.informatie_peilmoment == "2025-12-31"
+    assert "412 medewerkers" in bron.bewijsfragment
+
+
+@pytest.mark.asyncio
+async def test_monitoring_leest_niet_opnieuw_als_er_al_een_getal_is(
+    db_session, monkeypatch,
+):
+    """Een bestaand getal wordt nooit overschreven — en niet opnieuw betaald."""
+    company = _maak_company(db_session, naam="Al Een Getal")
+    company.website_url = "https://algetal.test"
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=88,
+        context="88 medewerkers",
+        zekerheid="hoog",
+        reden="al gevonden",
+        bron_url="https://algetal.test/jaarverslag-2025.pdf",
+        bron_type="jaarverslag",
+    )
+    aanroepen = []
+    monkeypatch.setattr(
+        monitoring_module, "get_providers",
+        lambda: (None, None, _agent_die_leest(finding, None, aanroepen), None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+
+    assert aanroepen == []
+    bron = db_session.query(BronKandidaat).filter_by(company_id=company.id).one()
+    assert bron.wp_gevonden == 88
+
+
+@pytest.mark.asyncio
+async def test_een_telling_uit_een_namenlijst_wordt_een_telopdracht(
+    db_session, monkeypatch,
+):
+    """Extractie zonder deze rem levert zelfverzekerde nonsens op.
+
+    Stichting Dichterbij kreeg op 17-08-2026 `wp = 16` uit de samenstelling van
+    de ondernemingsraad, met een citaat dat overtuigend leest. De batchflow heeft
+    hier al machinerie voor (`draag_naamlijsttelling_over_aan_reviewer`), maar die
+    leest de vlag uit `raw_data` van het document — en dat veld vulde monitoring
+    niet. Het getal moet dan verdwijnen en een telopdracht overblijven."""
+    company = _maak_company(db_session, naam="Namenlijst Stichting")
+    company.website_url = "https://namenlijst.test"
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=None,
+        context=None,
+        zekerheid="laag",
+        reden="nieuwste jaarverslag",
+        bron_url="https://namenlijst.test/jaarverslag-2025.pdf",
+        bron_type="jaarverslag",
+    )
+    gelezen = AgentFinding(
+        wp_gevonden=16,
+        context="Samenstelling ondernemingsraad: Marcel P., Marleen H., …",
+        zekerheid="middel",
+        reden="namen geteld",
+        bron_url=finding.bron_url,
+        bron_type="jaarverslag",
+        # Concernbreed jaarverslag: buiten de vestigingsscope.
+        is_limburg_specifiek=False,
+        raw={
+            "wp_gevonden": 16,
+            "wp_afgeleid_uit_naamlijst": True,
+            "genoemde_namen": ["Marcel P.", "Marleen H."],
+        },
+    )
+    monkeypatch.setattr(
+        monitoring_module, "get_providers",
+        lambda: (None, None, _agent_die_leest(finding, gelezen, []), None),
+    )
+
+    await check_company_jaarverslag(db_session, company, 2026)
+
+    bron = db_session.query(BronKandidaat).filter_by(company_id=company.id).one()
+    assert bron.wp_gevonden is None
+    assert "naamlijst_telling_aan_reviewer" in bron.waarschuwingen
+    telopdracht = bron.validaties["naamlijst_telling_aan_reviewer"]
+    assert telopdracht["afgeleid_aantal"] == 16
+    assert telopdracht["genoemde_namen"] == ["Marcel P.", "Marleen H."]
+
+
+@pytest.mark.asyncio
+async def test_een_agent_zonder_pdf_extractie_blijft_werken(
+    db_session, monkeypatch,
+):
+    """De mockprovider kent `run_with_pdf` niet; dat mag niets breken."""
+    company = _maak_company(db_session, naam="Zonder Extractie")
+    company.website_url = "https://zonder.test"
+    db_session.commit()
+    finding = AgentFinding(
+        wp_gevonden=None, context=None, zekerheid="laag", reden="bron",
+        bron_url="https://zonder.test/jaarverslag-2025.pdf",
+        bron_type="jaarverslag",
+    )
+
+    class Agent:
+        async def find_latest_source(self, *args, **kwargs):
+            return finding
+
+    monkeypatch.setattr(
+        monitoring_module, "get_providers",
+        lambda: (None, None, Agent(), None),
+    )
+
+    assert await check_company_jaarverslag(db_session, company, 2026) is True
+    bron = db_session.query(BronKandidaat).filter_by(company_id=company.id).one()
+    assert bron.wp_gevonden is None
+
+
 # --- DigiMV natief in de monitoring ---
 
 _UIT_DE_URL = object()
