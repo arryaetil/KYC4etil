@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .database import Base, SessionLocal, engine, ensure_lightweight_migrations
 from .models import Batch, PipelineRun
-from .routers import auth, batches, monitoring, research
+from .routers import auth, batches, monitoring, research, mappen
 from .scheduler import start_scheduler
 
 settings = get_settings()
@@ -20,6 +20,7 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_me
 
 app.include_router(auth.router)
 app.include_router(batches.router)
+app.include_router(mappen.router)
 app.include_router(monitoring.router)
 app.include_router(research.router)
 app.include_router(research.bron_router)

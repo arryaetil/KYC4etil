@@ -2,6 +2,7 @@ import {useEffect, useState} from "react";
 import {ChevronLeft} from "lucide-react";
 import {Alert} from "../components/Alert.jsx";
 import {BatchesView} from "./BatchesView.jsx";
+import {MappenView} from "./MappenView.jsx";
 import {OrganisatieLijst} from "../components/onderzoek/OrganisatieLijst.jsx";
 import {KandidatenPaneel} from "../components/onderzoek/KandidatenPaneel.jsx";
 import {BewijsPaneel} from "../components/onderzoek/BewijsPaneel.jsx";
@@ -10,6 +11,10 @@ import {useIsXl} from "../lib/useBreakpoint.js";
 
 export function OnderzoekView({api}) {
   const isXl = useIsXl();
+  // Drie niveaus: mappen → lijsten in een map → organisaties in een lijst.
+  // `undefined` betekent "nog geen map gekozen"; `null` is de virtuele map
+  // met lijsten die buiten elke map vallen, en dat is een geldige keuze.
+  const [map, setMap] = useState(undefined);
   const [batchId, setBatchId] = useState(null);
   const [batch, setBatch] = useState(null);
   const [companies, setCompanies] = useState([]);
@@ -42,7 +47,26 @@ export function OnderzoekView({api}) {
     return () => window.clearInterval(timer);
   }, [batchId, batch?.status]);
 
-  if (!batchId) return <BatchesView api={api} onOpenBatch={setBatchId} />;
+  if (map === undefined) {
+    return (
+      <MappenView
+        api={api}
+        onOpenMap={(id, naam) => setMap({id, naam})}
+      />
+    );
+  }
+
+  if (!batchId) {
+    return (
+      <BatchesView
+        api={api}
+        onOpenBatch={setBatchId}
+        mapId={map.id}
+        mapNaam={map.naam}
+        onTerug={() => setMap(undefined)}
+      />
+    );
+  }
 
   const geselecteerd = companies.find(
     (company) => company.company_id === geselecteerdId,

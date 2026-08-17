@@ -1,3 +1,4 @@
+import {batchesQuery} from "./lib/mappen.js";
 const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 export class ApiError extends Error {
@@ -40,16 +41,24 @@ export function createApi(token, onUnauthorized) {
       body: new URLSearchParams({username: email, password}),
     }),
     me: () => request("/auth/me"),
-    batches: () => request("/batches"),
+    batches: (mapId) => request(batchesQuery(mapId)),
+    mappen: () => request("/mappen"),
+    maakMap: (naam) => request("/mappen", {method: "POST", json: {naam}}),
+    hernoemMap: (id, naam) => request(`/mappen/${id}`, {method: "PATCH", json: {naam}}),
+    verwijderMap: (id, ontkoppelLijsten) => request(
+      `/mappen/${id}${ontkoppelLijsten ? "?ontkoppel_lijsten=true" : ""}`,
+      {method: "DELETE"},
+    ),
     batch: (id) => request(`/batches/${id}`),
     companies: (batchId, label) => request(`/batches/${batchId}/companies${label ? `?label=${label}` : ""}`),
     company: (batchId, companyId) => request(`/batches/${batchId}/companies/${companyId}`),
-    uploadBatch: (file, naam, jaar) => {
+    uploadBatch: (file, naam, jaar, mapId) => {
       const body = new FormData();
       body.append("file", file);
       const params = new URLSearchParams();
       if (naam) params.set("naam", naam);
       if (jaar) params.set("jaar", jaar);
+      if (mapId) params.set("map_id", mapId);
       return request(`/batches/upload?${params.toString()}`, {method: "POST", body});
     },
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),

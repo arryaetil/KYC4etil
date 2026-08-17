@@ -28,6 +28,24 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+class Map(Base):
+    """Map waarin onderzoekslijsten worden geordend.
+
+    Puur een ordeningslaag voor de reviewer: een map bevat lijsten, meer niet.
+    Een lijst hoeft geen map te hebben — `Batch.map_id` mag leeg zijn — zodat
+    een bestaande of via de API aangemaakte lijst nooit onbereikbaar wordt
+    doordat er geen map bij is opgegeven.
+    """
+
+    __tablename__ = "mappen"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    naam: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    aangemaakt_door: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+
+    batches: Mapped[list["Batch"]] = relationship(back_populates="map")
+
+
 class Batch(Base):
     __tablename__ = "batches"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -40,8 +58,13 @@ class Batch(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     is_monitoringlijst: Mapped[bool] = mapped_column(Boolean, default=False)
     geupload_door: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    # Leeg = losse lijst, zichtbaar buiten elke map. Bewust geen verplichte
+    # koppeling: een lijst die via de API binnenkomt zonder map moet vindbaar
+    # blijven in plaats van nergens te staan.
+    map_id: Mapped[str | None] = mapped_column(ForeignKey("mappen.id"))
 
     companies: Mapped[list["Company"]] = relationship(back_populates="batch")
+    map: Mapped["Map | None"] = relationship(back_populates="batches")
 
 
 class Organization(Base):

@@ -1,8 +1,9 @@
 import {useEffect, useRef, useState} from "react";
-import {FileDown, FileUp, Play, Square, Trash2} from "lucide-react";
+import {ChevronLeft, FileDown, FileUp, Play, Square, Trash2} from "lucide-react";
 import {Alert} from "../components/Alert.jsx";
 import {IconButton} from "../components/IconButton.jsx";
 import {researchBevestiging} from "../lib/researchCost.js";
+import {magUploaden} from "../lib/mappen.js";
 
 function formatDatum(iso) {
   if (!iso) return "—";
@@ -11,14 +12,14 @@ function formatDatum(iso) {
   });
 }
 
-export function BatchesView({api, onOpenBatch}) {
+export function BatchesView({api, onOpenBatch, mapId, mapNaam, onTerug}) {
   const fileRef = useRef(null);
   const [batches, setBatches] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const lijst = await api.batches();
+    const lijst = await api.batches(mapId);
     setBatches(lijst.sort(
       (a, b) => (b.created_at || "").localeCompare(a.created_at || ""),
     ));
@@ -26,7 +27,7 @@ export function BatchesView({api, onOpenBatch}) {
 
   useEffect(() => {
     load().catch((err) => setError(err.message));
-  }, []);
+  }, [mapId]);
 
   const heeftLopende = batches.some((batch) => batch.status === "running");
 
@@ -43,7 +44,9 @@ export function BatchesView({api, onOpenBatch}) {
     setError("");
     try {
       const naam = file.name.replace(/\.[^.]+$/, "");
-      const created = await api.uploadBatch(file, naam, new Date().getFullYear());
+      const created = await api.uploadBatch(
+        file, naam, new Date().getFullYear(), mapId,
+      );
       await load();
       onOpenBatch(created.batch_id);
     } catch (err) {
@@ -76,8 +79,19 @@ export function BatchesView({api, onOpenBatch}) {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-6 py-8">
       <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-ink">Onderzoek</h1>
+        <div className="min-w-0">
+          {onTerug ? (
+            <button
+              type="button"
+              onClick={onTerug}
+              className="focus-ring -ml-1 mb-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-sm text-slate-500 transition hover:text-ink"
+            >
+              <ChevronLeft size={16} />Alle mappen
+            </button>
+          ) : null}
+          <h1 className="truncate text-xl font-semibold text-ink">
+            {mapNaam || "Onderzoek"}
+          </h1>
           <p className="mt-1 text-sm text-slate-500">
             Kies een populatie om bronnen voor te beoordelen.
           </p>
@@ -89,14 +103,16 @@ export function BatchesView({api, onOpenBatch}) {
           className="hidden"
           onChange={upload}
         />
-        <IconButton
-          icon={FileUp}
-          variant="primary"
-          onClick={() => fileRef.current?.click()}
-          disabled={busy}
-        >
-          Lijst uploaden
-        </IconButton>
+        {magUploaden(mapId) ? (
+          <IconButton
+            icon={FileUp}
+            variant="primary"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+          >
+            Lijst uploaden
+          </IconButton>
+        ) : null}
       </div>
 
       {error ? <Alert message={error} /> : null}
@@ -164,7 +180,9 @@ export function BatchesView({api, onOpenBatch}) {
         ))}
         {!batches.length ? (
           <li className="py-12 text-center text-sm text-slate-500">
-            Nog geen lijsten. Upload een CSV- of Excel-bestand om te beginnen.
+            {mapNaam && mapId !== undefined
+              ? `Nog geen lijsten in "${mapNaam}". Upload een CSV- of Excel-bestand om te beginnen.`
+              : "Nog geen lijsten. Upload een CSV- of Excel-bestand om te beginnen."}
           </li>
         ) : null}
       </ul>

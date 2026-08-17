@@ -33,6 +33,42 @@ class Base(DeclarativeBase):
     pass
 
 
+DEMOMAP_NAAM = "Demo runs"
+
+
+def _vul_demomap(conn) -> None:
+    """Zet elke bestaande lijst in één map, zodat er niets verdwijnt.
+
+    De mappenlaag is later toegevoegd dan de lijsten. Zonder deze stap zou de
+    nieuwe pagina leeg openen terwijl er tientallen batches in de database
+    staan — die zouden dan alleen nog via een directe URL bereikbaar zijn.
+    De monitoringlijst blijft er bewust buiten: die heeft een eigen module.
+    """
+    import uuid as _uuid_mod
+    from datetime import datetime, timezone
+
+    map_id = str(_uuid_mod.uuid4())
+    conn.execute(
+        text(
+            "INSERT INTO mappen (id, naam, created_at) "
+            "VALUES (:id, :naam, :created_at)"
+        ),
+        {
+            "id": map_id,
+            "naam": DEMOMAP_NAAM,
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+        },
+    )
+    conn.execute(
+        text(
+            "UPDATE batches SET map_id = :map_id "
+            "WHERE map_id IS NULL "
+            "AND (is_monitoringlijst IS NULL OR is_monitoringlijst = FALSE)"
+        ),
+        {"map_id": map_id},
+    )
+
+
 def _add_column_if_missing(conn, table: str, existing: set[str], name: str, ddl_type: str) -> None:
     if name in existing:
         return
@@ -93,6 +129,17 @@ def ensure_lightweight_migrations() -> None:
                 ))
             if "geupload_door" not in existing_batches:
                 conn.execute(text("ALTER TABLE batches ADD COLUMN geupload_door VARCHAR(36)"))
+            if "map_id" not in existing_batches:
+                conn.execute(text("ALTER TABLE batches ADD COLUMN map_id VARCHAR(36)"))
+                # Alles wat er al stond bij elkaar in één map, zodat de nieuwe
+                # mappenpagina niet leeg opent en geen enkele bestaande lijst
+                # buiten beeld raakt. Alleen bij het aanmaken van de kolom:
+                # daarna bepaalt de gebruiker zelf waar een lijst hoort.
+                _vul_demomap(conn)
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_batches_map_id ON batches (map_id)"
+            ))
 
     if "agent_results" in tables:
         existing_ar = {col["name"] for col in inspector.get_columns("agent_results")}

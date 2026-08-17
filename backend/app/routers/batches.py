@@ -117,6 +117,7 @@ async def upload_batch(
     naam: str | None = None,
     jaar: int | None = None,
     monitoringlijst: bool = False,
+    map_id: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -136,6 +137,9 @@ async def upload_batch(
         totaal=len(rows),
         is_monitoringlijst=monitoringlijst,
         geupload_door=current_user.id,
+        # Een monitoringlijst hoort niet in een map: die heeft een eigen
+        # module en zou anders tussen de onderzoekslijsten opduiken.
+        map_id=None if monitoringlijst else map_id,
     )
     db.add(batch)
     db.flush()
@@ -242,11 +246,24 @@ def delete_batch(batch_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("")
-def list_batches(db: Session = Depends(get_db)):
+def list_batches(
+    map_id: str | None = None,
+    losse_lijsten: bool = False,
+    db: Session = Depends(get_db),
+):
+    """Lijsten, optioneel beperkt tot één map.
+
+    Zonder filter blijft dit alle lijsten teruggeven, zodat bestaande
+    aanroepers niet veranderen. `losse_lijsten=true` geeft juist alleen wat
+    buiten elke map staat.
+    """
+    query = db.query(Batch).filter(Batch.is_monitoringlijst.isnot(True))
+    if map_id:
+        query = query.filter(Batch.map_id == map_id)
+    elif losse_lijsten:
+        query = query.filter(Batch.map_id.is_(None))
     batches = [
-        batch for batch in db.query(Batch)
-        .filter(Batch.is_monitoringlijst.isnot(True))
-        .order_by(Batch.created_at.desc()).all()
+        batch for batch in query.order_by(Batch.created_at.desc()).all()
         if not _lijkt_monitoringlijst_batch(batch)
     ]
     uploader_ids = {batch.geupload_door for batch in batches if batch.geupload_door}
@@ -266,6 +283,7 @@ def list_batches(db: Session = Depends(get_db)):
             batch.completed_at.isoformat() + "Z" if batch.completed_at else None
         ),
         "geupload_door_naam": naam_per_id.get(batch.geupload_door),
+        "map_id": batch.map_id,
     } for batch in batches]
 
 
