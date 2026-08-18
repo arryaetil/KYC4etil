@@ -104,7 +104,6 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
         {company.nieuwe_bevinding
           ? " Sinds de vorige controle is er een recenter verslag gevonden."
           : ""}
-        {" "}Monitoring vindt bronnen; kiezen doe je zelf.
       </p>
     </section>
   );
