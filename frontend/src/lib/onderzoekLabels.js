@@ -321,10 +321,14 @@ export function peilmomentRelatie(candidate, {gevraagdJaar = null} = {}) {
   // Een jaarverslag heeft een verslagjaar, geen peilmoment — het label van de
   // regel past zich aan in plaats van dat er een tweede regel bij komt.
   if (jaar?.soort === "verslagjaar") {
+    // Alleen het jaartal. Dat het achterloopt op het peiljaar zegt de amber
+    // toon al; het peiljaar erbij zetten maakt de regel langer zonder dat de
+    // reviewer iets ziet wat hij nog niet wist — het peiljaar staat boven de
+    // lijst en is voor alle kaarten hetzelfde.
     const achter = gevraagdJaar != null && jaar.jaar < gevraagdJaar;
     return {
       term: "Verslagjaar",
-      label: achter ? `${jaar.jaar} — peiljaar ${gevraagdJaar}` : `${jaar.jaar}`,
+      label: `${jaar.jaar}`,
       toon: achter ? "aandacht" : "neutraal",
     };
   }

@@ -57,11 +57,6 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
             {company.verslagjaar ? (
               <span className="text-sm font-medium text-ink">
                 Verslagjaar {company.verslagjaar}
-                {/* Zonder deze regel moet de reviewer zelf onthouden om welk jaar
-                    het gaat, om te zien of dit verslag nog achterloopt. */}
-                {company.doeljaar && company.verslagjaar < company.doeljaar
-                  ? ` — peiljaar ${company.doeljaar}`
-                  : ""}
               </span>
             ) : null}
             <button
@@ -87,23 +82,13 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
         </p>
       )}
 
+      {/* Alleen de status. Hier stonden twee zinnen bij: dat er sinds de vorige
+          ronde een recenter verslag was, en dat monitoring bronnen vindt maar
+          niet kiest. Het eerste zegt iets over de vórige ronde en niet over dit
+          verslag; het tweede legt de module uit aan iemand die er al in werkt.
+          Allebei stonden ze onder élke kaart, elke ronde. */}
       <p className="mt-3 text-xs text-slate-400">
         Status: {status.label}.
-        {/* Secundair, want het zegt iets over de vórige ronde en niet over de
-            actualiteit van het verslag. Als hoofdstatus zette het juist
-            verouderde vondsten bovenaan.
-
-            Het woord "nieuw" staat hier bewust níet: in deze module betekent
-            "nieuw" het verslag over het doeljaar (zie `monitoringStatus`), en
-            twee betekenissen van hetzelfde woord op één kaart is vragen om
-            verwarring. De backend zet dit signaal alleen bij pipelinestatus
-            'new' — een betere extractie op dezelfde URL ('updated') of een
-            bekende bron die alsnog beoordeelbaar werd ('bronkaart_toegevoegd')
-            hoort er niet onder, zie
-            test_monitoring_dashboard_noemt_betere_extractie_geen_nieuw_jaarverslag. */}
-        {company.nieuwe_bevinding
-          ? " Sinds de vorige controle is er een recenter verslag gevonden."
-          : ""}
       </p>
     </section>
   );

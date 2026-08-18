@@ -241,7 +241,7 @@ describe("bronwaarschuwingen", () => {
     expect(labels).toEqual([]);
     expect(peilmomentRelatie(
       {verslagjaar: 2024, documenttype: "jaarverslag"}, {gevraagdJaar: 2025},
-    )).toEqual({term: "Verslagjaar", label: "2024 — peiljaar 2025", toon: "aandacht"});
+    )).toEqual({term: "Verslagjaar", label: "2024", toon: "aandacht"});
   });
 
   it("zwijgt over een verslag dat nieuwer is dan gevraagd", () => {
