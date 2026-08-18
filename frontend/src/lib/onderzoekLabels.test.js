@@ -574,7 +574,7 @@ describe("onderzoeksadvies", () => {
       metGetal(380, {verslagjaar: 2023}),
     ], {gevraagdJaar: 2025});
     expect(advies.kop).toBe("Verschillende peilmomenten: 412 WP (2024) en 380 WP (2023)");
-    expect(advies.toelichting).toContain("dat kan groei zijn");
+    expect(advies.toelichting).toContain("dit kan groei zijn");
     expect(advies.toelichting).toContain("2025");
   });
 
@@ -597,15 +597,18 @@ describe("onderzoeksadvies", () => {
     expect(advies.kop).toBe("3 verschillende getallen — nieuwste: 395 WP (2025)");
   });
 
-  it("meldt apart dat een getal zonder jaar niet te plaatsen is", () => {
+  it("beweert niets over de jaren als één getal ongedateerd is", () => {
+    // De kop zei "over hetzelfde jaar" terwijl een van de getallen geen jaar
+    // had — een aanname die de kaart zelf weersprak. De kop toont per getal of
+    // er een jaar bij hoort; verder wordt er niets beweerd.
     const advies = onderzoeksadvies([
-      metGetal(412, {verslagjaar: 2024}),
-      metGetal(380, {verslagjaar: 2023}),
-      metGetal(47, {documenttype: "teampagina", brontype: "officiele_website"}),
+      metGetal(30000, {verslagjaar: 2025}),
+      metGetal(28500, {documenttype: "teampagina", brontype: "officiele_website"}),
     ], {gevraagdJaar: 2025});
-    expect(advies.letOp).toContain(
-      "Bij 47 WP staat geen jaar; dat getal is niet te plaatsen.",
-    );
+    expect(advies.kop).toBe("Bronnen spreken elkaar tegen: 30000 WP (2025) en 28500 WP");
+    expect(advies.toelichting).toBe("Controleer de bronnen handmatig.");
+    expect(advies.letOp.join(" ")).not.toContain("niet te plaatsen");
+    expect(advies.toelichting).not.toContain("hetzelfde jaar");
   });
 
   it("noemt hetzelfde getal over verschillende jaren zwakker, niet sterker", () => {

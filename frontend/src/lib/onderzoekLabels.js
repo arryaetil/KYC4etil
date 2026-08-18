@@ -539,8 +539,7 @@ export function onderzoeksadvies(
         kop: `${metWp.length} bronnen noemen ${waarden[0]} WP, maar over `
           + `verschillende jaren (${[...jaren].sort().join(", ")})`,
         toelichting:
-          "Hetzelfde getal over meerdere jaren bevestigt elkaar niet — het "
-          + "wijst er eerder op dat één bron de andere heeft overgenomen. "
+          "Mogelijk heeft één bron de andere overgenomen. "
           + `Kies de bron die het dichtst bij ${peiljaarnaam(gevraagdJaar)} ligt.`,
         toon: "aandacht",
         letOp,
@@ -572,14 +571,6 @@ export function onderzoeksadvies(
         .map((item) => `${item.waarde} WP${item.jaar ? ` (${item.jaar})` : ""}`)
         .join(" en ")
       : `${waarden.join(" en ")} WP`;
-    if (ongedateerd.length) {
-      letOp.push(
-        ongedateerd.length === 1
-          ? `Bij ${ongedateerd[0].waarde} WP staat geen jaar; dat getal is niet te plaatsen.`
-          : `Bij ${ongedateerd.length} getallen staat geen jaar.`,
-      );
-    }
-
     const jarenVanWaarden = [...new Set(gedateerd.map((item) => item.jaar))];
     if (jarenVanWaarden.length >= 2) {
       // Een deel van het verschil is uit de tijd te verklaren, dus "tegenspraak"
@@ -594,18 +585,19 @@ export function onderzoeksadvies(
             + `${nieuwsteBron.waarde} WP (${nieuwsteBron.jaar})`
           : `Verschillende peilmomenten: ${beschrijving}`,
         toelichting:
-          "De getallen verschillen, maar ze gaan over verschillende jaren — "
-          + "dat kan groei zijn en hoeft geen tegenspraak te betekenen. "
+          "Verschillende jaren; dit kan groei zijn. "
           + `Neem het cijfer dat het dichtst bij ${peiljaarnaam(gevraagdJaar)} ligt.`,
         toon: "aandacht",
         letOp,
       };
     }
+    // Geen uitspraak over de jaren hier. Deze tak is juist de restcategorie:
+    // gelijke jaren, of een getal zonder jaar. "Over hetzelfde jaar" was daar
+    // een aanname die de kaart zelf weersprak zodra er een ongedateerd getal
+    // tussen stond. Hoe meer de kaart beweert, hoe eerder ze ernaast zit.
     return {
       kop: `Bronnen spreken elkaar tegen: ${beschrijving}`,
-      toelichting:
-        "Verschillende bronnen noemen een ander aantal over hetzelfde jaar. "
-        + "Vergelijk de scope en het citaat voordat je er één kiest.",
+      toelichting: "Controleer de bronnen handmatig.",
       toon: "aandacht",
       letOp,
     };
