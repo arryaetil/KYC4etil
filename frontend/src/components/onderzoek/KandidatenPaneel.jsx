@@ -13,7 +13,7 @@ import {
  * voorbehouden die bij het bewijs horen — geen tweede opsomming van wat de
  * bronkaarten zelf al zeggen.
  */
-function Advies({advies}) {
+function Advies({advies, onWijsBronAan}) {
   return (
     <section
       aria-label="Samenvattend oordeel"
@@ -26,6 +26,23 @@ function Advies({advies}) {
       <p className="mt-1 max-w-[70ch] text-sm leading-relaxed opacity-90">
         {advies.toelichting}
       </p>
+      {/* De kop noemt getallen; deze knoppen zeggen wélke kaart erachter zit.
+          Bij twee bronnen zoekt de reviewer die zelf nog wel, bij acht niet. */}
+      {advies.bronnen?.length ? (
+        <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="opacity-70">Uit:</span>
+          {advies.bronnen.map((bron) => (
+            <button
+              key={bron.id}
+              type="button"
+              onClick={() => onWijsBronAan(bron.id)}
+              className="focus-ring rounded border border-current/30 bg-white/60 px-1.5 py-0.5 underline-offset-2 transition hover:underline"
+            >
+              {bron.label}
+            </button>
+          ))}
+        </p>
+      ) : null}
       {advies.letOp.length ? (
         <ul className="mt-2 space-y-0.5 text-xs">
           {advies.letOp.map((punt) => (
@@ -69,6 +86,7 @@ export function KandidatenPaneel({
   api, company, batchJaar, geselecteerdeBronId, onSelecteerBron, onGewijzigd,
 }) {
   const [items, setItems] = useState([]);
+  const [gemarkeerdeBronId, setGemarkeerdeBronId] = useState(null);
   const [diagnostiek, setDiagnostiek] = useState({});
   const [onderzoekspaden, setOnderzoekspaden] = useState([]);
   const [run, setRun] = useState(null);
@@ -188,6 +206,17 @@ export function KandidatenPaneel({
     }
   }
 
+  /** Spring naar de kaart achter een uitspraak in de samenvatting en markeer hem. */
+  function wijsBronAan(bronId) {
+    setGemarkeerdeBronId(bronId);
+    // De kaart kan buiten beeld staan; `center` zet hem middenin zodat de
+    // reviewer meteen ziet welke bedoeld wordt.
+    document.getElementById(`bron-${bronId}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }
+
   return (
     <div className="px-5 py-5">
       <header className="mb-5">
@@ -238,7 +267,10 @@ export function KandidatenPaneel({
           één regel kunnen zien wat er gevonden is en hoe hard dat is, voordat
           hij door de kaarten scrolt. */}
       {items.length || Object.keys(diagnostiek).length ? (
-        <Advies advies={onderzoeksadvies(items, {onderzoekspaden, gevraagdJaar})} />
+        <Advies
+          advies={onderzoeksadvies(items, {onderzoekspaden, gevraagdJaar})}
+          onWijsBronAan={wijsBronAan}
+        />
       ) : null}
 
       {items.length ? (
@@ -250,6 +282,7 @@ export function KandidatenPaneel({
               rang={candidate.rang || index + 1}
               gevraagdJaar={gevraagdJaar}
               isGeselecteerd={candidate.id === geselecteerdeBronId}
+              isAangewezen={candidate.id === gemarkeerdeBronId}
               bezig={bezig}
               onBekijk={onSelecteerBron}
               onAccepteer={(item) => {

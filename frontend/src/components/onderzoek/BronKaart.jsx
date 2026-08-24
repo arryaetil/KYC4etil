@@ -55,7 +55,7 @@ function herkomst(url) {
 }
 
 export function BronKaart({
-  candidate, rang, gevraagdJaar, isGeselecteerd, bezig,
+  candidate, rang, gevraagdJaar, isGeselecteerd, isAangewezen, bezig,
   onBekijk, onAccepteer, onWijsAf,
 }) {
   const [toonOnderbouwing, setToonOnderbouwing] = useState(false);
@@ -72,13 +72,19 @@ export function BronKaart({
   const beoordeeld = ["geaccepteerd", "alternatief", "afgewezen"].includes(candidate.status);
 
   return (
-    <article className={classNames(
-      "px-4 py-5 transition",
-      candidate.status === "geaccepteerd"
-        ? "bg-emerald-50/60"
-        : isGeselecteerd ? "bg-panel" : "bg-transparent",
-      candidate.status === "afgewezen" && "opacity-50",
-    )}>
+    <article
+      id={`bron-${candidate.id}`}
+      className={classNames(
+        "px-4 py-5 transition",
+        candidate.status === "geaccepteerd"
+          ? "bg-emerald-50/60"
+          : isGeselecteerd ? "bg-panel" : "bg-transparent",
+        candidate.status === "afgewezen" && "opacity-50",
+        // Aangewezen vanuit de samenvatting: een rand binnenin, zodat de kaart
+        // niet verspringt zoals bij een buitenrand.
+        isAangewezen && "ring-2 ring-inset ring-etil",
+      )}
+    >
       <div className="flex items-baseline gap-2">
         <span className="text-xs tabular-nums text-slate-400">{rang}</span>
         <span className="text-sm font-medium text-ink">

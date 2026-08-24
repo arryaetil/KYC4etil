@@ -852,3 +852,43 @@ describe("dienststoringLabel", () => {
       .toBe("Kvk gaf een fout.");
   });
 });
+
+describe("onderzoeksadvies · verwijzingen naar de bronkaarten", () => {
+  const metGetal = (wp, extra = {}) => ({
+    id: `bron-${wp}`, wp_gevonden: wp, eenheid: "werkzame_personen",
+    bewijsfragment: `${wp} medewerkers`, identity_class: "exact_entity",
+    scope_class: "vestiging", documenttype: "jaarverslag", status: "voorgesteld",
+    ...extra,
+  });
+
+  it("wijst per genoemd getal de kaart aan waar het vandaan komt", () => {
+    // De kop noemt getallen; zonder deze verwijzing zoekt de reviewer zelf
+    // welke van de kaarten erbij hoort.
+    const advies = onderzoeksadvies([
+      metGetal(412, {verslagjaar: 2024}),
+      metGetal(380, {verslagjaar: 2023}),
+    ], {gevraagdJaar: 2025});
+
+    expect(advies.bronnen).toEqual([
+      {id: "bron-412", label: "412 WP (2024)"},
+      {id: "bron-380", label: "380 WP (2023)"},
+    ]);
+  });
+
+  it("verwijst bij één getal naar die ene kaart", () => {
+    const advies = onderzoeksadvies([metGetal(47, {verslagjaar: 2025})]);
+    expect(advies.bronnen).toEqual([{id: "bron-47", label: "47 WP (2025)"}]);
+  });
+
+  it("verwijst ook zonder getal naar de gevonden documenten", () => {
+    const advies = onderzoeksadvies([
+      {id: "doc-1", documenttype: "jaarverslag", brontype: "jaarverslag",
+       verslagjaar: 2024, status: "voorgesteld", identity_class: "exact_entity"},
+    ]);
+    expect(advies.bronnen).toEqual([{id: "doc-1", label: "Jaarverslag (2024)"}]);
+  });
+
+  it("heeft geen verwijzingen als er geen bronnen zijn", () => {
+    expect(onderzoeksadvies([]).bronnen).toEqual([]);
+  });
+});

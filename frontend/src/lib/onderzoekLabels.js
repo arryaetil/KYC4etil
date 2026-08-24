@@ -483,6 +483,26 @@ export function dienststoringLabel(storing) {
   return `${dienst.charAt(0).toUpperCase()}${dienst.slice(1)} ${reden}${vaker}.`;
 }
 
+/**
+ * Eén klikbare verwijzing naar de kaart waar een uitspraak vandaan komt.
+ *
+ * De samenvatting noemt getallen ("412 WP (2024) en 380 WP (2023)") maar liet de
+ * reviewer zelf zoeken welke van de tien kaarten daarbij hoorde. Bij twee
+ * bronnen is dat te doen, bij acht niet meer.
+ */
+function bronverwijzing(item) {
+  if (!item?.id) return null;
+  const jaar = bronjaar(item)?.jaar;
+  const waarde = item.wp_gevonden != null && item.eenheid === "werkzame_personen"
+    ? `${item.wp_gevonden} WP`
+    : brontypeLabel(item.brontype);
+  return {id: item.id, label: `${waarde}${jaar ? ` (${jaar})` : ""}`};
+}
+
+function bronverwijzingen(items) {
+  return (items || []).map(bronverwijzing).filter(Boolean);
+}
+
 export function onderzoeksadvies(
   items,
   {onderzoekspaden = [], gevraagdJaar = null} = {},
@@ -499,6 +519,7 @@ export function onderzoeksadvies(
           + "hier geen conclusie. Opnieuw zoeken is de moeite waard.",
         toon: "fout",
         letOp: mislukt.map((pad) => `${pad.route}: ${pad.statusreden || pad.status}`),
+        bronnen: [],
       };
     }
     return {
@@ -508,6 +529,7 @@ export function onderzoeksadvies(
         + "Voeg zelf een bron toe of zet deze vestiging op de bellijst.",
       toon: "aandacht",
       letOp: [],
+      bronnen: [],
     };
   }
 
@@ -554,6 +576,7 @@ export function onderzoeksadvies(
       toelichting: "Je hebt deze vestiging al beoordeeld.",
       toon: "gekozen",
       letOp,
+      bronnen: bronverwijzingen([gekozen]),
     };
   }
 
@@ -575,6 +598,7 @@ export function onderzoeksadvies(
           + `Kies de bron die het dichtst bij ${peiljaarnaam(gevraagdJaar)} ligt.`,
         toon: "aandacht",
         letOp,
+        bronnen: bronverwijzingen(metWp),
       };
     }
     return {
@@ -585,6 +609,7 @@ export function onderzoeksadvies(
         + "onafhankelijke bronnen die op hetzelfde getal uitkomen.",
       toon: "neutraal",
       letOp,
+      bronnen: bronverwijzingen(metWp),
     };
   }
   if (waarden.length > 1) {
@@ -592,7 +617,7 @@ export function onderzoeksadvies(
     const perWaarde = waarden.map((waarde) => {
       const bron = metWp.find((item) => item.wp_gevonden === waarde);
       const jaar = bronjaar(bron)?.jaar ?? null;
-      return {waarde, jaar};
+      return {waarde, jaar, bron};
     });
     const gedateerd = perWaarde.filter((item) => item.jaar != null);
     const ongedateerd = perWaarde.filter((item) => item.jaar == null);
@@ -621,6 +646,9 @@ export function onderzoeksadvies(
           + `Neem het cijfer dat het dichtst bij ${peiljaarnaam(gevraagdJaar)} ligt.`,
         toon: "aandacht",
         letOp,
+        // Álle getallen uit de kop, ook het ongedateerde: anders noemt de
+        // kop er vier en zijn er drie aan te klikken.
+        bronnen: bronverwijzingen(perWaarde.map((item) => item.bron)),
       };
     }
     // Geen uitspraak over de jaren hier. Deze tak is juist de restcategorie:
@@ -632,6 +660,7 @@ export function onderzoeksadvies(
       toelichting: "Controleer de bronnen handmatig.",
       toon: "aandacht",
       letOp,
+      bronnen: bronverwijzingen(perWaarde.map((item) => item.bron)),
     };
   }
   if (metWp.length === 1) {
@@ -645,6 +674,7 @@ export function onderzoeksadvies(
         : "Er is één getal, maar zonder citaat. Open de bron om het te verifiëren.",
       toon: bron.bewijsfragment ? "neutraal" : "aandacht",
       letOp,
+      bronnen: bronverwijzingen([bron]),
     };
   }
 
@@ -659,6 +689,7 @@ export function onderzoeksadvies(
         + "personeelsbestand van deze vestiging is. Tel zelf op de bron.",
       toon: "aandacht",
       letOp,
+      bronnen: bronverwijzingen(telopdrachten),
     };
   }
   const formeel = bronnen.filter(
@@ -672,6 +703,7 @@ export function onderzoeksadvies(
         + "Doorzoek ze op medewerkers, personeel, werknemers en fte.",
       toon: "aandacht",
       letOp,
+      bronnen: bronverwijzingen(formeel),
     };
   }
   return {
@@ -681,6 +713,7 @@ export function onderzoeksadvies(
       + "een van de bronnen naar een sterkere primaire bron verwijst.",
     toon: "aandacht",
     letOp,
+    bronnen: bronverwijzingen(bronnen),
   };
 }
 
