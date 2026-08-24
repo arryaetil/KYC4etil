@@ -106,6 +106,50 @@ def _vind_paginanummer(context: str | None, pagina_teksten: list[tuple[int, str]
     return None
 
 
+_WP_TREFWOORDEN = (
+    "medewerker", "personeel", "headcount", "fte", "employee", "werknemer",
+)
+
+
+async def _relevante_bronpaginas(bron_url: str) -> list[tuple[int | None, str]]:
+    """De stukken van een jaarverslag waar personeel in voorkomt.
+
+    Per pagina bij een PDF — het paginanummer is nodig om de bron later precies
+    op de plek van het citaat te openen. Een webversie kent die nummering niet;
+    daar is het één blok en blijft het paginanummer leeg, wat de viewer gewoon
+    aankan.
+
+    Zonder deze splitsing was de hele extractie aan PDF vastgeklonken:
+    `fitz.open` op een HTML-pagina levert niets bruikbaars op, dus een
+    jaarverslag dat als website is gepubliceerd gaf altijd None terug.
+    """
+    if not fetch._is_pdf_url(bron_url):
+        try:
+            tekst = await fetch._fetch_text(bron_url)
+        except Exception:
+            return []
+        heeft_trefwoord = any(
+            woord in tekst.lower() for woord in _WP_TREFWOORDEN
+        )
+        return [(None, tekst)] if heeft_trefwoord else []
+
+    import fitz  # PyMuPDF
+
+    async with httpx.AsyncClient(
+        timeout=60,
+        follow_redirects=True,
+        headers={"User-Agent": fetch.USER_AGENT},
+    ) as client:
+        response = await client.get(bron_url)
+        response.raise_for_status()
+    document = fitz.open(stream=response.content, filetype="pdf")
+    return [
+        (index + 1, pagina.get_text())
+        for index, pagina in enumerate(document)
+        if any(woord in pagina.get_text().lower() for woord in _WP_TREFWOORDEN)
+    ]
+
+
 class JaarverslagResearchState(TypedDict, total=False):
     naam: str
     jaar: int
@@ -125,7 +169,7 @@ def _build_jaarverslag_research_graph():
 
     async def find_pdf(state: JaarverslagResearchState) -> dict:
         afgewezen = state.get("afgewezen_urls") or set()
-        pdf_url = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
+        pdf_url = await jaarverslag_zoeken._zoek_jaarverslagbron(
             state["naam"], state["jaar"], website_url=state.get("website_url"),
             uitgesloten=afgewezen,
         )
@@ -189,7 +233,7 @@ def _build_jaarverslag_research_graph():
         afgewezen = set(state.get("afgewezen_urls") or set())
         afgewezen.add(pdf_url)  # bij een retry niet nogmaals dezelfde (mogelijk lege) bron proberen
         try:
-            finding = await LiveJaarverslagAgent().run_with_pdf(state["naam"], pdf_url)
+            finding = await LiveJaarverslagAgent().run_met_bron(state["naam"], pdf_url)
             if finding:
                 finding.raw = {
                     **(finding.raw or {}),
@@ -291,7 +335,7 @@ class LiveJaarverslagAgent:
         beste_oude_jaar: int | None = None
         zoekjaren: tuple[int, ...] | None = None
         for _ in range(min(settings.jaarverslag_max_pogingen, 3)):
-            pdf_url = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
+            pdf_url = await jaarverslag_zoeken._zoek_jaarverslagbron(
                 naam,
                 jaar,
                 website_url=website_url,
@@ -302,7 +346,7 @@ class LiveJaarverslagAgent:
                 return beste_oude_vinding
 
             try:
-                eerste_paginas = await fetch._eerste_pdf_paginas(pdf_url)
+                eerste_paginas = await fetch._brontekst(pdf_url)
             except Exception:
                 uitgesloten.add(pdf_url)
                 continue
@@ -402,7 +446,7 @@ class LiveJaarverslagAgent:
     ) -> bool:
         """Herbeoordeel een legacy-baseline met de huidige strikte regels."""
         try:
-            eerste_paginas = await fetch._eerste_pdf_paginas(bron_url)
+            eerste_paginas = await fetch._brontekst(bron_url)
         except Exception:
             return False
         if fetch._heeft_landdomein_conflict(bron_url, website_url):
@@ -429,18 +473,9 @@ class LiveJaarverslagAgent:
             and not strict_identity
         )
 
-    async def run_with_pdf(self, naam: str, pdf_url: str) -> AgentFinding | None:
-        import fitz  # PyMuPDF
-        async with httpx.AsyncClient(timeout=60, follow_redirects=True,
-                                     headers={"User-Agent": fetch.USER_AGENT}) as client:
-            r = await client.get(pdf_url)
-            r.raise_for_status()
-        doc = fitz.open(stream=r.content, filetype="pdf")
-        keywords = ["medewerker", "personeel", "headcount", "fte", "employee", "werknemer"]
-        # (paginanummer, tekst) i.p.v. alles samenvoegen, zodat we achteraf kunnen
-        # terugvinden op welke pagina de context van de LLM daadwerkelijk stond.
-        relevant = [(i + 1, page.get_text()) for i, page in enumerate(doc)
-                    if any(k in page.get_text().lower() for k in keywords)]
+    async def run_met_bron(self, naam: str, bron_url: str) -> AgentFinding | None:
+        """Lees het WP-getal uit een jaarverslag, of dat nu een PDF is of een site."""
+        relevant = await _relevante_bronpaginas(bron_url)
         if not relevant:
             return None
         data = await llm._llm_extract(naam, None, "\n\n".join(tekst for _, tekst in relevant))
@@ -452,7 +487,7 @@ class LiveJaarverslagAgent:
         return AgentFinding(
             wp_gevonden=data["wp_gevonden"], context=data.get("context"),
             zekerheid=data.get("zekerheid", "laag"), reden=data.get("reden"),
-            bron_url=pdf_url, bron_type="jaarverslag",
+            bron_url=bron_url, bron_type="jaarverslag",
             is_limburg_specifiek=data.get("is_limburg_specifiek"),
             is_fte=data.get("is_fte", False), peilmoment=data.get("peilmoment"),
             eigen_personeel=data.get("eigen_personeel"), uitzend=data.get("uitzend"),

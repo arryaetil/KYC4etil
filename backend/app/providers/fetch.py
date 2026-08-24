@@ -141,6 +141,32 @@ async def _eerste_pdf_paginas(pdf_url: str) -> str:
     )
 
 
+def _is_pdf_url(url: str) -> bool:
+    from urllib.parse import urlsplit
+
+    pad = urlsplit(url).path.lower()
+    return pad.endswith(".pdf") or ".pdf" in pad
+
+
+async def _brontekst(url: str, max_tekens: int = 20_000) -> str:
+    """De eerste tekst van een brondocument, of het nu een PDF of een pagina is.
+
+    De jaarverslagketen draaide volledig op `_eerste_pdf_paginas`, en daarmee
+    was een jaarverslag dat als gewone webpagina's is gepubliceerd onvindbaar —
+    de identiteitscontrole, de verslagjaarbepaling en de WP-extractie kregen
+    allemaal niets te lezen. Ze werken alle drie op platte tekst, dus het formaat
+    hoort hier te stoppen en niet door de hele keten te lekken.
+
+    Bij een PDF blijft het bij de eerste vijf pagina's; bij HTML wordt de tekst
+    afgekapt op ongeveer dezelfde hoeveelheid, zodat een lange webpagina niet
+    ineens veel meer tokens kost dan een PDF.
+    """
+    if _is_pdf_url(url):
+        return await _eerste_pdf_paginas(url)
+    tekst = await _fetch_text(url)
+    return tekst[:max_tekens]
+
+
 # Crawl4AI draait op een echte browser. Eén gedeelde instantie per proces is
 # fors goedkoper dan een browser per pagina, en de semafoor voorkomt dat het
 # parallelle inspecteren in de supervisor (tot research_max_pages pagina's in

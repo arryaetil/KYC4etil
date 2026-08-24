@@ -474,7 +474,7 @@ async def _lees_wp_uit_document(jaarverslag_agent, company_naam: str, finding):
     de DigiMV-route (die wél door `inspect` gaat) er 8 van de 14 vulde. De
     reviewer moest die 25 PDF's zelf openen.
 
-    Dezelfde extractie als de DigiMV-route dus: `run_with_pdf` van de
+    Dezelfde extractie als de DigiMV-route dus: `run_met_bron` van de
     jaarverslag-agent. Kost ongeveer 1 cent per document en geen enkele
     zoekopdracht — de URL is al bekend.
 
@@ -483,13 +483,13 @@ async def _lees_wp_uit_document(jaarverslag_agent, company_naam: str, finding):
     """
     if finding is None or finding.wp_gevonden is not None or not finding.bron_url:
         return finding
-    extractor = getattr(type(jaarverslag_agent), "run_with_pdf", None)
+    extractor = getattr(type(jaarverslag_agent), "run_met_bron", None)
     if extractor is None:
         return finding
     try:
-        # De naam gaat mee: `run_with_pdf` geeft die aan de extractie, en een
+        # De naam gaat mee: `run_met_bron` geeft die aan de extractie, en een
         # jaarverslag van een concern noemt meerdere organisaties.
-        gelezen = await jaarverslag_agent.run_with_pdf(
+        gelezen = await jaarverslag_agent.run_met_bron(
             company_naam, finding.bron_url,
         )
     except Exception as exc:

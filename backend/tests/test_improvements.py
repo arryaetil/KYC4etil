@@ -74,8 +74,8 @@ async def test_live_website_agent_slaat_web_search_over_als_scraping_slaagt():
 
 @pytest.mark.asyncio
 async def test_live_jaarverslag_agent_zoekt_pdf_via_web_search():
-    """LiveJaarverslagAgent.run() moet _zoek_jaarverslag_pdf aanroepen; fallback gemockt als None."""
-    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
+    """LiveJaarverslagAgent.run() moet _zoek_jaarverslagbron aanroepen; fallback gemockt als None."""
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslagbron",
                new=AsyncMock(return_value=None)) as mock_zoek, \
          patch("app.providers.jaarverslag._web_search_jaarverslag_wp",
                new=AsyncMock(return_value=None)):
@@ -88,19 +88,19 @@ async def test_live_jaarverslag_agent_zoekt_pdf_via_web_search():
 
 @pytest.mark.asyncio
 async def test_live_jaarverslag_agent_verwerkt_pdf_als_gevonden():
-    """Als _zoek_jaarverslag_pdf een URL geeft, moet run_with_pdf aangeroepen worden."""
+    """Als _zoek_jaarverslagbron een URL geeft, moet run_met_bron aangeroepen worden."""
     wp_finding = AgentFinding(
         wp_gevonden=2281, context="2281 medewerkers", zekerheid="hoog",
         reden="jaarverslag", bron_url="https://example.com/jaarverslag.pdf",
         bron_type="jaarverslag",
     )
-    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslagbron",
                new=AsyncMock(return_value="https://example.com/jaarverslag.pdf")), \
          patch("app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit",
                new=AsyncMock(return_value=IdentityClass.EXACT_ENTITY)), \
          patch.object(
              __import__("app.providers.live", fromlist=["LiveJaarverslagAgent"]).LiveJaarverslagAgent,
-             "run_with_pdf", new=AsyncMock(return_value=wp_finding)
+             "run_met_bron", new=AsyncMock(return_value=wp_finding)
          ):
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
@@ -114,11 +114,11 @@ async def test_live_jaarverslag_agent_verwerkt_pdf_als_gevonden():
 async def test_live_jaarverslag_agent_keurt_pdf_van_ander_bedrijf_af():
     """Een gevonden PDF die aantoonbaar niet over het bedrijf gaat, mag niet worden
     verwerkt. Dit vangt o.a. Salon Handmade -> Heijmans-achtige mismatches af."""
-    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslagbron",
                new=AsyncMock(return_value="https://heijmans.test/jaarverslag-2025.pdf")), \
          patch("app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit",
                new=AsyncMock(return_value=IdentityClass.MISMATCH)), \
-         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_with_pdf",
+         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_met_bron",
                new=AsyncMock(return_value=None)) as mock_extract, \
          patch("app.providers.jaarverslag._web_search_jaarverslag_wp",
                new=AsyncMock(return_value=None)):
@@ -156,9 +156,9 @@ async def test_live_jaarverslag_agent_probeert_opnieuw_na_afgewezen_bron():
         bron_type="jaarverslag",
     )
 
-    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf", new=fake_zoek_pdf), \
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslagbron", new=fake_zoek_pdf), \
          patch("app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit", new=fake_identiteit), \
-         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_with_pdf",
+         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_met_bron",
                new=AsyncMock(return_value=goede_finding)):
         result = await jaarverslag.LiveJaarverslagAgent().run("Testbedrijf", 2025)
 
@@ -177,11 +177,11 @@ async def test_live_jaarverslag_agent_laat_brand_of_group_match_door():
         reden="jaarverslag", bron_url="https://jumborapportage.test/jaarverslag.pdf",
         bron_type="jaarverslag", is_limburg_specifiek=False,
     )
-    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslagbron",
                new=AsyncMock(return_value="https://jumborapportage.test/jaarverslag.pdf")), \
          patch("app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit",
                new=AsyncMock(return_value=IdentityClass.SAME_BRAND_OR_GROUP)), \
-         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_with_pdf",
+         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_met_bron",
                new=AsyncMock(return_value=wp_finding)):
         from app.providers.live import LiveJaarverslagAgent
         agent = LiveJaarverslagAgent()
@@ -202,13 +202,13 @@ async def test_monitoringmodus_weigert_onzekere_of_alleen_groepsmatch():
         return "https://onbekende-bron.test/jaarverslag-2025.pdf"
 
     with patch(
-        "app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
+        "app.providers.jaarverslag_zoeken._zoek_jaarverslagbron",
         new=fake_zoek_pdf,
     ), patch(
         "app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit",
         new=AsyncMock(return_value=IdentityClass.SAME_BRAND_OR_GROUP),
     ), patch(
-        "app.providers.jaarverslag.LiveJaarverslagAgent.run_with_pdf",
+        "app.providers.jaarverslag.LiveJaarverslagAgent.run_met_bron",
         new=AsyncMock(),
     ) as extract:
         result = await jaarverslag.LiveJaarverslagAgent().run(
@@ -241,7 +241,7 @@ async def test_jaarverslagzoeker_slaat_aantoonbaar_verouderde_hit_over(
 
     monkeypatch.setattr(search, "_web_search", fake_web_search)
 
-    result = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
+    result = await jaarverslag_zoeken._zoek_jaarverslagbron(
         "Testbedrijf",
         2025,
         zoekjaren=(2025,),
@@ -264,7 +264,7 @@ async def test_jaarverslagzoeker_negeert_andere_pdf_op_officieel_domein(
 
     monkeypatch.setattr(search, "_web_search", fake_web_search)
 
-    result = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
+    result = await jaarverslag_zoeken._zoek_jaarverslagbron(
         "Testbedrijf",
         2025,
         website_url="https://example.test",
@@ -291,7 +291,7 @@ async def test_jaarverslagzoeker_gebruikt_hosted_fallback_bij_lege_indexen(
     }])
     monkeypatch.setattr(search, "_openai_web_search", hosted)
 
-    result = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
+    result = await jaarverslag_zoeken._zoek_jaarverslagbron(
         "Testbedrijf",
         2025,
         website_url="https://testbedrijf.example",
@@ -429,10 +429,10 @@ async def test_geldige_jaarverslagbron_blijft_behouden_zonder_wp_getal(
     async def fake_zoek(*args, uitgesloten=None, **kwargs):
         return None if url in (uitgesloten or set()) else url
 
-    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", fake_zoek)
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslagbron", fake_zoek)
     monkeypatch.setattr(
         jaarverslag.LiveJaarverslagAgent,
-        "run_with_pdf",
+        "run_met_bron",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(jaarverslag_validatie, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
@@ -468,14 +468,14 @@ async def test_strikte_monitoring_weigert_jaarverslag_van_deelorganisatie(
             return None
         return hoofdrapport if deelrapport in uitgesloten else deelrapport
 
-    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", fake_zoek)
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslagbron", fake_zoek)
     monkeypatch.setattr(jaarverslag_validatie, "_is_organisatiebreed_jaarverslag",
         AsyncMock(side_effect=[False, True]),
     )
     monkeypatch.setattr(jaarverslag_validatie, "_pdf_is_recent_jaarverslag", AsyncMock(return_value=True))
     monkeypatch.setattr(
         jaarverslag.LiveJaarverslagAgent,
-        "run_with_pdf",
+        "run_met_bron",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
@@ -496,7 +496,7 @@ async def test_monitoring_sourcezoeker_slaat_wp_extractie_over(monkeypatch):
     from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     url = "https://organisatie.test/bestuursverslag-2024.pdf"
-    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", AsyncMock(return_value=url))
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslagbron", AsyncMock(return_value=url))
     monkeypatch.setattr(jaarverslag_validatie, "_is_organisatiebreed_jaarverslag",
         AsyncMock(return_value=True),
     )
@@ -504,7 +504,7 @@ async def test_monitoring_sourcezoeker_slaat_wp_extractie_over(monkeypatch):
         AsyncMock(return_value="Bestuursverslag Organisatie 2024"),
     )
     extract = AsyncMock()
-    monkeypatch.setattr(jaarverslag.LiveJaarverslagAgent, "run_with_pdf", extract)
+    monkeypatch.setattr(jaarverslag.LiveJaarverslagAgent, "run_met_bron", extract)
 
     finding = await jaarverslag.LiveJaarverslagAgent().find_latest_source(
         "Organisatie",
@@ -533,7 +533,7 @@ async def test_monitoring_sourcezoeker_zoekt_nieuwer_jaar_als_combined_search_ou
             return nieuw
         return None if oud in (uitgesloten or set()) else oud
 
-    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", fake_zoek)
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslagbron", fake_zoek)
     monkeypatch.setattr(fetch, "_eerste_pdf_paginas",
         AsyncMock(side_effect=[
             "Jaarverslag Organisatie 2023",
@@ -572,7 +572,7 @@ async def test_nederlandse_organisatie_weigert_belgische_naamgenoot(monkeypatch)
     from app.providers import fetch, jaarverslag, jaarverslag_validatie, jaarverslag_zoeken, live, llm, search, website_agent, wp_extractie
 
     belgisch = "https://koraal.be/jaarverslag-2024.pdf"
-    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", AsyncMock(return_value=belgisch))
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslagbron", AsyncMock(return_value=belgisch))
     monkeypatch.setattr(fetch, "_eerste_pdf_paginas",
         AsyncMock(return_value="Koraal jaarverslag 2024"),
     )
@@ -608,7 +608,7 @@ async def test_jaarverslagzoeker_zoekt_drie_jaren_in_een_provider_ronde(
     monkeypatch.setattr(search, "_web_search", web_search)
     monkeypatch.setattr(search, "_openai_web_search", hosted)
 
-    result = await jaarverslag_zoeken._zoek_jaarverslag_pdf("Organisatie", 2026)
+    result = await jaarverslag_zoeken._zoek_jaarverslagbron("Organisatie", 2026)
 
     assert result == "https://organisatie.test/annual-report-2025.pdf"
     # Eén provider-ronde voor drie verslagjaren: de jaarselectie gebeurt op de
@@ -687,15 +687,15 @@ def test_deterministische_pdf_fallback_negeert_deelnemersaantal():
 
 @pytest.mark.asyncio
 async def test_live_jaarverslag_agent_handelt_pdf_fout_af():
-    """Als run_with_pdf faalt en de web search-fallback (Fase C) niets oplevert,
+    """Als run_met_bron faalt en de web search-fallback (Fase C) niets oplevert,
     geeft de agent toch de gevonden bron_url door (zonder wp_gevonden) — zodat de
     jaarverslag-monitoring in elk geval een baseline-URL heeft, in plaats van de
     gevonden link stilzwijgend te laten vervallen."""
-    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslag_pdf",
+    with patch("app.providers.jaarverslag_zoeken._zoek_jaarverslagbron",
                new=AsyncMock(return_value="https://example.com/broken.pdf")), \
          patch("app.providers.jaarverslag_validatie._classificeer_jaarverslag_bron_identiteit",
                new=AsyncMock(return_value=IdentityClass.EXACT_ENTITY)), \
-         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_with_pdf",
+         patch("app.providers.jaarverslag.LiveJaarverslagAgent.run_met_bron",
                new=AsyncMock(side_effect=Exception("download fout"))), \
          patch("app.providers.jaarverslag._web_search_jaarverslag_wp",
                new=AsyncMock(return_value=None)):

@@ -63,7 +63,7 @@ from .jaarverslag_zoeken import (
     _scrape_pdf_van_pagina,
     _verslagjaar_uit_pdftekst,
     _verslagjaren_uit,
-    _zoek_jaarverslag_pdf,
+    _zoek_jaarverslagbron,
 )
 from .llm import (
     _create_response,
@@ -188,7 +188,7 @@ __all__ = [
     "_web_search_contact",
     "_web_search_jaarverslag_wp",
     "_web_search_wp",
-    "_zoek_jaarverslag_pdf",
+    "_zoek_jaarverslagbron",
     "settings",
     "verzamel_extra_media_bronnen",
 ]

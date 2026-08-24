@@ -526,7 +526,7 @@ async def test_verzamel_extra_media_bronnen_uit_via_config(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_zoek_jaarverslag_pdf_probeert_eerst_site_scoped_zoekopdracht(monkeypatch):
+async def test_zoek_jaarverslagbron_probeert_eerst_site_scoped_zoekopdracht(monkeypatch):
     """Bij een bekend domein moet eerst site:-scoped gezocht worden — dat is veel
     minder gevoelig voor niet-determinisme dan een open zoekopdracht op alleen de naam
     (zie Mondriaan-casus: open zoeken vond soms een onverwant kwaliteitsverslag)."""
@@ -542,7 +542,7 @@ async def test_zoek_jaarverslag_pdf_probeert_eerst_site_scoped_zoekopdracht(monk
 
     monkeypatch.setattr(search, "_web_search", fake_web_search)
 
-    resultaat = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
+    resultaat = await jaarverslag_zoeken._zoek_jaarverslagbron(
         "Mondriaan", 2026, website_url="https://www.mondriaan.eu/",
     )
 
@@ -551,7 +551,7 @@ async def test_zoek_jaarverslag_pdf_probeert_eerst_site_scoped_zoekopdracht(monk
 
 
 @pytest.mark.asyncio
-async def test_zoek_jaarverslag_pdf_valt_terug_op_open_zoekopdracht_zonder_domein_resultaat(monkeypatch):
+async def test_zoek_jaarverslagbron_valt_terug_op_open_zoekopdracht_zonder_domein_resultaat(monkeypatch):
     async def fake_web_search(query, max_results=8):
         if query.startswith("site:"):
             return []
@@ -560,7 +560,7 @@ async def test_zoek_jaarverslag_pdf_valt_terug_op_open_zoekopdracht_zonder_domei
 
     monkeypatch.setattr(search, "_web_search", fake_web_search)
 
-    resultaat = await jaarverslag_zoeken._zoek_jaarverslag_pdf(
+    resultaat = await jaarverslag_zoeken._zoek_jaarverslagbron(
         "Testbedrijf", 2026, website_url="https://www.example.test/",
     )
 
@@ -568,7 +568,7 @@ async def test_zoek_jaarverslag_pdf_valt_terug_op_open_zoekopdracht_zonder_domei
 
 
 @pytest.mark.asyncio
-async def test_zoek_jaarverslag_pdf_zonder_bekend_domein_zoekt_alleen_open(monkeypatch):
+async def test_zoek_jaarverslagbron_zonder_bekend_domein_zoekt_alleen_open(monkeypatch):
     gedane_queries = []
 
     async def fake_web_search(query, max_results=8):
@@ -579,7 +579,7 @@ async def test_zoek_jaarverslag_pdf_zonder_bekend_domein_zoekt_alleen_open(monke
 
     monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
 
-    await jaarverslag_zoeken._zoek_jaarverslag_pdf("Testbedrijf", 2026, website_url=None)
+    await jaarverslag_zoeken._zoek_jaarverslagbron("Testbedrijf", 2026, website_url=None)
 
     # Zonder bekend domein mag er geen site:-scoped zoekopdracht worden gedaan.
     assert not any(q.startswith("site:") for q in gedane_queries)
@@ -662,14 +662,14 @@ async def test_run_geeft_bron_url_door_als_pdf_gevonden_maar_geen_wp_geextraheer
     async def fake_zoek_pdf(naam, jaar, website_url=None, uitgesloten=None):
         return "https://example.test/jaarverslag-2025.pdf"
 
-    async def fake_run_with_pdf(self, naam, pdf_url):
+    async def fake_run_met_bron(self, naam, pdf_url):
         return None
 
-    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", fake_zoek_pdf)
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslagbron", fake_zoek_pdf)
     monkeypatch.setattr(jaarverslag_validatie, "_classificeer_jaarverslag_bron_identiteit",
         AsyncMock(return_value=live.IdentityClass.EXACT_ENTITY),
     )
-    monkeypatch.setattr(jaarverslag.LiveJaarverslagAgent, "run_with_pdf", fake_run_with_pdf)
+    monkeypatch.setattr(jaarverslag.LiveJaarverslagAgent, "run_met_bron", fake_run_met_bron)
     monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
 
     result = await jaarverslag.LiveJaarverslagAgent().run("Testbedrijf", 2026)
@@ -685,7 +685,7 @@ async def test_run_geeft_none_als_geen_pdf_gevonden(monkeypatch):
     async def fake_zoek_pdf(naam, jaar, website_url=None, uitgesloten=None):
         return None
 
-    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslag_pdf", fake_zoek_pdf)
+    monkeypatch.setattr(jaarverslag_zoeken, "_zoek_jaarverslagbron", fake_zoek_pdf)
     monkeypatch.setattr(live.settings, "jaarverslag_web_fallback", False)
 
     result = await jaarverslag.LiveJaarverslagAgent().run("Testbedrijf", 2026)
@@ -1090,7 +1090,7 @@ async def test_jaarverslagquery_is_beknopt_en_bevat_de_naam(monkeypatch):
     monkeypatch.setattr(search, "_web_search", vang)
     monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
 
-    await jaarverslag_zoeken._zoek_jaarverslag_pdf("Stichting Pergamijn", 2026, website_url=None)
+    await jaarverslag_zoeken._zoek_jaarverslagbron("Stichting Pergamijn", 2026, website_url=None)
 
     # De eerste zoekopdracht is de bepalende; daarna volgt hooguit nog de
     # jaarstukken-ronde voor overheden.
@@ -1112,7 +1112,7 @@ async def test_site_scoped_query_blijft_ook_beknopt(monkeypatch):
     monkeypatch.setattr(search, "_web_search", vang)
     monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
 
-    await jaarverslag_zoeken._zoek_jaarverslag_pdf("Servatius", 2026, website_url="https://www.servatius.nl/")
+    await jaarverslag_zoeken._zoek_jaarverslagbron("Servatius", 2026, website_url="https://www.servatius.nl/")
 
     assert queries[0].startswith("site:servatius.nl")
     for verwaterend in ("bestuursverslag", "jaarverantwoording", "2025", "2024"):
@@ -1182,7 +1182,7 @@ async def test_tweede_poging_met_jaarstukken_alleen_als_eerste_niets_geeft(monke
     monkeypatch.setattr(search, "_web_search", vang)
     monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
 
-    result = await jaarverslag_zoeken._zoek_jaarverslag_pdf("Gemeente Maastricht", 2026, website_url=None)
+    result = await jaarverslag_zoeken._zoek_jaarverslagbron("Gemeente Maastricht", 2026, website_url=None)
 
     assert result == "https://maastricht.nl/jaarstukken-2025.pdf"
     assert any("jaarstukken" in q for q in queries)
@@ -1199,7 +1199,7 @@ async def test_geen_tweede_poging_als_eerste_al_raak_is(monkeypatch):
     monkeypatch.setattr(search, "_web_search", vang)
     monkeypatch.setattr(search, "_openai_web_search", AsyncMock(return_value=[]))
 
-    await jaarverslag_zoeken._zoek_jaarverslag_pdf("Bedrijf", 2026, website_url=None)
+    await jaarverslag_zoeken._zoek_jaarverslagbron("Bedrijf", 2026, website_url=None)
 
     assert not any("jaarstukken" in q for q in queries)
 

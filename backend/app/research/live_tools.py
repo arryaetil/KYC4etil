@@ -267,7 +267,7 @@ class LiveResearchTools:
         """
         if context.gevraagd_jaar is None:
             return None
-        from ..providers import jaarverslag
+        from ..providers import fetch, jaarverslag
 
         finding = await jaarverslag.LiveJaarverslagAgent().run(
             context.naam,
@@ -284,8 +284,12 @@ class LiveResearchTools:
             titel=titel or "Gevonden jaarverslag",
             tekst="",
             brontype="jaarverslag",
+            # Niet meer hardgecodeerd op PDF: de jaarverslagroute levert sinds
+            # kort ook webversies op, en dan is "pdf_document" onwaar.
             documenttype=_documenttype(
-                titel, finding.bron_url, is_pdf=True,
+                titel,
+                finding.bron_url,
+                is_pdf=fetch._is_pdf_url(finding.bron_url),
             ),
             gevraagd_jaar=context.gevraagd_jaar,
             verslagjaar=_vind_jaar(titel, context.gevraagd_jaar),
@@ -366,7 +370,7 @@ class LiveResearchTools:
         )
         if is_pdf:
             try:
-                finding = await jaarverslag.LiveJaarverslagAgent().run_with_pdf(
+                finding = await jaarverslag.LiveJaarverslagAgent().run_met_bron(
                     context.naam, result.url,
                 )
             except Exception:

@@ -33,7 +33,7 @@ async def _classificeer_jaarverslag_bron_identiteit(
         return IdentityClass.UNKNOWN
     if eerste_paginas is None:
         try:
-            eerste_paginas = await fetch._eerste_pdf_paginas(pdf_url)
+            eerste_paginas = await fetch._brontekst(pdf_url)
         except Exception:
             return IdentityClass.UNKNOWN
 
@@ -71,7 +71,7 @@ async def _is_organisatiebreed_jaarverslag(
 
     try:
         if eerste_paginas is None:
-            eerste_paginas = await fetch._eerste_pdf_paginas(pdf_url)
+            eerste_paginas = await fetch._brontekst(pdf_url)
         client = AsyncOpenAI(api_key=settings.openai_api_key)
         response = await llm._create_response(
             client,
@@ -104,7 +104,7 @@ async def _pdf_is_recent_jaarverslag(
     jaar: int,
 ) -> bool:
     try:
-        eerste_paginas = await fetch._eerste_pdf_paginas(pdf_url)
+        eerste_paginas = await fetch._brontekst(pdf_url)
     except Exception:
         return False
     return any(

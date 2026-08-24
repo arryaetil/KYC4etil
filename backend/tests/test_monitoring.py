@@ -1272,7 +1272,7 @@ def _agent_die_leest(finding, gelezen, aanroepen):
         async def find_latest_source(self, *args, **kwargs):
             return finding
 
-        async def run_with_pdf(self, naam, pdf_url):
+        async def run_met_bron(self, naam, pdf_url):
             aanroepen.append((naam, pdf_url))
             return gelezen
 
@@ -1413,7 +1413,7 @@ async def test_een_telling_uit_een_namenlijst_wordt_een_telopdracht(
 async def test_een_agent_zonder_pdf_extractie_blijft_werken(
     db_session, monkeypatch,
 ):
-    """De mockprovider kent `run_with_pdf` niet; dat mag niets breken."""
+    """De mockprovider kent `run_met_bron` niet; dat mag niets breken."""
     company = _maak_company(db_session, naam="Zonder Extractie")
     company.website_url = "https://zonder.test"
     db_session.commit()

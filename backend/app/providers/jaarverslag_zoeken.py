@@ -171,7 +171,54 @@ async def _eerste_pdf_uit_resultaten(
     return None
 
 
-async def _zoek_jaarverslag_pdf(
+# Een overzichtspagina ("Jaarverslagen" met links naar 2019 t/m 2024) lijkt op
+# een jaarverslag maar is er geen. Zulke pagina's zijn kort en bestaan vooral uit
+# links; een verslag zelf heeft lopende tekst. Deze ondergrens scheidt de twee
+# zonder dat er een model aan te pas komt.
+_MIN_TEKENS_HTML_JAARVERSLAG = 3_000
+
+
+async def _html_jaarverslag_van_pagina(pagina_url: str, jaar: int) -> str | None:
+    """Is deze pagina zélf het jaarverslag, in plaats van een link ernaartoe?
+
+    Steeds meer organisaties publiceren hun jaarverslag als website in plaats van
+    als PDF. Die werden volledig gemist: `_eerste_pdf_uit_resultaten` sloeg elke
+    pagina over waar geen PDF-link op stond, dus kwam er "geen jaarverslag
+    gevonden" uit terwijl het er gewoon stond.
+
+    Twee eisen, allebei zonder model: er moet genoeg lopende tekst staan om een
+    overzichtspagina uit te sluiten, en het verslagjaar moet in die tekst
+    terugkomen. Dat laatste voorkomt dat een willekeurige "over ons"-pagina die
+    het woord jaarverslag noemt als bron wordt aangemerkt.
+    """
+    try:
+        tekst = await fetch._fetch_text(pagina_url)
+    except Exception:
+        return None
+    if len(tekst) < _MIN_TEKENS_HTML_JAARVERSLAG:
+        return None
+    if jaar not in _verslagjaren_uit(tekst[:20_000]):
+        return None
+    return pagina_url
+
+
+async def _eerste_html_uit_resultaten(
+    results: list[dict[str, str]], zoekjaar: int, uitgesloten: set[str] | None = None,
+) -> str | None:
+    uitgesloten = uitgesloten or set()
+    for result in results:
+        url = fetch._unwrap_safelink(result["url"])
+        if url in uitgesloten or ".pdf" in url.lower():
+            continue
+        if not _lijkt_jaarverslag(f"{result.get('title', '')} {url}", zoekjaar):
+            continue
+        gevonden = await _html_jaarverslag_van_pagina(url, zoekjaar)
+        if gevonden:
+            return gevonden
+    return None
+
+
+async def _zoek_jaarverslagbron(
     naam: str, jaar: int, website_url: str | None = None, uitgesloten: set[str] | None = None,
     zoekjaren: tuple[int, ...] | None = None,
 ) -> str | None:
@@ -188,8 +235,22 @@ async def _zoek_jaarverslag_pdf(
     jaren_query = " ".join(str(zoekjaar) for zoekjaar in jaren)
 
     async def nieuwste_uit(results: list[dict[str, str]]) -> str | None:
+        """Eerst alle jaren op PDF, pas daarna alle jaren op HTML.
+
+        Twee volledige rondes en niet één gecombineerde: een PDF is de sterkere
+        bron (vaste opmaak, paginanummer voor het bewijs), dus een HTML-treffer
+        van een nieuwer jaar mag een beschikbare PDF niet verdringen.
+        """
         for zoekjaar in jaren:
             gevonden = await _eerste_pdf_uit_resultaten(
+                results,
+                zoekjaar,
+                uitgesloten,
+            )
+            if gevonden:
+                return gevonden
+        for zoekjaar in jaren:
+            gevonden = await _eerste_html_uit_resultaten(
                 results,
                 zoekjaar,
                 uitgesloten,
