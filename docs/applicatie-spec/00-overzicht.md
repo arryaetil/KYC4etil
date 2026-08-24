@@ -25,6 +25,9 @@
    zekerheidsindicator en de PDF-viewer.
 4. [Authenticatie en deployment](04-authenticatie-en-deployment.md) — login, rollen, en hoe
    de applicatie op Railway draait (mock- vs. live-modus).
+5. [Bronnenverzameling en datacontract](05-bronnenverzameling-en-datacontract.md) — het
+   proces van aanlevering tot uitlevering, welke gegevens VVL moet meesturen en
+   waarom, en wat het systeem aantoonbaar niet weet.
 
 ## Doel van de applicatie
 
