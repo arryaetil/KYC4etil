@@ -6,6 +6,7 @@ import {
   bewijsRelatie,
   bronjaar,
   bronwaarschuwingen,
+  dienststoringLabel,
   brontypeLabel,
   identiteitLabel,
   menselijkeWaarde,
@@ -828,4 +829,26 @@ describe("peilmomentRelatie", () => {
     })).toEqual({term: "Peilmoment", label: "31 december 2024", toon: "neutraal"});
   });
 
+});
+
+describe("dienststoringLabel", () => {
+  it("zegt in gewone woorden welke dienst uitviel en waarom", () => {
+    expect(dienststoringLabel({dienst: "serper", reden: "tegoed_op", aantal: 1}))
+      .toBe("De zoekmachine heeft geen tegoed meer.");
+    expect(dienststoringLabel({dienst: "openai", reden: "sleutel_ongeldig", aantal: 1}))
+      .toBe("De tekstanalyse weigert de sleutel.");
+    expect(dienststoringLabel({dienst: "google_places", reden: "onbereikbaar", aantal: 1}))
+      .toBe("Google Places was onbereikbaar.");
+  });
+
+  it("noemt hoe vaak het misging als dat meer dan één keer was", () => {
+    // Eén time-out is pech, twaalf is een storing.
+    expect(dienststoringLabel({dienst: "serper", reden: "onbereikbaar", aantal: 12}))
+      .toBe("De zoekmachine was onbereikbaar (12×).");
+  });
+
+  it("valt terug op de ruwe waarden bij een onbekende dienst of reden", () => {
+    expect(dienststoringLabel({dienst: "kvk", reden: "iets_nieuws", aantal: 1}))
+      .toBe("Kvk gaf een fout.");
+  });
 });

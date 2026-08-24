@@ -7,6 +7,7 @@ from langchain_core.output_parsers import JsonOutputParser
 
 from ..config import get_settings
 from ..research.usage import record_response_usage
+from .dienststatus import meld_storing
 from .prompts import EXTRACT_PROMPT
 
 settings = get_settings()
@@ -54,10 +55,19 @@ async def _create_response(client, **kwargs):
         response = await client.responses.create(**kwargs)
     except Exception as exc:
         if not (_weigert_temperature(exc) and "temperature" in kwargs):
+            # Elke aanroeper in dit bestand vangt de fout af en levert None,
+            # wat niet te onderscheiden is van "niets gevonden". Leg daarom hier
+            # vast wat er echt misging — dit is de enige plek waar élke
+            # OpenAI-call doorheen komt.
+            meld_storing("openai", exc)
             raise
         _ZONDER_TEMPERATURE.add(model)
         kwargs.pop("temperature")
-        response = await client.responses.create(**kwargs)
+        try:
+            response = await client.responses.create(**kwargs)
+        except Exception as tweede:
+            meld_storing("openai", tweede)
+            raise
     record_response_usage(response)
     return response
 

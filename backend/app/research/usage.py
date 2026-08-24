@@ -18,6 +18,7 @@ class _UsageTotalen:
     provider_kosten_micro_usd: dict[str, int] = field(default_factory=dict)
     provider_responses: dict[tuple, object] = field(default_factory=dict)
     provider_inflight: dict[tuple, asyncio.Task] = field(default_factory=dict)
+    dienststoringen: dict[str, dict] = field(default_factory=dict)
 
 
 _huidige_totalen: ContextVar["_UsageTotalen | None"] = ContextVar(
@@ -119,6 +120,46 @@ async def cached_provider_call(
     finally:
         if is_eigenaar:
             totalen.provider_inflight.pop(key, None)
+
+
+def record_dienststoring(dienst: str, reden: str, detail: str = "") -> None:
+    """Leg vast dat een externe dienst onbruikbaar was tijdens deze run.
+
+    Hetzelfde mechanisme als de kostenteller, want het is dezelfde vraag: wat is
+    er tijdens déze run met de providers gebeurd. Tot nu toe verdween dit in een
+    logregel op Railway, terwijl juist de reviewer het moet weten: een run
+    zonder Serper levert "niets gevonden" op, en dat is geen conclusie maar een
+    storing.
+
+    Eén regel per dienst. De eerste vastlegging wint, met een teller erbij: de
+    tiende time-out van dezelfde dienst zegt niets nieuws, maar hoe vaak het
+    misging bepaalt wel hoe hard het signaal is.
+    """
+    totalen = _huidige_totalen.get()
+    if totalen is None:
+        return
+    bestaand = totalen.dienststoringen.get(dienst)
+    if bestaand is None:
+        totalen.dienststoringen[dienst] = {
+            "dienst": dienst,
+            "reden": reden,
+            "detail": detail[:200],
+            "aantal": 1,
+        }
+    else:
+        bestaand["aantal"] += 1
+
+
+def get_dienststoringen() -> list[dict]:
+    """De storingen van deze run, ernstigste soort eerst."""
+    totalen = _huidige_totalen.get()
+    if totalen is None:
+        return []
+    volgorde = {"tegoed_op": 0, "sleutel_ongeldig": 1, "onbereikbaar": 2}
+    return sorted(
+        totalen.dienststoringen.values(),
+        key=lambda item: (volgorde.get(item["reden"], 9), item["dienst"]),
+    )
 
 
 def get_usage_totals() -> tuple[int, int]:

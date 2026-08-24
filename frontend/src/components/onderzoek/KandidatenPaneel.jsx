@@ -4,7 +4,9 @@ import {Alert} from "../Alert.jsx";
 import {BronKaart} from "./BronKaart.jsx";
 import {Diagnostiek} from "./Diagnostiek.jsx";
 import {classNames} from "../../lib/format.js";
-import {TOON_STYLE, onderzoeksadvies} from "../../lib/onderzoekLabels.js";
+import {
+  TOON_STYLE, dienststoringLabel, onderzoeksadvies,
+} from "../../lib/onderzoekLabels.js";
 
 /**
  * Samenvattend oordeel boven de bronnenlijst. Eén kop, één toelichting en de
@@ -33,6 +35,32 @@ function Advies({advies}) {
           ))}
         </ul>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * Boven alles, in rood: een uitgevallen dienst maakt de hele uitkomst
+ * onbetrouwbaar. Zonder deze melding leest "geen bronnen gevonden" als een
+ * conclusie, terwijl er niet eens gezocht is.
+ */
+function Dienststoring({storingen}) {
+  return (
+    <section
+      aria-label="Dienst niet beschikbaar"
+      className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-3 text-red-800"
+    >
+      <p className="text-sm font-semibold">
+        Dit onderzoek is onvolledig: niet alles kon worden geraadpleegd.
+      </p>
+      <ul className="mt-1 space-y-0.5 text-sm">
+        {storingen.map((storing) => (
+          <li key={storing.dienst}>{dienststoringLabel(storing)}</li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs opacity-90">
+        Zoek opnieuw zodra dit is opgelost.
+      </p>
     </section>
   );
 }
@@ -200,6 +228,10 @@ export function KandidatenPaneel({
             ))}
           </ul>
         </details>
+      ) : null}
+
+      {diagnostiek.dienststoringen?.length ? (
+        <Dienststoring storingen={diagnostiek.dienststoringen} />
       ) : null}
 
       {/* Het oordeel staat boven de bronnen, niet eronder: de reviewer moet in

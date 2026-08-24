@@ -455,6 +455,34 @@ function peiljaarnaam(gevraagdJaar) {
  * over twee jaren geen tegenspraak maar groei — dat als "bronnen spreken elkaar
  * tegen" presenteren stuurt de reviewer op zoek naar een fout die er niet is.
  */
+const DIENSTNAAM = {
+  serper: "de zoekmachine",
+  openai: "de tekstanalyse",
+  google_places: "Google Places",
+};
+
+const STORINGSREDEN = {
+  tegoed_op: "heeft geen tegoed meer",
+  sleutel_ongeldig: "weigert de sleutel",
+  onbereikbaar: "was onbereikbaar",
+};
+
+/**
+ * Eén regel per uitgevallen dienst, in woorden die zeggen wat de reviewer eraan
+ * heeft.
+ *
+ * Dit stond tot nu toe alleen in een logregel op Railway. Het gevolg was dat een
+ * run zonder Serper-tegoed er in de interface precies zo uitzag als een
+ * organisatie waarover niets te vinden is — en dat is het tegenovergestelde van
+ * elkaar: het eerste is een storing, het tweede een conclusie.
+ */
+export function dienststoringLabel(storing) {
+  const dienst = DIENSTNAAM[storing?.dienst] || storing?.dienst || "een dienst";
+  const reden = STORINGSREDEN[storing?.reden] || "gaf een fout";
+  const vaker = storing?.aantal > 1 ? ` (${storing.aantal}×)` : "";
+  return `${dienst.charAt(0).toUpperCase()}${dienst.slice(1)} ${reden}${vaker}.`;
+}
+
 export function onderzoeksadvies(
   items,
   {onderzoekspaden = [], gevraagdJaar = null} = {},

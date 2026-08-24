@@ -17,7 +17,12 @@ from .seeds import verzamel_seed_documenten
 from .source_reviewer import IntelligentSourceReviewer
 from .supervisor import ResearchSupervisor
 from .urls import canonicaliseer_url
-from .usage import get_cost_summary, get_usage_totals, start_usage_tracking
+from .usage import (
+    get_cost_summary,
+    get_dienststoringen,
+    get_usage_totals,
+    start_usage_tracking,
+)
 
 
 def _now() -> datetime:
@@ -336,6 +341,12 @@ async def _run_research_run(run_id: str) -> None:
             run.configuratie["diagnostiek"]["website_resolution"] = (
                 website_resolution
             )
+            # Zonder dit ziet een run waarin Serper of OpenAI geen tegoed meer
+            # had er hetzelfde uit als een organisatie waarover niets te vinden
+            # is. Dat verschil moet de reviewer zien.
+            run.configuratie["diagnostiek"]["dienststoringen"] = (
+                get_dienststoringen()
+            )
             if outcome.fouten:
                 run.fout = " | ".join(outcome.fouten)[:4000]
             db.commit()
@@ -357,6 +368,15 @@ async def _run_research_run(run_id: str) -> None:
                 run.status = "error"
                 run.resultaat_status = "error"
                 run.fout = str(exc)[:4000]
+                storingen = get_dienststoringen()
+                if storingen:
+                    run.configuratie = {
+                        **(run.configuratie or {}),
+                        "diagnostiek": {
+                            **((run.configuratie or {}).get("diagnostiek") or {}),
+                            "dienststoringen": storingen,
+                        },
+                    }
                 _sla_kosten_op(run)
                 run.completed_at = _now()
                 db.commit()

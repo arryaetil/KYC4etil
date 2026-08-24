@@ -10,6 +10,7 @@ import httpx
 
 from ..config import get_settings
 from ..research.usage import record_provider_call
+from .dienststatus import meld_storing
 from . import fetch, search
 from .base import LocationInfo, PlacesResult
 from .naam_matching import _naam_tokens, _tekst_lijkt_bij_bedrijf_te_horen
@@ -180,7 +181,10 @@ class LivePlacesProvider:
                     kosten_micro_usd=20_000,
                 )
                 p = detailrespons.json()
-        except httpx.HTTPError:
+        except httpx.HTTPError as fout:
+            # Viel stil terug op de contactfallback, dus een leeg tegoed zag er
+            # precies zo uit als een bedrijf dat Google niet kent.
+            meld_storing("google_places", fout)
             return await _contact_fallback(naam, gemeente)
         if not p.get("websiteUri"):
             return await _contact_fallback(naam, gemeente)
@@ -215,7 +219,8 @@ class LivePlacesProvider:
                 record_provider_call(
                     "google_places_text_search", kosten_micro_usd=32_000,
                 )
-        except httpx.HTTPError:
+        except httpx.HTTPError as fout:
+            meld_storing("google_places", fout)
             return LocationInfo(count_nl=None, count_lb=None, bron="web_search")
         lb = sum(1 for p in places if "Limburg" in (p.get("formattedAddress") or ""))
         return LocationInfo(

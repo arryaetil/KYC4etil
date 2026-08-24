@@ -11,43 +11,22 @@ import httpx
 from ..config import get_settings
 from ..research.usage import cached_provider_call, record_provider_call
 from . import llm
+from .dienststatus import meld_storing
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-# Statuscodes waarbij de sleutel of het tegoed het probleem is, niet de zoekopdracht.
-# Die moeten luid zijn: zonder Serper valt de zoekketen terug op DuckDuckGo-scraping
-# (zwakkere index, meer gemiste jaarverslagen) en Google Places (32x duurder).
-#
-# 400 hoort er nadrukkelijk bij: Serper meldt een leeg tegoed met
-# {"message":"Not enough credits","statusCode":400} en niet met 401/402/403.
-# Een guard op statuscodes alléén mist daarom precies het geval waarvoor hij bedoeld
-# is; de body is hier de betrouwbaardere bron.
-_SLEUTEL_OF_TEGOED_STATUS = {400, 401, 402, 403, 429}
-_TEGOED_MARKERS = ("credit", "quota", "insufficient", "limit exceeded")
-
-
 def _log_zoekprovider_fout(provider: str, fout: Exception) -> None:
-    respons = getattr(fout, "response", None)
-    status = getattr(respons, "status_code", None)
-    body = ""
-    if respons is not None:
-        try:
-            body = respons.text[:200]
-        except Exception:
-            body = ""
-    tegoed_op = any(m in body.lower() for m in _TEGOED_MARKERS)
-    if tegoed_op or status in _SLEUTEL_OF_TEGOED_STATUS:
-        logger.warning(
-            "%s onbruikbaar (HTTP %s): %s. De zoekketen valt nu terug op DuckDuckGo "
-            "en de duurdere OpenAI-websearch — zwakkere resultaten en hogere kosten. "
-            "Antwoord: %s", provider, status,
-            "tegoed op" if tegoed_op else "sleutel ongeldig of tegoed op",
-            body or "(geen body)",
-        )
-    else:
-        logger.info("%s gaf geen resultaat (%s)", provider, fout)
+    """Meld de storing én leg hem vast bij de run.
+
+    De statusregels en tekstmarkers staan in `dienststatus`, want OpenAI en
+    Google Places moeten precies hetzelfde onderscheid maken. Zonder Serper valt
+    de zoekketen terug op DuckDuckGo-scraping (zwakkere index, meer gemiste
+    jaarverslagen) en de 32x duurdere Places-route — dat mag de reviewer niet
+    als "niets gevonden" te zien krijgen.
+    """
+    meld_storing("serper", fout)
 
 
 def _normaliseer_duckduckgo_url(href: str) -> str:
