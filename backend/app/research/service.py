@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..database import SessionLocal
 from ..models import Batch, BronKandidaat, Company, Enrichment, ResearchRun
+from ..providers.website_check import controleer_website
 from .live_tools import LiveResearchTools
 from .mock_tools import MockResearchTools
 from .organizations import koppel_organisatie, vind_bestaande_bronnen
@@ -92,6 +93,28 @@ def maak_research_run(
     return run
 
 
+def _bewaar_website(company_id: str, website_url: str) -> None:
+    """Leg de gevonden of gecorrigeerde website vast op de verrijking.
+
+    Niet op `Company.website_url`: dat veld houdt vast wat er is aangeleverd, en
+    dat is de enige manier om later te zien dat de aanlevering achterliep.
+    """
+    with SessionLocal() as db:
+        enrichment = (
+            db.query(Enrichment).filter_by(company_id=company_id).one_or_none()
+        )
+        if enrichment is None:
+            db.add(Enrichment(
+                company_id=company_id,
+                website_url=website_url,
+                lookup_failed=False,
+            ))
+        else:
+            enrichment.website_url = website_url
+            enrichment.lookup_failed = False
+        db.commit()
+
+
 async def _run_research_run(run_id: str) -> None:
     context = None
     website_resolution = {
@@ -147,6 +170,32 @@ async def _run_research_run(run_id: str) -> None:
             run.started_at = _now()
             db.commit()
 
+        # Een aangeleverde URL is niet vanzelf nog geldig: bedrijven verhuizen,
+        # fuseren of laten hun domein verlopen. Zonder deze controle onderzocht
+        # de agent een dood adres en kwam er "niets gevonden" uit, wat iets
+        # heel anders betekent.
+        if settings.provider_mode == "live" and website_url:
+            controle = await controleer_website(website_url)
+            if controle.bruikbaar and controle.url != website_url:
+                website_url = controle.url
+                _bewaar_website(company_id, website_url)
+                website_resolution = {
+                    "status": "gevonden",
+                    "website_url": website_url,
+                    "bron": "redirect",
+                    "controle": controle.reden,
+                }
+            elif not controle.bruikbaar:
+                # Loslaten en hieronder opnieuw zoeken; de oude URL is niets waard.
+                website_resolution = {
+                    "status": "verlopen",
+                    "website_url": None,
+                    "bron": None,
+                    "controle": controle.reden,
+                    "vervangen_url": website_url,
+                }
+                website_url = None
+
         if settings.provider_mode == "live" and not website_url:
             try:
                 from ..providers.live import LivePlacesProvider
@@ -154,6 +203,7 @@ async def _run_research_run(run_id: str) -> None:
                 place = await LivePlacesProvider().lookup(
                     company_naam, company_gemeente,
                 )
+                vorige = website_resolution
                 website_url = place.website if place else None
                 website_resolution = {
                     "status": "gevonden" if website_url else "niet_gevonden",
@@ -163,24 +213,13 @@ async def _run_research_run(run_id: str) -> None:
                         if place else None
                     ),
                 }
+                # Bewaar dat er een dood adres is vervangen: anders lijkt dit op
+                # een organisatie die nooit een website meekreeg.
+                if vorige.get("vervangen_url"):
+                    website_resolution["vervangen_url"] = vorige["vervangen_url"]
+                    website_resolution["controle"] = vorige.get("controle")
                 if website_url:
-                    with SessionLocal() as db:
-                        enrichment = (
-                            db.query(Enrichment)
-                            .filter_by(company_id=company_id)
-                            .one_or_none()
-                        )
-                        if enrichment is None:
-                            enrichment = Enrichment(
-                                company_id=company_id,
-                                website_url=website_url,
-                                lookup_failed=False,
-                            )
-                            db.add(enrichment)
-                        else:
-                            enrichment.website_url = website_url
-                            enrichment.lookup_failed = False
-                        db.commit()
+                    _bewaar_website(company_id, website_url)
             except Exception as exc:
                 # Places is een versterking, geen single point of failure.
                 website_url = None

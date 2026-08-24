@@ -123,6 +123,24 @@ class Company(Base):
     candidate: Mapped["Candidate | None"] = relationship(back_populates="company", uselist=False)
     vastgoed: Mapped["VastgoedRecord | None"] = relationship(back_populates="company", uselist=False)
 
+    @property
+    def effectieve_website_url(self) -> str | None:
+        """De website waar het onderzoek mee heeft gewerkt.
+
+        De verrijking gaat voor: die is tijdens een run gevonden of gecorrigeerd,
+        terwijl `website_url` uit het aangeleverde bestand komt en verouderd kan
+        zijn. Valt terug op het aangeleverde adres zodra de verrijking leeg is.
+
+        Die terugval is de reden dat dit één plek is en geen losse expressie per
+        export: beide exports schreven `enrichment.website_url if enrichment else
+        website_url`, en lieten de kolom dus leeg zodra er een verrijkingsrij
+        bestond zonder website — bijvoorbeeld na een mislukte Places-lookup.
+        """
+        return (
+            (self.enrichment.website_url if self.enrichment else None)
+            or self.website_url
+        )
+
 
 class Enrichment(Base):
     __tablename__ = "enrichments"

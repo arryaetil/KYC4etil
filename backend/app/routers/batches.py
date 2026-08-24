@@ -392,7 +392,8 @@ def export_bronnen(batch_id: str, db: Session = Depends(get_db)):
     } if reviewer_ids else {}
     headers = [
         "Vestigingsnummer", "Organisatienaam", "Gemeente", "KvK-nummer",
-        "Batchjaar", "Researchstatus", "Reviewstatus", "Bron-URL", "Brontype",
+        "Website", "Batchjaar", "Researchstatus", "Reviewstatus",
+        "Bron-URL", "Brontype",
         "Documenttype", "Verslagjaar", "Informatiepeilmoment", "Gevonden waarde",
         "Eenheid", "Scope", "Identity class", "Bewijsfragment", "PDF-pagina",
         "Ranking-score", "Reviewredencode", "Reviewtoelichting", "Beoordeeld door",
@@ -409,7 +410,9 @@ def export_bronnen(batch_id: str, db: Session = Depends(get_db)):
             bron = None
         worksheet.append([
             company.vestigingsnummer, company.naam, company.gemeente,
-            company.kvk_nummer, batch.jaar,
+            company.kvk_nummer,
+            company.effectieve_website_url,
+            batch.jaar,
             run.status if run else "niet_gestart",
             bron.status if bron else None,
             bron.url if bron else None,

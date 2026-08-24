@@ -309,7 +309,7 @@ def export_xlsx(batch_id: str, db: Session = Depends(get_db)):
         values = [
             comp.vestigingsnummer, comp.naam, comp.gemeente, comp.adres,
             comp.sbi_code, comp.cb_er, comp.kvk_nummer,
-            enr.website_url if enr else comp.website_url,
+            comp.effectieve_website_url,
             enr.telefoonnummer if enr else comp.telefoonnummer,
             enr.email if enr else None,
             vg.correspondentieadres if vg else None,
