@@ -32,7 +32,16 @@ router = APIRouter(
 )
 
 CSV_VELDEN = {"naam"}
-KOLOM_ALIASSEN = {"vestnr": "vestigingsnummer"}
+# Spelling verschilt per export; de VVL-lijsten en de handmatige Excels noemen
+# de SBI-tekst allebei anders. "omschrijving" zonder voorvoegsel mag hier op
+# sbi_omschrijving uitkomen: het is de enige omschrijvende kolom in dit formaat.
+KOLOM_ALIASSEN = {
+    "vestnr": "vestigingsnummer",
+    "omschrijving": "sbi_omschrijving",
+    "sbi omschrijving": "sbi_omschrijving",
+    "sbi-omschrijving": "sbi_omschrijving",
+    "sbi_code_omschrijving": "sbi_omschrijving",
+}
 MONITORINGLIJST_NAAM_MARKERS = ("monitoringlijst", "monitorlijst", "watchlist")
 
 
@@ -151,6 +160,11 @@ async def upload_batch(
             gemeente=row.get("gemeente"),
             adres=row.get("adres"),
             sbi_code=row.get("sbi_code"),
+            # Werd niet ingelezen, terwijl `Company` het veld heeft en de
+            # queryplanner erop stuurt: zonder SBI-code herkent hij een
+            # zorgaanbieder of school alleen nog aan de bedrijfsnaam. Wie de
+            # kolom in zijn bestand zette, zag hem stil verdwijnen.
+            sbi_omschrijving=row.get("sbi_omschrijving"),
             cb_er=row.get("cb_er"),
             kvk_nummer=row.get("kvk_nummer"),
             website_url=row.get("website_url"),

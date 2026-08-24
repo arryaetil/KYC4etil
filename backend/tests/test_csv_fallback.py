@@ -48,6 +48,36 @@ def test_upload_bewaart_website_en_telefoonnummer():
         db.close()
 
 
+def test_upload_bewaart_sbi_omschrijving_onder_elke_spelling():
+    """De queryplanner stuurt op deze tekst, dus hij mag niet verdwijnen.
+
+    Zonder SBI-code herkent `bepaal_onderzoekspaden` een zorgaanbieder of school
+    alleen nog aan de bedrijfsnaam. De kolom werd tot nu toe stil weggegooid,
+    ook als iemand hem netjes had ingevuld.
+    """
+    csv_data = (
+        "naam,sbi_code,SBI omschrijving\n"
+        "Woonzorg Testbedrijf,8710,Verpleeghuizen\n"
+    )
+    response = client.post(
+        "/batches/upload?naam=sbi-omschrijving&jaar=2026",
+        files={"file": ("bedrijven.csv", io.BytesIO(csv_data.encode()), "text/csv")},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    db = SessionLocal()
+    try:
+        company = (
+            db.query(Company).filter_by(naam="Woonzorg Testbedrijf")
+            .order_by(Company.created_at.desc()).first()
+        )
+        assert company.sbi_omschrijving == "Verpleeghuizen"
+        assert company.sbi_code == "8710"
+    finally:
+        db.close()
+
+
 class _NoPlacesLookup:
     async def lookup(self, naam, gemeente):
         return None
