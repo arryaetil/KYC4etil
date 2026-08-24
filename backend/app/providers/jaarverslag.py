@@ -106,8 +106,20 @@ def _vind_paginanummer(context: str | None, pagina_teksten: list[tuple[int, str]
     return None
 
 
+# Waarop een pagina wordt geselecteerd voordat de LLM hem leest. Deze lijst
+# bepaalt dus wat er überhaupt gevonden kán worden: staat het getal op een
+# pagina die geen van deze woorden bevat, dan komt er "geen WP-getal" uit
+# terwijl het er gewoon staat.
+#
+# Vandaar de verbreding: niet elk verslag schrijft "medewerkers". "Wij hebben
+# 412 collega's", "312 arbeidsplaatsen" en Engelstalige verslagen met "workforce"
+# of "staff" vielen er allemaal doorheen. Ruim kiezen kost weinig — de pagina's
+# gaan daarna alsnog langs het model, dat zelf beslist of er een bruikbaar getal
+# staat.
 _WP_TREFWOORDEN = (
     "medewerker", "personeel", "headcount", "fte", "employee", "werknemer",
+    "collega", "arbeidsplaats", "arbeidsovereenkomst", "dienstverband",
+    "workforce", "staff", "in dienst", "loondienst", "formatie",
 )
 
 

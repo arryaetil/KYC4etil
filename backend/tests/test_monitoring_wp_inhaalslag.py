@@ -75,3 +75,41 @@ def test_markering_laat_bestaande_validaties_staan(db_session):
 
     assert kandidaat.validaties["domein_match"] is True
     assert kandidaat.validaties[WP_EXTRACTIE] == WP_GEVONDEN
+
+
+def test_een_gelezen_document_zonder_getal_zegt_dat_ook_in_de_onderzoeksroute():
+    """De markering hoort niet alleen bij monitoring te horen.
+
+    Bronnen uit de onderzoeksmodule gaan door dezelfde extractie, maar kregen
+    geen markering — die zeiden dus "nog niet uitgelezen" terwijl er wel degelijk
+    naar gekeken was. Precies het onderscheid dat het label moest maken.
+    """
+    from app.research.validation import (
+        WP_EXTRACTIE,
+        WP_GEVONDEN,
+        WP_GEZOCHT_NIETS_GEVONDEN,
+        SourceDocument,
+        valideer_bron,
+    )
+
+    def valideer(**velden):
+        return valideer_bron(SourceDocument(
+            naam="Voorbeeld Zorg",
+            company_website_url="https://voorbeeldzorg.nl",
+            url="https://voorbeeldzorg.nl/jaarverslag-2025.pdf",
+            titel="Jaarverslag 2025 Voorbeeld Zorg",
+            tekst="Voorbeeld Zorg jaarverslag",
+            brontype="jaarverslag", documenttype="jaarverslag",
+            **velden,
+        )).validaties
+
+    gelezen_leeg = valideer(wp_extractie_gedaan=True)
+    assert gelezen_leeg[WP_EXTRACTIE] == WP_GEZOCHT_NIETS_GEVONDEN
+
+    gelezen_gevuld = valideer(
+        wp_extractie_gedaan=True, wp_gevonden=412, eenheid="werkzame_personen",
+    )
+    assert gelezen_gevuld[WP_EXTRACTIE] == WP_GEVONDEN
+
+    # Niet gelezen: dan is "nog niet uitgelezen" de eerlijke mededeling.
+    assert WP_EXTRACTIE not in valideer()

@@ -43,6 +43,15 @@ def is_leidinggevendenlijst(document: "SourceDocument") -> bool:
     )
 
 
+# Sleutel op `validaties`. Onderscheidt "we hebben gezocht en er staat geen
+# getal in" van "hier is nog niet naar gekeken" — twee dingen die er voor de
+# reviewer hetzelfde uitzagen, namelijk een lege Bewijs-regel, en die bepalen of
+# hij het document zelf nog moet openen.
+WP_EXTRACTIE = "wp_extractie"
+WP_GEZOCHT_NIETS_GEVONDEN = "gezocht_niets_gevonden"
+WP_GEVONDEN = "gevonden"
+
+
 @dataclass(frozen=True)
 class SourceDocument:
     naam: str
@@ -62,6 +71,10 @@ class SourceDocument:
     bron_pagina: int | None = None
     scope_class: str | None = None
     research_route: str | None = None
+    # Is er daadwerkelijk in dit document naar een personeelsgetal gezocht?
+    # Alleen de plekken die de extractie uitvoeren zetten dit op True; zo blijft
+    # "nog niet uitgelezen" een eerlijke mededeling in plaats van een aanname.
+    wp_extractie_gedaan: bool = False
     raw_data: dict | None = None
 
 
@@ -191,6 +204,15 @@ def valideer_bron(document: SourceDocument) -> BronValidatie:
         waarschuwingen.append("wp_afgeleid_uit_naamlijst")
 
     validaties = {
+        **(
+            {
+                WP_EXTRACTIE: (
+                    WP_GEVONDEN if document.wp_gevonden is not None
+                    else WP_GEZOCHT_NIETS_GEVONDEN
+                ),
+            }
+            if document.wp_extractie_gedaan else {}
+        ),
         "domein_match": domein_match,
         "verslagjaar_match": (
             document.gevraagd_jaar == document.verslagjaar

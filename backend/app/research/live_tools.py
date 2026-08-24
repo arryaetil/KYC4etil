@@ -293,6 +293,7 @@ class LiveResearchTools:
             ),
             gevraagd_jaar=context.gevraagd_jaar,
             verslagjaar=_vind_jaar(titel, context.gevraagd_jaar),
+            wp_extractie_gedaan=True,
             informatie_peilmoment=finding.peilmoment,
             wp_gevonden=finding.wp_gevonden,
             eenheid=(
@@ -391,6 +392,10 @@ class LiveResearchTools:
                 documenttype=_documenttype(result.title, result.url, is_pdf=True),
                 gevraagd_jaar=context.gevraagd_jaar,
                 verslagjaar=verslagjaar,
+                # De agent heeft het document gelezen, ook als er niets uit
+                # kwam. Zonder deze vlag zegt de kaart "nog niet uitgelezen"
+                # terwijl er wel degelijk naar gekeken is.
+                wp_extractie_gedaan=finding is not None,
                 informatie_peilmoment=finding.peilmoment if finding else None,
                 wp_gevonden=finding.wp_gevonden if finding else None,
                 eenheid=(
@@ -459,6 +464,9 @@ class LiveResearchTools:
                 )
                 if query.pad == "document" else None
             ),
+            # `data` is leeg zodra de extractie niet draaide (geen sleutel) of
+            # een fout gaf; dan is "nog niet uitgelezen" de juiste mededeling.
+            wp_extractie_gedaan=bool(data),
             informatie_peilmoment=data.get("peilmoment"),
             wp_gevonden=data.get("wp_gevonden"),
             eenheid=(

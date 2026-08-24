@@ -25,7 +25,14 @@ from ..research.ranking import rank_bronnen
 from ..research.types import PlannedQuery
 from ..research.urls import canonicaliseer_url
 from ..research.urls import jaar_uit_url as _documentjaar
-from ..research.validation import BronValidatie, SourceDocument, valideer_bron
+from ..research.validation import (
+    WP_EXTRACTIE,
+    WP_GEVONDEN,
+    WP_GEZOCHT_NIETS_GEVONDEN,
+    BronValidatie,
+    SourceDocument,
+    valideer_bron,
+)
 from ..research.usage import get_cost_summary, start_usage_tracking
 from .runner import _log as _log_stap
 from .runner import _now
@@ -470,15 +477,6 @@ def _beste_moderne_jaarverslagbron(
     # die een exacte treffer op 2025 beloofde. Monitoring gebruikt het afgeleide
     # jaar dus alleen om te kiezen en om zijn eigen status te vullen.
     return max(geldig, key=lambda item: item[0])
-
-
-# Sleutel op `validaties` van een bronkandidaat. Onderscheidt "we hebben
-# gezocht en er staat geen getal in" van "hier is nog niet naar gekeken" — twee
-# dingen die er voor de reviewer hetzelfde uitzagen, namelijk een lege
-# Bewijs-regel.
-WP_EXTRACTIE = "wp_extractie"
-WP_GEZOCHT_NIETS_GEVONDEN = "gezocht_niets_gevonden"
-WP_GEVONDEN = "gevonden"
 
 
 def _bronkaart_zonder_wp_extractie(
