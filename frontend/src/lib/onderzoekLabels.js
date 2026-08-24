@@ -237,7 +237,13 @@ export function bewijsRelatie(candidate) {
   if (heeftCitaat) {
     return {label: "Alleen context, geen WP-getal", toon: "aandacht"};
   }
-  return {label: "Geen medewerkerstal uitgelezen", toon: "aandacht"};
+  // "Doorzocht en niets gevonden" is een uitkomst; "nog niet gelezen" is werk
+  // dat openstaat. Allebei zagen ze er hetzelfde uit — een lege regel — dus
+  // wist de reviewer niet of hij het document zelf nog moest openen.
+  if (candidate?.validaties?.wp_extractie === "gezocht_niets_gevonden") {
+    return {label: "Doorzocht — geen WP-getal in dit document", toon: "aandacht"};
+  }
+  return {label: "Nog niet uitgelezen", toon: "aandacht"};
 }
 
 /**

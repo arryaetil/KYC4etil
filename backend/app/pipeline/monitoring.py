@@ -400,7 +400,16 @@ def _sla_moderne_bron_op(
         relevantie_score=bron.score_breakdown["relevantie"],
         ranking_score=bron.ranking_score,
         score_breakdown=bron.score_breakdown,
-        validaties=bron.validaties,
+        # Ook op een nieuwe kaart: er is naar een getal gezocht. Zonder deze
+        # markering is "geen getal" niet te onderscheiden van "nog niet
+        # gekeken", en dat verschil is precies wat de reviewer moet weten.
+        validaties={
+            **(bron.validaties or {}),
+            WP_EXTRACTIE: (
+                WP_GEVONDEN if bewijs.wp_gevonden is not None
+                else WP_GEZOCHT_NIETS_GEVONDEN
+            ),
+        },
         waarschuwingen=bron.waarschuwingen,
         # Een al onderzocht document (DigiMV) draagt zijn eigen herkomst mee;
         # bij de agentroute staat die alleen in de finding.
@@ -461,6 +470,55 @@ def _beste_moderne_jaarverslagbron(
     # die een exacte treffer op 2025 beloofde. Monitoring gebruikt het afgeleide
     # jaar dus alleen om te kiezen en om zijn eigen status te vullen.
     return max(geldig, key=lambda item: item[0])
+
+
+# Sleutel op `validaties` van een bronkandidaat. Onderscheidt "we hebben
+# gezocht en er staat geen getal in" van "hier is nog niet naar gekeken" — twee
+# dingen die er voor de reviewer hetzelfde uitzagen, namelijk een lege
+# Bewijs-regel.
+WP_EXTRACTIE = "wp_extractie"
+WP_GEZOCHT_NIETS_GEVONDEN = "gezocht_niets_gevonden"
+WP_GEVONDEN = "gevonden"
+
+
+def _bronkaart_zonder_wp_extractie(
+    db: Session,
+    company: Company,
+    bron_url: str,
+) -> BronKandidaat | None:
+    """De bronkaart voor deze URL die nog nooit op een WP-getal is doorzocht.
+
+    De extractie draait pas nadat is vastgesteld dát er een bronkaart komt —
+    verstandig, want ze kost geld. Maar daardoor bleef één groep buiten schot:
+    kaarten van vóór de WP-extractie bestonden al, hun URL verandert niet meer,
+    en dus kwam elke ronde uit op "ongewijzigd". Die bleven leeg, voorgoed.
+
+    Geeft niets terug zodra de extractie al is geprobeerd, ook als ze niets
+    opleverde: een verslag zonder personeelsgetal hoeft niet elke ronde opnieuw
+    ~1 cent te kosten.
+    """
+    kandidaat = (
+        db.query(BronKandidaat)
+        .filter(
+            BronKandidaat.company_id == company.id,
+            BronKandidaat.canonical_url == canonicaliseer_url(bron_url),
+        )
+        .order_by(BronKandidaat.created_at.desc())
+        .first()
+    )
+    if kandidaat is None or kandidaat.wp_gevonden is not None:
+        return None
+    if (kandidaat.validaties or {}).get(WP_EXTRACTIE):
+        return None
+    return kandidaat
+
+
+def _markeer_wp_gezocht(kandidaat: BronKandidaat, gevonden: bool) -> None:
+    """Leg vast dat er naar een WP-getal is gezocht, en of het er stond."""
+    kandidaat.validaties = {
+        **(kandidaat.validaties or {}),
+        WP_EXTRACTIE: WP_GEVONDEN if gevonden else WP_GEZOCHT_NIETS_GEVONDEN,
+    }
 
 
 async def _lees_wp_uit_document(jaarverslag_agent, company_naam: str, finding):
@@ -800,6 +858,28 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         and not wp_is_nieuw
         and not _heeft_al_een_bronkaart(db, company, finding.bron_url)
     )
+    # Een bestaande kaart zonder getal die nog nooit is doorzocht: dat is geen
+    # "ongewijzigd", dat is werk dat nooit is gedaan.
+    inhaalkaart = (
+        None if (url_gewijzigd or wp_is_nieuw or alleen_bronkaart_ontbreekt)
+        else _bronkaart_zonder_wp_extractie(db, company, finding.bron_url)
+    )
+    if inhaalkaart is not None and digimv_document is None:
+        finding = await _lees_wp_uit_document(
+            jaarverslag_agent, company.naam, finding,
+        )
+        if finding.wp_gevonden is None:
+            # Niets gevonden: geen nieuwe bronkaart, wel vastleggen dát er is
+            # gezocht. Anders blijft de reviewer met een lege Bewijs-regel zitten
+            # die niet zegt of er naar gekeken is, en betalen we elke ronde
+            # opnieuw voor hetzelfde antwoord.
+            _markeer_wp_gezocht(inhaalkaart, gevonden=False)
+            _log(db, company.batch_id, company.id, "jaarverslag_monitoring",
+                 STATUS_ONGEWIJZIGD, t0)
+            db.commit()
+            return False
+        wp_is_nieuw = True
+
     if not url_gewijzigd and not wp_is_nieuw and not alleen_bronkaart_ontbreekt:
         _log(db, company.batch_id, company.id, "jaarverslag_monitoring",
              STATUS_ONGEWIJZIGD, t0)
@@ -814,6 +894,8 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
 
     # Pas hier, en niet eerder: we weten nu dat er echt een bronkaart komt, dus
     # betalen we de extractie alleen als de reviewer er iets aan heeft.
+    # `finding.wp_gevonden` is al gevuld als de inhaalslag hierboven draaide;
+    # `_lees_wp_uit_document` slaat dan zelf over.
     if digimv_document is None:
         finding = await _lees_wp_uit_document(
             jaarverslag_agent, company.naam, finding,

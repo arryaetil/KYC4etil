@@ -412,9 +412,15 @@ describe("bewijsRelatie", () => {
       .toBe("Alleen context, geen WP-getal");
   });
 
-  it("meldt geen medewerkerstal zonder getal en zonder citaat", () => {
+  it("onderscheidt doorzocht-en-niets-gevonden van nog-niet-gelezen", () => {
+    // Allebei zagen ze er hetzelfde uit, dus wist de reviewer niet of hij het
+    // document zelf nog moest openen.
     expect(bewijsRelatie({wp_gevonden: null}).label)
-      .toBe("Geen medewerkerstal uitgelezen");
+      .toBe("Nog niet uitgelezen");
+    expect(bewijsRelatie({
+      wp_gevonden: null,
+      validaties: {wp_extractie: "gezocht_niets_gevonden"},
+    }).label).toBe("Doorzocht — geen WP-getal in dit document");
   });
 });
 
