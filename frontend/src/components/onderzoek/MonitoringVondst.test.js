@@ -48,3 +48,28 @@ describe("alsBewijsBron", () => {
     expect(bewijsUrl(bron, "tok").url).not.toContain("#page=");
   });
 });
+
+describe("alsBewijsBron · volledige kandidaat", () => {
+  it("gebruikt de kandidaat van de monitoring als die er is", () => {
+    // De monitoring legt alles wat ze uit het verslag las vast op een
+    // BronKandidaat; die stond alleen niet in de respons. Zonder dit bouwde de
+    // kaart een uitgeklede kopie terwijl het origineel beschikbaar was.
+    const bron = alsBewijsBron({
+      company_id: "c1",
+      laatste_bron_url: "https://voorbeeld.nl/jaarverslag-2024.pdf",
+      bron: {
+        id: "kandidaat-1",
+        url: "https://voorbeeld.nl/jaarverslag-2024.pdf",
+        wp_gevonden: 412,
+        eenheid: "werkzame_personen",
+        bewijsfragment: "412 medewerkers",
+        bron_pagina: 14,
+        verslagjaar: 2024,
+        documenttype: "jaarverslag",
+      },
+    });
+
+    expect(bron.id).toBe("kandidaat-1");
+    expect(bron.wp_gevonden).toBe(412);
+  });
+});

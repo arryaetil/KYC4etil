@@ -529,3 +529,51 @@ def test_monitoring_run_kan_actuele_organisaties_alsnog_hercontroleren(
     assert data["overgeslagen_actueel"] == 0
     assert data["aantal_companies"] == 1
     assert gestart == [(None, 0, True)]
+
+
+def test_monitoring_geeft_de_hele_bronkandidaat_mee(client, db_session):
+    """De monitoring las het WP-getal al uit; het stond alleen niet in de respons.
+
+    Daardoor toonde de vondstkaart alleen een link, terwijl het cijfer, het
+    citaat en de scope allemaal al op de BronKandidaat stonden die dezelfde
+    ronde had aangemaakt.
+    """
+    _zorg_voor_test_user(db_session)
+    upload = client.post(
+        "/batches/upload?naam=watchlist-bron&jaar=2026&monitoringlijst=true",
+        files={"file": ("orgs.csv", BytesIO(b"naam\nZorggroep Voorbeeld\n"), "text/csv")},
+    )
+    batch_id = upload.json()["batch_id"]
+    company = db_session.query(Company).filter_by(batch_id=batch_id).one()
+
+    url = "https://voorbeeld.test/jaarverslag-2025.pdf"
+    db_session.add(JaarverslagMonitoring(
+        company_id=company.id, laatste_bron_url=url, laatste_verslagjaar=2025,
+        laatst_gecontroleerd_op=datetime.now(timezone.utc).replace(tzinfo=None),
+    ))
+    run = ResearchRun(
+        company_id=company.id, batch_id=batch_id, doel="monitoring",
+        status="completed",
+    )
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(BronKandidaat(
+        research_run_id=run.id, company_id=company.id,
+        url=url, canonical_url=url,
+        brontype="jaarverslag", documenttype="jaarverslag",
+        verslagjaar=2025, wp_gevonden=412, eenheid="werkzame_personen",
+        bewijsfragment="412 medewerkers in dienst", bron_pagina=14,
+        scope_class="vestiging", identity_class="exact_entity",
+        status="voorgesteld",
+    ))
+    db_session.commit()
+
+    vondst = client.get("/monitoring").json()["companies"][0]
+
+    assert vondst["bron"]["wp_gevonden"] == 412
+    assert vondst["bron"]["eenheid"] == "werkzame_personen"
+    assert vondst["bron"]["bewijsfragment"] == "412 medewerkers in dienst"
+    assert vondst["bron"]["scope_class"] == "vestiging"
+    # De losse velden blijven bestaan: de bewijsviewer leidt daar zijn
+    # #page= en search= uit af.
+    assert vondst["bron_pagina"] == 14

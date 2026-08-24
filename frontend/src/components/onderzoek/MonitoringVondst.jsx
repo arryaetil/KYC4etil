@@ -1,6 +1,8 @@
 import {Eye} from "lucide-react";
 import {classNames, formatMoment} from "../../lib/format.js";
-import {monitoringStatus} from "../../lib/onderzoekLabels.js";
+import {
+  bewijsRelatie, monitoringStatus, peilmomentRelatie,
+} from "../../lib/onderzoekLabels.js";
 
 /**
  * Bouwt uit de monitoringvelden een kandidaat-vormig object, zodat het
@@ -12,6 +14,9 @@ import {monitoringStatus} from "../../lib/onderzoekLabels.js";
  */
 export function alsBewijsBron(company) {
   if (!company?.laatste_bron_url) return null;
+  // De volledige kandidaat als de monitoring die heeft; anders het minimum dat
+  // de bewijsviewer nodig heeft.
+  if (company.bron) return company.bron;
   return {
     id: `monitoring:${company.company_id}`,
     url: company.laatste_bron_url,
@@ -22,9 +27,21 @@ export function alsBewijsBron(company) {
   };
 }
 
+function Vondstrij({label, waarde}) {
+  return (
+    <div className="flex gap-3">
+      <dt className="w-20 shrink-0 text-slate-500">{label}</dt>
+      <dd className="flex-1 text-ink">{waarde.label}</dd>
+    </div>
+  );
+}
+
 export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}) {
   const status = monitoringStatus(company);
   const bron = alsBewijsBron(company);
+  const peilmomentRij = peilmomentRelatie(company.bron, {
+    gevraagdJaar: company.doeljaar,
+  }) || {term: "Verslagjaar", label: "Niet bekend"};
 
   return (
     <section className="border-b border-line px-5 py-5">
@@ -53,8 +70,22 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
               {bron.url}
             </a>
           </p>
+          {/* Het WP-getal en het jaar stonden hier niet, terwijl de monitoring
+              ze al had uitgelezen: de reviewer moest de bron openen om te zien
+              of er überhaupt een cijfer in stond. Dezelfde twee regels als op
+              een bronkaart, in dezelfde woorden. */}
+          {company.bron ? (
+            <dl className="mt-3 space-y-1.5 text-sm">
+              <Vondstrij label="Bewijs" waarde={bewijsRelatie(company.bron)} />
+              <Vondstrij
+                label={peilmomentRij.term}
+                waarde={peilmomentRij}
+              />
+            </dl>
+          ) : null}
+
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            {company.verslagjaar ? (
+            {!company.bron && company.verslagjaar ? (
               <span className="text-sm font-medium text-ink">
                 Verslagjaar {company.verslagjaar}
               </span>

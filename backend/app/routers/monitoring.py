@@ -14,6 +14,7 @@ from ..pipeline.monitoring import (
     bepaal_over_te_slaan_companies, run_monitoring_watchlist_background,
 )
 from ..research.urls import canonicaliseer_url
+from .research import _candidate_dict
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"], dependencies=[Depends(get_current_user)])
 
@@ -52,26 +53,31 @@ def _jaarstatus(
     return "actueel" if verslagjaar >= doeljaar else "verouderd"
 
 
-def _bewijsplek_per_company(
+def _bronkandidaat_per_company(
     db: Session,
     bron_per_company: dict[str, str],
-) -> dict[str, tuple[int | None, str | None]]:
-    """Zoekt bij elke monitoringbron het paginanummer en bewijsfragment op.
+) -> dict[str, dict]:
+    """Zoekt bij elke monitoringbron de bijbehorende bronkandidaat op.
 
     De monitoringronde bewaart op JaarverslagMonitoring alleen de URL, maar legt
-    de vindplaats van het WP-getal wél vast op de BronKandidaat die zij in
-    dezelfde transactie aanmaakt. Zonder die twee velden opent de reviewer het
-    jaarverslag op pagina 1 in plaats van bij het cijfer.
+    álles wat ze uit het verslag las vast op de BronKandidaat die ze in dezelfde
+    transactie aanmaakt: het WP-getal, het citaat, het paginanummer, de scope.
+    Die stonden hier niet in de respons, dus de monitoringkaart kon alleen een
+    link tonen terwijl het cijfer al bekend was.
 
     Vergelijking gaat over de canonieke URL: de monitoring en de kandidaat
     kunnen dezelfde bron met een andere querystring of trailing slash hebben.
+
+    De vorm komt uit `_candidate_dict` van de onderzoeksmodule — dezelfde velden,
+    zodat de monitoringkaart dezelfde samenvatting kan tonen als de bronnenlijst
+    in plaats van een tweede variant die stilzwijgend uiteenloopt.
     """
     if not bron_per_company:
         return {}
 
     canoniek = {cid: canonicaliseer_url(url) for cid, url in bron_per_company.items()}
     company_ids = list(bron_per_company)
-    gevonden: dict[str, tuple[int | None, str | None]] = {}
+    gevonden: dict[str, dict] = {}
 
     # Oplopend op created_at zodat de nieuwste vondst de oudere overschrijft.
     for kandidaat in (db.query(BronKandidaat)
@@ -79,10 +85,8 @@ def _bewijsplek_per_company(
                       .order_by(BronKandidaat.created_at)):
         doel = canoniek.get(kandidaat.company_id)
         bron = kandidaat.canonical_url or canonicaliseer_url(kandidaat.url or "")
-        if doel and bron == doel and (kandidaat.bron_pagina or kandidaat.bewijsfragment):
-            gevonden[kandidaat.company_id] = (
-                kandidaat.bron_pagina, kandidaat.bewijsfragment,
-            )
+        if doel and bron == doel:
+            gevonden[kandidaat.company_id] = _candidate_dict(kandidaat)
 
     return gevonden
 
@@ -126,7 +130,7 @@ def monitoring_status(db: Session = Depends(get_db)):
             elif pr.status == "error":
                 fouten_map[pr.company_id] = pr.error or "onbekende fout"
 
-    bewijsplek = _bewijsplek_per_company(db, {
+    kandidaat_per_company = _bronkandidaat_per_company(db, {
         cid: status.laatste_bron_url
         for cid, status in status_map.items()
         if status.laatste_bron_url
@@ -142,7 +146,9 @@ def monitoring_status(db: Session = Depends(get_db)):
     out = []
     for comp in companies:
         status = status_map.get(comp.id)
-        pagina, fragment = bewijsplek.get(comp.id, (None, None))
+        kandidaat = kandidaat_per_company.get(comp.id)
+        pagina = kandidaat.get("bron_pagina") if kandidaat else None
+        fragment = kandidaat.get("bewijsfragment") if kandidaat else None
         bron_url = status.laatste_bron_url if status else None
         verslagjaar = status.laatste_verslagjaar if status else None
         out.append({
@@ -155,6 +161,9 @@ def monitoring_status(db: Session = Depends(get_db)):
             # opent en het cijfer markeert in plaats van op pagina 1 te beginnen.
             "bron_pagina": pagina,
             "bewijsfragment": fragment,
+            # De volledige kandidaat, zodat de monitoringkaart het WP-getal en
+            # dezelfde samenvatting kan tonen als de bronnenlijst.
+            "bron": kandidaat,
             "bron_status": "gevonden" if bron_url else "ontbreekt",
             "doeljaar": doeljaar,
             "jaarstatus": _jaarstatus(doeljaar, verslagjaar, bron_url),
