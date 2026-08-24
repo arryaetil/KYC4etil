@@ -104,7 +104,58 @@ def _evidence_score(bron: BronValidatie) -> float:
     return 1.0 if document.bewijsfragment else 0.4
 
 
-def _menselijke_waarde(bron: BronValidatie) -> dict[str, str]:
+def _eerste_twijfel(bron: BronValidatie) -> str | None:
+    """Waar zit bij déze bron de onduidelijkheid, en wat lost die op?
+
+    De actie was tot nu toe puur afgeleid van het brontype: een teampagina kreeg
+    altijd "bekijk of tel de genoemde teamleden", ook bij een concern met
+    duizenden medewerkers waar zo'n pagina hooguit de directie toont. Dat stuurt
+    de reviewer naar werk dat niets oplevert.
+
+    De volgorde hieronder is de volgorde waarin een twijfel het antwoord
+    onbruikbaar maakt. Gaat de bron over een ander bedrijf, dan doet de rest er
+    niet meer toe; klopt de eenheid niet, dan is het getal onbruikbaar hoe goed
+    het ook onderbouwd is; en pas als het getal deugt, telt of het bij déze
+    vestiging hoort. Alleen de eerste telt: twee opdrachten tegelijk is geen
+    opdracht.
+    """
+    document = bron.document
+    heeft_getal = document.wp_gevonden is not None
+
+    if bron.identity_class == "mismatch":
+        return (
+            "Deze bron lijkt over een ander bedrijf te gaan. Controleer de naam "
+            "in de bron voordat je iets overneemt."
+        )
+    if bron.identity_class not in {"exact_entity", "same_brand_or_group"}:
+        return (
+            "Niet vastgesteld dat deze bron over dit bedrijf gaat. Zoek in de "
+            "bron een naam, adres of KvK-nummer dat dat bevestigt."
+        )
+    if heeft_getal and document.eenheid == "fte":
+        return (
+            f"{document.wp_gevonden} is een FTE-getal en geen WP. Zoek in de "
+            "bron het aantal personen."
+        )
+    if heeft_getal and document.scope_class in {"nederland", "concern", "instelling"}:
+        return (
+            f"{document.wp_gevonden} geldt breder dan deze vestiging. Zoek in "
+            "de bron een uitsplitsing per locatie of vestiging."
+        )
+    if heeft_getal and document.eenheid == "werkzame_personen" and not document.bewijsfragment:
+        return (
+            f"Er is {document.wp_gevonden} WP uitgelezen, maar geen zin "
+            "vastgelegd waar dat staat. Zoek die passage op in de bron."
+        )
+    if heeft_getal and document.scope_class in {None, "unknown"}:
+        return (
+            f"Stel vast of {document.wp_gevonden} over deze vestiging gaat of "
+            "over de hele organisatie."
+        )
+    return None
+
+
+def _waarde_uit_brontype(bron: BronValidatie) -> dict[str, str]:
     document = bron.document
     heeft_wp_bewijs = (
         document.wp_gevonden is not None
@@ -171,7 +222,14 @@ def _menselijke_waarde(bron: BronValidatie) -> dict[str, str]:
         return {
             "rol": "teamoverzicht",
             "label": "Teamoverzicht",
-            "actie": "Bekijk of tel de genoemde teamleden en controleer of alle functies en locaties zijn opgenomen.",
+            # Niet meer "tel de teamleden" zonder voorbehoud: bij een grote
+            # organisatie toont zo'n pagina de directie of één afdeling, en dan
+            # levert tellen een getal op dat nergens op slaat.
+            "actie": (
+                "Tel de teamleden alleen als deze pagina het volledige "
+                "personeel toont; bij een grotere organisatie is dit meestal "
+                "een deel — zoek dan een jaarverslag of personeelsoverzicht."
+            ),
         }
     if document.documenttype in {
         "jaarverslag", "jaarrekening", "bestuursverslag", "pdf_document",
@@ -204,6 +262,20 @@ def _menselijke_waarde(bron: BronValidatie) -> dict[str, str]:
         "label": "Aanvullende onderzoeksroute",
         "actie": "Controleer de bron op namen, locaties of verwijzingen naar een sterkere primaire bron.",
     }
+
+
+def _menselijke_waarde(bron: BronValidatie) -> dict[str, str]:
+    """Rol en label uit het brontype; de actie uit de twijfel bij déze bron.
+
+    Twee uitzonderingen houden hun eigen actie: DUO (daar is het Excel-bestand
+    zelf de opdracht, en "zoek een uitsplitsing per vestiging" bestaat er niet)
+    en de telopdracht (die ís de opdracht).
+    """
+    waarde = _waarde_uit_brontype(bron)
+    if waarde["rol"] in {"duo_personeelsbron", "telopdracht"}:
+        return waarde
+    twijfel = _eerste_twijfel(bron)
+    return {**waarde, "actie": twijfel} if twijfel else waarde
 
 
 def rank_bronnen(
