@@ -56,15 +56,22 @@ export function createApi(token, onUnauthorized) {
     batch: (id) => request(`/batches/${id}`),
     companies: (batchId, label) => request(`/batches/${batchId}/companies${label ? `?label=${label}` : ""}`),
     company: (batchId, companyId) => request(`/batches/${batchId}/companies/${companyId}`),
-    uploadBatch: (file, naam, jaar, mapId) => {
+    uploadBatch: (file, naam, jaar, mapId, {monitoringlijst = false} = {}) => {
       const body = new FormData();
       body.append("file", file);
       const params = new URLSearchParams();
       if (naam) params.set("naam", naam);
       if (jaar) params.set("jaar", jaar);
       if (mapId) params.set("map_id", mapId);
+      // Zonder deze vlag was een watchlist alleen via de API aan te maken; de
+      // interface gaf hem nooit mee.
+      if (monitoringlijst) params.set("monitoringlijst", "true");
       return request(`/batches/upload?${params.toString()}`, {method: "POST", body});
     },
+    voegBedrijfToe: (batchId, velden) => request(`/batches/${batchId}/companies`, {
+      method: "POST",
+      json: velden,
+    }),
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
     monitoringStatus: () => request("/monitoring"),
     monitorRun: () => request("/monitoring/run", {method: "POST"}),

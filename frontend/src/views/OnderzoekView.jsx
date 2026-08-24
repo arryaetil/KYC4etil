@@ -4,6 +4,7 @@ import {Alert} from "../components/Alert.jsx";
 import {BatchesView} from "./BatchesView.jsx";
 import {MappenView} from "./MappenView.jsx";
 import {OrganisatieLijst} from "../components/onderzoek/OrganisatieLijst.jsx";
+import {BedrijfToevoegen} from "../components/onderzoek/BedrijfToevoegen.jsx";
 import {KandidatenPaneel} from "../components/onderzoek/KandidatenPaneel.jsx";
 import {BewijsPaneel} from "../components/onderzoek/BewijsPaneel.jsx";
 import {bekijkBewijs} from "../lib/evidenceLink.js";
@@ -87,6 +88,15 @@ export function OnderzoekView({api}) {
       </div>
 
       {error ? <div className="px-4 pt-4"><Alert message={error} /></div> : null}
+      {/* Ook hier: een lijst is niet af zodra hij geüpload is. Een vestiging die
+          er per ongeluk niet in stond, moest tot nu toe via een nieuwe upload. */}
+      {batchId ? (
+        <BedrijfToevoegen
+          api={api}
+          batchId={batchId}
+          onToegevoegd={() => load(batchId).catch(() => {})}
+        />
+      ) : null}
 
       {/* Onder lg staan de panelen gestapeld; zonder eigen scroller zou de
           onderste helft buiten beeld vallen. */}

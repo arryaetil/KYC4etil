@@ -1,10 +1,11 @@
-import {useEffect, useState} from "react";
-import {RefreshCw} from "lucide-react";
+import {useEffect, useRef, useState} from "react";
+import {FileUp, RefreshCw} from "lucide-react";
 import {Alert} from "../components/Alert.jsx";
 import {IconButton} from "../components/IconButton.jsx";
 import {OrganisatieLijst} from "../components/onderzoek/OrganisatieLijst.jsx";
 import {KandidatenPaneel} from "../components/onderzoek/KandidatenPaneel.jsx";
 import {MonitoringVondst} from "../components/onderzoek/MonitoringVondst.jsx";
+import {BedrijfToevoegen} from "../components/onderzoek/BedrijfToevoegen.jsx";
 import {BewijsPaneel} from "../components/onderzoek/BewijsPaneel.jsx";
 import {monitoringStatus} from "../lib/onderzoekLabels.js";
 import {bekijkBewijs} from "../lib/evidenceLink.js";
@@ -42,6 +43,8 @@ export function MonitoringView({api}) {
   const [geselecteerdId, setGeselecteerdId] = useState(null);
   const [geselecteerdeBron, setGeselecteerdeBron] = useState(null);
   const [ronde, setRonde] = useState(null);
+  const [melding, setMelding] = useState("");
+  const fileRef = useRef(null);
 
   async function load() {
     setStatus(await api.monitoringStatus());
@@ -52,6 +55,34 @@ export function MonitoringView({api}) {
     const timer = window.setInterval(() => load().catch(() => {}), 10000);
     return () => window.clearInterval(timer);
   }, []);
+
+  /** Vult de lopende watchlist aan; de backend voegt samen op vestigingsnummer,
+      KvK-nummer of naam plus gemeente, en laat bestaande rijen met rust. */
+  async function uploadLijst(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    setMelding("");
+    try {
+      const naam = file.name.replace(/\.[^.]+$/, "");
+      const uitkomst = await api.uploadBatch(
+        file, naam, new Date().getFullYear(), null, {monitoringlijst: true},
+      );
+      setMelding(
+        uitkomst.samengevoegd
+          ? `${uitkomst.toegevoegd} toegevoegd, ${uitkomst.bijgewerkt} aangevuld, `
+            + `${uitkomst.ongewijzigd} stonden er al.`
+          : `Monitoringlijst aangemaakt met ${uitkomst.toegevoegd} organisaties.`,
+      );
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+      event.target.value = "";
+    }
+  }
 
   async function nuControleren() {
     setBusy(true);
@@ -78,11 +109,28 @@ export function MonitoringView({api}) {
   );
 
   if (!batch) {
+    // De uploadknop hoort juist hier te staan: zonder lijst was de module een
+    // doodlopende mededeling, en een eerste watchlist alleen via de API aan te
+    // maken.
     return (
       <div className="px-6 py-16 text-center text-sm text-slate-500">
-        {error
-          ? error
-          : "Nog geen monitoringlijst ingesteld."}
+        <p>{error || "Nog geen monitoringlijst ingesteld."}</p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          className="hidden"
+          onChange={uploadLijst}
+        />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          className="focus-ring mt-4 inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-sm text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          <FileUp size={14} />{busy ? "Bezig…" : "Lijst uploaden"}
+        </button>
+        {melding ? <p className="mt-2 text-xs">{melding}</p> : null}
       </div>
     );
   }
@@ -127,18 +175,46 @@ export function MonitoringView({api}) {
                 }.`}
           </span>
         ) : null}
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          className="hidden"
+          onChange={uploadLijst}
+        />
+        {/* Een watchlist was alleen via de API aan te maken of aan te vullen.
+            Een tweede bestand vervangt de lopende lijst niet maar vult hem aan;
+            dat gebeurt in de backend, hier is het gewoon "uploaden". */}
+        <IconButton
+          icon={FileUp}
+          variant="quiet"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          className="ml-auto"
+        >
+          Lijst uploaden
+        </IconButton>
         <IconButton
           icon={RefreshCw}
           variant="quiet"
           onClick={nuControleren}
           disabled={busy}
-          className="ml-auto"
         >
           {busy ? "Bezig…" : "Nu controleren"}
         </IconButton>
       </div>
 
       {error ? <div className="px-4 pt-4"><Alert message={error} /></div> : null}
+      {melding ? (
+        <p className="px-4 pt-3 text-xs text-slate-500">{melding}</p>
+      ) : null}
+      {batch ? (
+        <BedrijfToevoegen
+          api={api}
+          batchId={batch.id}
+          onToegevoegd={() => load().catch(() => {})}
+        />
+      ) : null}
 
       {/* Onder lg staan de panelen gestapeld; zonder eigen scroller zou de
           onderste helft buiten beeld vallen. */}

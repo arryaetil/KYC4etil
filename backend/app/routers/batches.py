@@ -15,6 +15,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFi
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -120,6 +121,81 @@ def _lees_upload(content: bytes, bestandsnaam: str) -> tuple[set[str], list[dict
     return kolommen, genormaliseerd
 
 
+# De velden die uit een bestand of formulier op een Company terechtkomen. Eén
+# lijst, zodat de upload, de samenvoeging en het handmatig toevoegen niet elk
+# hun eigen selectie krijgen — dat is precies hoe `sbi_omschrijving` jarenlang
+# stil kon verdwijnen.
+COMPANY_VELDEN = (
+    "vestigingsnummer", "naam", "gemeente", "adres", "sbi_code",
+    "sbi_omschrijving", "cb_er", "kvk_nummer", "website_url", "telefoonnummer",
+)
+
+
+def _identiteit(velden: dict) -> tuple:
+    """Waaraan herken je dat twee rijen dezelfde vestiging zijn?
+
+    Het vestigingsnummer is de identificatie richting VVL en dus het hardst.
+    Daarna het KvK-nummer; pas als beide ontbreken naam plus gemeente, want een
+    naam alleen komt in meerdere gemeenten voor ("Jumbo Supermarkten").
+    """
+    if velden.get("vestigingsnummer"):
+        return ("vestigingsnummer", str(velden["vestigingsnummer"]).strip().lower())
+    if velden.get("kvk_nummer"):
+        return ("kvk_nummer", str(velden["kvk_nummer"]).strip().lower())
+    return (
+        "naam",
+        str(velden.get("naam") or "").strip().lower(),
+        str(velden.get("gemeente") or "").strip().lower(),
+    )
+
+
+def _vul_lege_velden_aan(company: Company, velden: dict) -> bool:
+    """Vul alleen wat nog leeg is. Geeft terug of er iets is veranderd.
+
+    Bewust niet overschrijven: wat er staat kan met de hand zijn gecorrigeerd of
+    tijdens een run zijn gevonden, en een nieuwe aanlevering is niet vanzelf
+    beter. Wat ontbreekt aanvullen is winst zonder risico.
+    """
+    gewijzigd = False
+    for veld in COMPANY_VELDEN:
+        if veld == "naam":
+            continue
+        nieuw = velden.get(veld)
+        if nieuw and not getattr(company, veld, None):
+            setattr(company, veld, nieuw)
+            gewijzigd = True
+    return gewijzigd
+
+
+def _voeg_rijen_toe(db: Session, batch: Batch, rows: list[dict]) -> dict:
+    """Voeg rijen toe aan een bestaande lijst zonder dubbelen te maken."""
+    bestaand = {
+        _identiteit({
+            veld: getattr(company, veld) for veld in COMPANY_VELDEN
+        }): company
+        for company in db.query(Company).filter_by(batch_id=batch.id)
+    }
+    toegevoegd = bijgewerkt = 0
+    for row in rows:
+        company = bestaand.get(_identiteit(row))
+        if company is None:
+            company = Company(
+                batch_id=batch.id,
+                **{veld: row.get(veld) for veld in COMPANY_VELDEN},
+            )
+            db.add(company)
+            bestaand[_identiteit(row)] = company
+            toegevoegd += 1
+        elif _vul_lege_velden_aan(company, row):
+            bijgewerkt += 1
+    batch.totaal = (batch.totaal or 0) + toegevoegd
+    return {
+        "toegevoegd": toegevoegd,
+        "bijgewerkt": bijgewerkt,
+        "ongewijzigd": len(rows) - toegevoegd - bijgewerkt,
+    }
+
+
 @router.post("/upload")
 async def upload_batch(
     file: UploadFile,
@@ -135,15 +211,28 @@ async def upload_batch(
     if not rows or not CSV_VELDEN.issubset(kolommen):
         raise HTTPException(422, "Bestand mist verplichte kolom 'naam'")
 
-    if monitoringlijst:
-        db.query(Batch).filter_by(is_monitoringlijst=True).update(
-            {"is_monitoringlijst": False},
-        )
+    # Een monitoringlijst is er één, en die loopt door. Een nieuw bestand vulde
+    # hem tot nu toe niet aan maar verving hem: de oude lijst raakte stil zijn
+    # vlag kwijt en alle controlegeschiedenis verdween uit beeld. Aanvullen is
+    # wat je wilt — nieuwe organisaties erbij, bestaande met rust gelaten.
+    lopende_watchlist = (
+        db.query(Batch).filter_by(is_monitoringlijst=True).first()
+        if monitoringlijst else None
+    )
+    if lopende_watchlist is not None:
+        telling = _voeg_rijen_toe(db, lopende_watchlist, rows)
+        db.commit()
+        return {
+            "batch_id": lopende_watchlist.id,
+            "aantal_companies": telling["toegevoegd"],
+            "samengevoegd": True,
+            **telling,
+        }
 
     batch = Batch(
         naam=naam or file.filename,
         jaar=jaar or datetime.now(timezone.utc).year,
-        totaal=len(rows),
+        totaal=0,
         is_monitoringlijst=monitoringlijst,
         geupload_door=current_user.id,
         # Een monitoringlijst hoort niet in een map: die heeft een eigen
@@ -152,26 +241,59 @@ async def upload_batch(
     )
     db.add(batch)
     db.flush()
-    for row in rows:
-        db.add(Company(
-            batch_id=batch.id,
-            vestigingsnummer=row.get("vestigingsnummer"),
-            naam=row["naam"],
-            gemeente=row.get("gemeente"),
-            adres=row.get("adres"),
-            sbi_code=row.get("sbi_code"),
-            # Werd niet ingelezen, terwijl `Company` het veld heeft en de
-            # queryplanner erop stuurt: zonder SBI-code herkent hij een
-            # zorgaanbieder of school alleen nog aan de bedrijfsnaam. Wie de
-            # kolom in zijn bestand zette, zag hem stil verdwijnen.
-            sbi_omschrijving=row.get("sbi_omschrijving"),
-            cb_er=row.get("cb_er"),
-            kvk_nummer=row.get("kvk_nummer"),
-            website_url=row.get("website_url"),
-            telefoonnummer=row.get("telefoonnummer"),
-        ))
+    telling = _voeg_rijen_toe(db, batch, rows)
     db.commit()
-    return {"batch_id": batch.id, "aantal_companies": len(rows)}
+    return {
+        "batch_id": batch.id,
+        "aantal_companies": telling["toegevoegd"],
+        "samengevoegd": False,
+        **telling,
+    }
+
+
+class HandmatigBedrijf(BaseModel):
+    """Eén organisatie die een reviewer zelf toevoegt."""
+
+    naam: str = Field(min_length=2, max_length=255)
+    vestigingsnummer: str | None = Field(default=None, max_length=20)
+    gemeente: str | None = Field(default=None, max_length=100)
+    adres: str | None = Field(default=None, max_length=500)
+    sbi_code: str | None = Field(default=None, max_length=10)
+    sbi_omschrijving: str | None = Field(default=None, max_length=500)
+    kvk_nummer: str | None = Field(default=None, max_length=20)
+    website_url: str | None = Field(default=None, max_length=500)
+
+
+@router.post("/{batch_id}/companies")
+def voeg_bedrijf_toe(
+    batch_id: str,
+    payload: HandmatigBedrijf,
+    db: Session = Depends(get_db),
+):
+    """Voeg één organisatie toe aan een bestaande lijst.
+
+    Dezelfde samenvoeglogica als de upload: bestaat de organisatie al, dan wordt
+    ze niet gedupliceerd maar hooguit aangevuld. Zo levert twee keer toevoegen
+    niet twee rijen op die daarna allebei onderzocht worden.
+    """
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(404, "lijst niet gevonden")
+
+    velden = payload.model_dump()
+    telling = _voeg_rijen_toe(db, batch, [velden])
+    db.commit()
+    company = (
+        db.query(Company)
+        .filter_by(batch_id=batch.id, naam=payload.naam)
+        .order_by(Company.created_at.desc())
+        .first()
+    )
+    return {
+        "company_id": company.id if company else None,
+        "bestond_al": telling["toegevoegd"] == 0,
+        **telling,
+    }
 
 
 @router.post("/{batch_id}/run")

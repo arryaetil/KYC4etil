@@ -42,16 +42,30 @@ def test_upload_zonder_monitoringlijst_laat_vlag_op_false(client, db_session):
     assert batch.is_monitoringlijst is False
 
 
-def test_nieuwe_monitoringlijst_ontmarkeert_de_vorige(client, db_session):
+def test_tweede_monitoringlijst_vult_de_lopende_aan(client, db_session):
+    """Een watchlist loopt door; een nieuw bestand vervangt hem niet.
+
+    De vorige versie ontmarkeerde de oude lijst, waardoor die stil zijn vlag
+    kwijtraakte en alle controlegeschiedenis uit beeld verdween. Aanvullen is
+    wat je wilt: nieuwe organisaties erbij, bestaande met rust gelaten.
+    """
     _zorg_voor_test_user(db_session)
     eerste = _upload(client, "watchlist-v1", monitoringlijst=True)
-    tweede = _upload(client, "watchlist-v2", monitoringlijst=True)
+    tweede = client.post(
+        "/batches/upload?naam=watchlist-v2&jaar=2026&monitoringlijst=true",
+        files={"file": ("bedrijven.csv", BytesIO(
+            b"naam,gemeente\nTestbedrijf B.V.,\nTweede Organisatie,Venlo\n"
+        ), "text/csv")},
+    )
 
-    eerste_batch = db_session.get(Batch, eerste.json()["batch_id"])
-    tweede_batch = db_session.get(Batch, tweede.json()["batch_id"])
+    assert tweede.json()["batch_id"] == eerste.json()["batch_id"]
+    assert tweede.json()["samengevoegd"] is True
+    assert tweede.json()["toegevoegd"] == 1
+    assert tweede.json()["ongewijzigd"] == 1
 
-    assert eerste_batch.is_monitoringlijst is False
-    assert tweede_batch.is_monitoringlijst is True
+    watchlists = db_session.query(Batch).filter_by(is_monitoringlijst=True).all()
+    assert len(watchlists) == 1
+    assert watchlists[0].totaal == 2
 
 
 def test_monitoringlijst_batch_verschijnt_niet_in_hoofdoverzicht(client, db_session):
