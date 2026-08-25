@@ -34,8 +34,12 @@ function Advies({advies, onWijsBronAan}) {
         <p className="mt-1 text-[11px] opacity-60">Samengevat door AI</p>
       ) : null}
       {/* De kop noemt getallen; deze knoppen zeggen wélke kaart erachter zit.
-          Bij twee bronnen zoekt de reviewer die zelf nog wel, bij acht niet. */}
-      {advies.bronnen?.length ? (
+          Bij twee bronnen zoekt de reviewer die zelf nog wel, bij acht niet.
+
+          Bij één bron niet: dan staat er "Eén bron met een getal: 286 WP (2025)"
+          met daaronder een knop "286 WP (2025)" naar de enige kaart die er is.
+          Dat is dezelfde mededeling, twee keer. */}
+      {advies.bronnen?.length > 1 ? (
         <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
           <span className="opacity-70">Uit:</span>
           {advies.bronnen.map((bron) => (
@@ -94,6 +98,10 @@ export function KandidatenPaneel({
   // Alleen in de monitoringmodule gevuld: de bron die de monitoring vond.
   // Zonder dat gegeven kan dit paneel niet weten of "geen bronnen" klopt.
   monitoringBron = null,
+  // Meldt welke bron-URL's dit paneel toont, zodat het blok erboven zich
+  // niet hoeft te herhalen. Zonder dat gegeven staat dezelfde bron twee
+  // keer op één scherm.
+  onItemsGeladen = null,
 }) {
   const [items, setItems] = useState([]);
   const [gemarkeerdeBronId, setGemarkeerdeBronId] = useState(null);
@@ -125,6 +133,7 @@ export function KandidatenPaneel({
   async function laadKandidaten() {
     const data = await api.researchCandidates(company.company_id);
     setItems(data.items || []);
+    onItemsGeladen?.(data.items || []);
     setDiagnostiek(data.diagnostiek || {});
     setBronsamenvatting(data.bronsamenvatting || null);
     setOnderzoekspaden(data.onderzoekspaden || []);
@@ -146,6 +155,7 @@ export function KandidatenPaneel({
         setRun(volgende);
         if (["completed", "error"].includes(volgende.status)) {
           setItems(volgende.kandidaten || []);
+          onItemsGeladen?.(volgende.kandidaten || []);
           setDiagnostiek(volgende.diagnostiek || {});
           setBronsamenvatting(volgende.bronsamenvatting || null);
           setOnderzoekspaden(volgende.onderzoekspaden || []);

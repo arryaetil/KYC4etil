@@ -44,6 +44,8 @@ export function MonitoringView({api}) {
   const [geselecteerdeBron, setGeselecteerdeBron] = useState(null);
   const [ronde, setRonde] = useState(null);
   const [melding, setMelding] = useState("");
+  const [getoondeBronUrls, setGetoondeBronUrls] = useState([]);
+  const [bronnenGeladen, setBronnenGeladen] = useState(false);
   const fileRef = useRef(null);
 
   async function load() {
@@ -226,6 +228,10 @@ export function MonitoringView({api}) {
             onSelect={(id) => {
               setGeselecteerdId(id);
               setGeselecteerdeBron(null);
+              // Anders geldt bij de volgende organisatie nog even het oordeel
+              // over de vorige, en verdwijnt haar vondst ten onrechte.
+              setBronnenGeladen(false);
+              setGetoondeBronUrls([]);
             }}
             statusVan={monitoringStatus}
             statusOpties={monitoringOpties(status.doeljaar)}
@@ -243,6 +249,8 @@ export function MonitoringView({api}) {
                 company={geselecteerd}
                 geselecteerdeBronId={geselecteerdeBron?.id}
                 onSelecteerBron={(candidate) => bekijkBewijs(candidate, setGeselecteerdeBron)}
+                getoondeBronUrls={getoondeBronUrls}
+                bronnenGeladen={bronnenGeladen}
               />
               <KandidatenPaneel
                 key={geselecteerd.company_id}
@@ -250,6 +258,10 @@ export function MonitoringView({api}) {
                 company={geselecteerd}
                 batchJaar={batch.jaar}
                 monitoringBron={geselecteerd.laatste_bron_url}
+                onItemsGeladen={(items) => {
+                  setGetoondeBronUrls(items.map((item) => item.url));
+                  setBronnenGeladen(true);
+                }}
                 geselecteerdeBronId={geselecteerdeBron?.id}
                 onSelecteerBron={(candidate) => bekijkBewijs(candidate, setGeselecteerdeBron)}
                 onGewijzigd={() => load().catch(() => {})}

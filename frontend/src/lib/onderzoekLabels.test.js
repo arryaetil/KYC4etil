@@ -936,3 +936,18 @@ describe("onderzoeksadvies · gegenereerde samenvatting", () => {
     expect(advies.toelichting).toContain("Er is één getal");
   });
 });
+
+describe("onderzoeksadvies · geen verwijzing bij één bron", () => {
+  it("levert nog steeds één verwijzing, de kaart beslist over tonen", () => {
+    // De helper blijft eerlijk; het paneel toont ze pas vanaf twee. Zo hoeft de
+    // logica niet te weten hoe de kaart eruitziet.
+    const advies = onderzoeksadvies([{
+      id: "b1", wp_gevonden: 286, eenheid: "werkzame_personen",
+      bewijsfragment: "286 medewerkers", identity_class: "exact_entity",
+      scope_class: "vestiging", documenttype: "jaarverslag", verslagjaar: 2025,
+      status: "voorgesteld",
+    }]);
+    expect(advies.bronnen).toHaveLength(1);
+    expect(advies.kop).toContain("286 WP");
+  });
+});

@@ -36,12 +36,36 @@ function Vondstrij({label, waarde}) {
   );
 }
 
-export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}) {
+/** Twee URL's naar hetzelfde document: querystring en slash doen er niet toe. */
+function zelfdeBron(a, b) {
+  const kaal = (url) => (url || "")
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("?")[0]
+    .replace(/\/$/, "");
+  return Boolean(a) && kaal(a) === kaal(b);
+}
+
+export function MonitoringVondst({
+  company, geselecteerdeBronId, onSelecteerBron,
+  getoondeBronUrls = [], bronnenGeladen = false,
+}) {
   const status = monitoringStatus(company);
   const bron = alsBewijsBron(company);
   const peilmomentRij = peilmomentRelatie(company.bron, {
     gevraagdJaar: company.doeljaar,
   }) || {term: "Verslagjaar", label: "Niet bekend"};
+  // Staat deze bron al als kaart in het paneel hieronder? Dan hoeft dit blok
+  // hem niet nog eens te tonen. Bij Sint Jozef stond hetzelfde jaarverslag
+  // drie keer op één scherm: hier, in de samenvatting en als kaart.
+  // Pas oordelen als het paneel zijn bronnen heeft gemeld. Anders staat dit
+  // blok er eerst volledig en klapt het daarna in — de pagina springt dan
+  // onder je ogen weg. Uitklappen als er niets onder blijkt te staan is
+  // rustiger dan inklappen als er wél iets staat.
+  const toonVondst = bronnenGeladen && !getoondeBronUrls.some(
+    (url) => zelfdeBron(company.laatste_bron_url, url),
+  );
 
   return (
     <section className="border-b border-line px-5 py-5">
@@ -54,7 +78,7 @@ export function MonitoringVondst({company, geselecteerdeBronId, onSelecteerBron}
         </span>
       </div>
 
-      {company.fout ? (
+      {!toonVondst ? null : company.fout ? (
         <p className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           De laatste controle is mislukt: {company.fout}
         </p>
