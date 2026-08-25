@@ -303,6 +303,7 @@ def get_research_run(run_id: str, db: Session = Depends(get_db)):
         "fout": run.fout,
         "kosten": _run_kosten(run),
         "diagnostiek": _run_diagnostiek(run),
+        "bronsamenvatting": (run.configuratie or {}).get("bronsamenvatting"),
         "kandidaten": [
             _candidate_dict(
                 item,
@@ -325,7 +326,7 @@ def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
     )
     if laatste_run is None:
         return {"items": [], "gevraagd_jaar": None, "diagnostiek": {},
-                "kosten": {}, "onderzoekspaden": []}
+                "kosten": {}, "onderzoekspaden": [], "bronsamenvatting": None}
     kandidaten = (
         db.query(BronKandidaat)
         .filter_by(research_run_id=laatste_run.id)
@@ -347,6 +348,9 @@ def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
         "gevraagd_jaar": laatste_run.gevraagd_jaar,
         "kosten": _run_kosten(laatste_run),
         "diagnostiek": _run_diagnostiek(laatste_run),
+        # De gegenereerde alinea. De kop en de kleur erboven blijven uit de
+        # vaste regels komen; dit vervangt alleen de toelichting.
+        "bronsamenvatting": (laatste_run.configuratie or {}).get("bronsamenvatting"),
         "onderzoekspaden": _onderzoekspaden(laatste_run),
     }
 

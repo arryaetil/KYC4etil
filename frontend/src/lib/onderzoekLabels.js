@@ -511,8 +511,18 @@ function bronverwijzingen(items) {
 
 export function onderzoeksadvies(
   items,
-  {onderzoekspaden = [], gevraagdJaar = null} = {},
+  {onderzoekspaden = [], gevraagdJaar = null, bronsamenvatting = null} = {},
 ) {
+  // Eén plek waar de gegenereerde tekst binnenkomt, in plaats van elk van de
+  // elf takken hieronder apart.
+  return metSamenvatting(
+    _oordeel(items, {onderzoekspaden, gevraagdJaar}),
+    bronsamenvatting,
+  );
+}
+
+
+function _oordeel(items, {onderzoekspaden = [], gevraagdJaar = null} = {}) {
   const bronnen = (items || []).filter((item) => item.status !== "afgewezen");
   if (!bronnen.length) {
     const mislukt = onderzoekspaden.filter((pad) => pad.status === "mislukt");
@@ -804,6 +814,24 @@ export function menselijkeWaarde(candidate) {
     label: "Aanvullende onderzoeksroute",
     actie: "Controleer de bron op namen, locaties of verwijzingen naar een sterkere primaire bron.",
   };
+}
+
+/**
+ * De gegenereerde alinea vervangt de toelichting, en verder niets.
+ *
+ * Kop, kleur en voorbehouden blijven uit de vaste regels komen. Een model dat
+ * "sterk bewijs" boven één bron zonder citaat schrijft maakt precies de fout
+ * die je pas ziet als je gaat controleren — en dat is wat dit kaartje moest
+ * besparen. De prompt verbiedt uitspraken over hardheid, dus de tekst kan de
+ * kop erboven niet tegenspreken.
+ *
+ * Ontbreekt de samenvatting — een oudere run, een mislukte call, mock-modus —
+ * dan blijft de vaste toelichting staan. Er hoort nooit een lege kaart.
+ */
+function metSamenvatting(advies, bronsamenvatting) {
+  return bronsamenvatting
+    ? {...advies, toelichting: bronsamenvatting, isGegenereerd: true}
+    : advies;
 }
 
 export function bronwaarschuwingen(candidate) {

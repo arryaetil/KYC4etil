@@ -26,6 +26,13 @@ function Advies({advies, onWijsBronAan}) {
       <p className="mt-1 max-w-[70ch] text-sm leading-relaxed opacity-90">
         {advies.toelichting}
       </p>
+      {/* De kop en de kleur komen uit vaste regels; alleen deze alinea is
+          geschreven. Dat verschil hoort zichtbaar te zijn — niet omdat het
+          onbetrouwbaar is, maar omdat de reviewer moet weten waar hij een
+          formulering leest en waar een vaststelling. */}
+      {advies.isGegenereerd ? (
+        <p className="mt-1 text-[11px] opacity-60">Samengevat door AI</p>
+      ) : null}
       {/* De kop noemt getallen; deze knoppen zeggen wélke kaart erachter zit.
           Bij twee bronnen zoekt de reviewer die zelf nog wel, bij acht niet. */}
       {advies.bronnen?.length ? (
@@ -88,6 +95,7 @@ export function KandidatenPaneel({
   const [items, setItems] = useState([]);
   const [gemarkeerdeBronId, setGemarkeerdeBronId] = useState(null);
   const [diagnostiek, setDiagnostiek] = useState({});
+  const [bronsamenvatting, setBronsamenvatting] = useState(null);
   const [onderzoekspaden, setOnderzoekspaden] = useState([]);
   const [run, setRun] = useState(null);
   const [error, setError] = useState("");
@@ -115,6 +123,7 @@ export function KandidatenPaneel({
     const data = await api.researchCandidates(company.company_id);
     setItems(data.items || []);
     setDiagnostiek(data.diagnostiek || {});
+    setBronsamenvatting(data.bronsamenvatting || null);
     setOnderzoekspaden(data.onderzoekspaden || []);
     setRunJaar(data.gevraagd_jaar ?? null);
   }
@@ -135,6 +144,7 @@ export function KandidatenPaneel({
         if (["completed", "error"].includes(volgende.status)) {
           setItems(volgende.kandidaten || []);
           setDiagnostiek(volgende.diagnostiek || {});
+          setBronsamenvatting(volgende.bronsamenvatting || null);
           setOnderzoekspaden(volgende.onderzoekspaden || []);
           // De organisatielijst kent nu een andere status: laat die verversen.
           onGewijzigd?.();
@@ -156,6 +166,7 @@ export function KandidatenPaneel({
       setRun({id: gestart.run_id, status: gestart.status});
       setItems([]);
       setDiagnostiek({});
+      setBronsamenvatting(null);
       setOnderzoekspaden(gestart.onderzoekspaden || []);
     } catch (err) {
       setError(err.message);
@@ -268,7 +279,9 @@ export function KandidatenPaneel({
           hij door de kaarten scrolt. */}
       {items.length || Object.keys(diagnostiek).length ? (
         <Advies
-          advies={onderzoeksadvies(items, {onderzoekspaden, gevraagdJaar})}
+          advies={onderzoeksadvies(items, {
+            onderzoekspaden, gevraagdJaar, bronsamenvatting,
+          })}
           onWijsBronAan={wijsBronAan}
         />
       ) : null}

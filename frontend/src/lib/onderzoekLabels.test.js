@@ -898,3 +898,41 @@ describe("onderzoeksadvies · verwijzingen naar de bronkaarten", () => {
     expect(onderzoeksadvies([]).bronnen).toEqual([]);
   });
 });
+
+describe("onderzoeksadvies · gegenereerde samenvatting", () => {
+  const bron = {
+    id: "b1", wp_gevonden: 412, eenheid: "werkzame_personen",
+    bewijsfragment: "412 medewerkers", identity_class: "exact_entity",
+    scope_class: "vestiging", documenttype: "jaarverslag", verslagjaar: 2025,
+    status: "voorgesteld",
+  };
+
+  it("vervangt alleen de toelichting, niet de kop of de kleur", () => {
+    // Een model dat "sterk bewijs" boven één bron zonder citaat schrijft maakt
+    // precies de fout die je pas ziet als je gaat controleren.
+    const vast = onderzoeksadvies([bron], {gevraagdJaar: 2025});
+    const gegenereerd = onderzoeksadvies([bron], {
+      gevraagdJaar: 2025,
+      bronsamenvatting: "Het jaarverslag over 2025 noemt 412 medewerkers.",
+    });
+
+    expect(gegenereerd.kop).toBe(vast.kop);
+    expect(gegenereerd.toon).toBe(vast.toon);
+    expect(gegenereerd.letOp).toEqual(vast.letOp);
+    expect(gegenereerd.bronnen).toEqual(vast.bronnen);
+    expect(gegenereerd.toelichting)
+      .toBe("Het jaarverslag over 2025 noemt 412 medewerkers.");
+  });
+
+  it("markeert dat de tekst geschreven is", () => {
+    expect(onderzoeksadvies([bron], {bronsamenvatting: "Tekst."}).isGegenereerd)
+      .toBe(true);
+    expect(onderzoeksadvies([bron]).isGegenereerd).toBeUndefined();
+  });
+
+  it("houdt de vaste tekst als er geen samenvatting is", () => {
+    // Een oudere run, een mislukte call of mock-modus mag geen lege kaart geven.
+    const advies = onderzoeksadvies([bron], {bronsamenvatting: null});
+    expect(advies.toelichting).toContain("Er is één getal");
+  });
+});

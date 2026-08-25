@@ -13,6 +13,7 @@ from .mock_tools import MockResearchTools
 from .organizations import koppel_organisatie, vind_bestaande_bronnen
 from .query_planner import QueryContext, plan_routes
 from .sector_probe import verrijk_routeplan
+from .bronsamenvatting import schrijf_samenvatting
 from .seeds import verzamel_seed_documenten
 from .source_reviewer import IntelligentSourceReviewer
 from .supervisor import ResearchSupervisor
@@ -287,14 +288,34 @@ async def _run_research_run(run_id: str) -> None:
             ),
         ).run(context, seed_documents=seed_documents, route_plan=route_plan)
 
+        kandidaten = list(_dedupliceer_kandidaten(outcome.kandidaten))
+        # Vóór de sessie: dit is een netwerkcall, en de sessie hoort niet open
+        # te staan terwijl we op een model wachten. Mislukt hij, dan is
+        # `samenvatting` None en valt de kaart terug op zijn vaste tekst.
+        samenvatting = await schrijf_samenvatting(
+            company_naam,
+            gevraagd_jaar,
+            [
+                {
+                    "brontype": ranked.document.brontype,
+                    "documenttype": ranked.document.documenttype,
+                    "verslagjaar": ranked.document.verslagjaar,
+                    "informatie_peilmoment": ranked.document.informatie_peilmoment,
+                    "wp_gevonden": ranked.document.wp_gevonden,
+                    "eenheid": ranked.document.eenheid,
+                    "bewijsfragment": ranked.document.bewijsfragment,
+                    "scope_class": ranked.document.scope_class,
+                    "identity_class": ranked.identity_class,
+                }
+                for ranked, _ in kandidaten
+            ],
+        )
+
         with SessionLocal() as db:
             run = db.get(ResearchRun, run_id)
             if run is None:
                 return
-            for rang, (ranked, canonical_url) in enumerate(
-                _dedupliceer_kandidaten(outcome.kandidaten),
-                start=1,
-            ):
+            for rang, (ranked, canonical_url) in enumerate(kandidaten, start=1):
                 document = ranked.document
                 db.add(BronKandidaat(
                     research_run_id=run.id,
@@ -347,6 +368,7 @@ async def _run_research_run(run_id: str) -> None:
             run.configuratie["diagnostiek"]["dienststoringen"] = (
                 get_dienststoringen()
             )
+            run.configuratie["bronsamenvatting"] = samenvatting
             if outcome.fouten:
                 run.fout = " | ".join(outcome.fouten)[:4000]
             db.commit()
