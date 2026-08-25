@@ -21,6 +21,32 @@ _JSON_PARSER = JsonOutputParser()
 _ZONDER_TEMPERATURE: set[str] = set()
 
 
+def maak_client():
+    """De modelclient. Eén plek waar de provider wordt gekozen.
+
+    Stond op tien plekken los in de code, elk met `AsyncOpenAI(api_key=...)`.
+    Dat werkt prima zolang er niets verandert, maar productie moet op termijn
+    naar Azure — en dan is dit het verschil tussen één regel en tien bestanden
+    waarvan je er makkelijk eentje vergeet. Ook zonder die verhuizing is het
+    winst: een time-out, een proxy of een retry-instelling hoort op één plek.
+
+    Azure gebruikt dezelfde SDK; alleen de constructie verschilt. Alle
+    aanroepen eronder (`responses.create`, json_object-mode) blijven gelijk.
+    Leeg endpoint betekent: rechtstreeks naar OpenAI, zoals nu.
+    """
+    if settings.azure_openai_endpoint:
+        from openai import AsyncAzureOpenAI
+
+        return AsyncAzureOpenAI(
+            azure_endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key or settings.openai_api_key,
+            api_version=settings.azure_openai_api_version,
+        )
+    from openai import AsyncOpenAI
+
+    return AsyncOpenAI(api_key=settings.openai_api_key)
+
+
 def _weigert_temperature(exc: Exception) -> bool:
     tekst = str(exc)
     return "temperature" in tekst and (
@@ -107,9 +133,7 @@ async def _parse_json_met_herstel(client, model: str, ruwe_tekst: str) -> dict |
 
 
 async def _llm_extract(naam: str, adres: str | None, tekst: str) -> dict | None:
-    from openai import AsyncOpenAI
-
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    client = maak_client()
     response = await _create_response(client,
         model=_extraction_model(),
         input=EXTRACT_PROMPT.format(naam=naam, adres=adres or "onbekend", tekst=tekst[:60000]),

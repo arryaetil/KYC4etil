@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     # creatieve taken. De OpenAI-default van 1.0 levert daar alleen ruis op:
     # dezelfde bron kan tussen twee runs een ander oordeel krijgen.
     openai_temperature: float = 0.0
+    # Azure AI Foundry. Leeg = rechtstreeks naar OpenAI, zoals nu. Vul je het
+    # endpoint, dan gaat elke modelcall via Azure — de aanroepen zelf blijven
+    # gelijk, want het is dezelfde SDK met een andere client. Productie moet op
+    # termijn naar Azure; door dit hier te zetten is dat één omgevingsvariabele
+    # in plaats van tien bestanden.
+    azure_openai_endpoint: str = ""
+    azure_openai_api_key: str = ""
+    azure_openai_api_version: str = "2025-04-01-preview"
     jaarverslag_web_fallback: bool = False     # Fase C fallback: extra OpenAI-call als PDF mislukt
     jaarverslag_max_pogingen: int = 3          # retries met een ANDER zoekresultaat bij afgewezen/lege bron
     max_website_pages: int = 3                 # max pagina's per bedrijf voor website-agent (kostenbeheersing)

@@ -13,9 +13,10 @@ settings = get_settings()
 
 
 async def _llm_classify_scope(naam: str, adres: str | None, gemeente: str | None, context: str | None) -> str:
-    from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    from .llm import maak_client
+
+    client = maak_client()
     response = await llm._create_response(client,
         model=llm._extraction_model(),
         input=SCOPE_PROMPT.format(naam=naam, adres=adres or "onbekend", gemeente=gemeente or "onbekend",
@@ -30,9 +31,10 @@ async def _llm_classify_scope(naam: str, adres: str | None, gemeente: str | None
 async def _llm_classify_identity_and_scope(
     naam: str, adres: str | None, gemeente: str | None, context: str | None, bron_url: str | None,
 ) -> tuple[str, str]:
-    from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    from .llm import maak_client
+
+    client = maak_client()
     response = await llm._create_response(client,
         model=llm._extraction_model(),
         input=IDENTITY_EN_SCOPE_PROMPT.format(

@@ -50,7 +50,9 @@ async def _openai_chat(
     if not settings.openai_api_key:
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is niet geconfigureerd")
 
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    from ..providers.llm import maak_client
+
+    client = maak_client()
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT.format(pdf_tekst=pdf_tekst[:60000])},
         *[{"role": b["rol"], "content": b["inhoud"]} for b in berichten],

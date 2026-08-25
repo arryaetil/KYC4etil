@@ -40,9 +40,10 @@ async def _tool_use_loop(naam: str, adres: str | None, start_url: str) -> dict |
     """Multi-turn tool-use-loop: het model beslist zelf welke pagina's te bezoeken
     (via bezoek_pagina) totdat het meld_resultaat aanroept of het paginabudget
     (settings.max_website_pages) op is."""
-    from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    from .llm import maak_client
+
+    client = maak_client()
     prompt = AGENT_PROMPT.format(naam=naam, adres=adres or "onbekend", start_url=start_url)
     eigen_domein = urlparse(start_url).netloc
 

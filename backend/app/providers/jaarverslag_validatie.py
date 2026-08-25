@@ -67,12 +67,13 @@ async def _is_organisatiebreed_jaarverslag(
     eerste_paginas: str | None = None,
 ) -> bool | None:
     """True voor het hoofdverslag, False voor deelorganen, None bij twijfel/falen."""
-    from openai import AsyncOpenAI
 
     try:
         if eerste_paginas is None:
             eerste_paginas = await fetch._brontekst(pdf_url)
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        from .llm import maak_client
+
+        client = maak_client()
         response = await llm._create_response(
             client,
             model=llm._extraction_model(),

@@ -395,9 +395,10 @@ class IntelligentSourceReviewer:
         settings = get_settings()
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY ontbreekt")
-        from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        from ..providers.llm import maak_client
+
+        client = maak_client()
         # Via llm._create_response en niet rechtstreeks: die wrapper zet
         # temperature op openai_temperature (0.0) én telt het tokenverbruik.
         # Deze call ging er als enige in de applicatie omheen en draaide

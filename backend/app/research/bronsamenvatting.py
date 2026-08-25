@@ -78,7 +78,6 @@ async def schrijf_samenvatting(
     if not kandidaten or not settings.openai_api_key:
         return None
 
-    from openai import AsyncOpenAI
 
     from ..providers import llm
     from ..providers.prompts import BRONSAMENVATTING_PROMPT
@@ -89,7 +88,9 @@ async def schrijf_samenvatting(
         bronnen=bronnen_als_tekst(kandidaten),
     )
     try:
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        from ..providers.llm import maak_client
+
+        client = maak_client()
         response = await llm._create_response(
             client,
             model=llm._extraction_model(),

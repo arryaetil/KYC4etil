@@ -162,12 +162,11 @@ async def _openai_web_search(
     """Uitgeschakelde compatibiliteitshelper voor oudere aanroepplaatsen."""
     if not settings.openai_web_search_enabled or not settings.openai_api_key:
         return []
-    from openai import AsyncOpenAI
 
     record_provider_call("openai_web_search", kosten_micro_usd=10_000)
     try:
         response = await llm._create_response(
-            AsyncOpenAI(api_key=settings.openai_api_key),
+            llm.maak_client(),
             model=settings.openai_web_search_model,
             input=(
                 "Zoek de meest relevante primaire en officiële bronnen voor "

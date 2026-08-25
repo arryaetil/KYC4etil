@@ -2,7 +2,6 @@
 import json
 import re
 
-import openai
 
 from .config import get_settings
 from .models import ChatSession, Company, Enrichment
@@ -248,7 +247,9 @@ async def get_chat_reply(messages: list[dict], session: ChatSession,
         return {"reply": "De chatservice is momenteel niet beschikbaar. "
                          "Neem contact op met Etil Research Group.", "done": False}
 
-    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+    from .providers.llm import maak_client
+
+    client = openai.maak_client()
     template_config = session.vragen if isinstance(session.vragen, dict) else None
     system_text = _build_system_prompt(session, company, enrichment, template_config)
 
