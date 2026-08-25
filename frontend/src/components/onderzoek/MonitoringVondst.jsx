@@ -68,7 +68,7 @@ export function MonitoringVondst({
   );
 
   return (
-    <section className="border-b border-line px-5 py-5">
+    <section className="border-b border-line px-5 py-5" aria-label="Monitoringvondst">
       <div className="flex items-baseline gap-2">
         <h3 className="text-xs uppercase tracking-wide text-slate-400">
           Wat de monitoring vond

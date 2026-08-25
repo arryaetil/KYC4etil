@@ -105,6 +105,10 @@ export function KandidatenPaneel({
 }) {
   const [items, setItems] = useState([]);
   const [gemarkeerdeBronId, setGemarkeerdeBronId] = useState(null);
+  // Zonder dit staat er bij elke organisatie eerst "Nog geen bronnen",
+  // ook als er zo drie kaarten verschijnen. Een mededeling doen voordat je
+  // het antwoord hebt is erger dan even niets zeggen.
+  const [geladen, setGeladen] = useState(false);
   const [diagnostiek, setDiagnostiek] = useState({});
   const [bronsamenvatting, setBronsamenvatting] = useState(null);
   const [onderzoekspaden, setOnderzoekspaden] = useState([]);
@@ -138,12 +142,14 @@ export function KandidatenPaneel({
     setBronsamenvatting(data.bronsamenvatting || null);
     setOnderzoekspaden(data.onderzoekspaden || []);
     setRunJaar(data.gevraagd_jaar ?? null);
+    setGeladen(true);
   }
 
   useEffect(() => {
     setRun(null);
     setError("");
     setRunJaar(null);
+    setGeladen(false);
     laadKandidaten().catch((err) => setError(err.message));
   }, [company.company_id]);
 
@@ -242,7 +248,10 @@ export function KandidatenPaneel({
   }
 
   return (
-    <div className="px-5 py-5">
+    // Een vast handvat voor de rookproef en de scan: zonder dat moet elke
+    // controle raden welke kolom de beoordeling is, en breekt ze op de eerste
+    // opmaakwijziging.
+    <div className="px-5 py-5" aria-label="Bronbeoordeling">
       <header className="mb-5">
         <h2 className="text-lg font-semibold text-ink">{company.naam}</h2>
         <p className="mt-0.5 text-xs text-slate-500">
@@ -331,6 +340,8 @@ export function KandidatenPaneel({
         </p>
       ) : Object.keys(diagnostiek).length ? (
         <Diagnostiek diagnostiek={diagnostiek} />
+      ) : !geladen ? (
+        <p className="py-10 text-center text-sm text-slate-400">Bronnen laden…</p>
       ) : (
         <p className="py-10 text-center text-sm text-slate-500">
           {/* "Nog geen bronnen" is onwaar zodra de monitoring hierboven een
