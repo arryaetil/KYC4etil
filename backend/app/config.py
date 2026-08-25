@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # gelijk, want het is dezelfde SDK met een andere client. Productie moet op
     # termijn naar Azure; door dit hier te zetten is dat één omgevingsvariabele
     # in plaats van tien bestanden.
+    # Waar brondocumenten worden bewaard. Leeg = niet bewaren; op Railway wijst
+    # dit naar een volume, want zonder volume is de schijf bij de volgende
+    # deploy weg en is "bewaard" een loze belofte.
+    brondocumenten_pad: str = ""
     azure_openai_endpoint: str = ""
     azure_openai_api_key: str = ""
     azure_openai_api_version: str = "2025-04-01-preview"

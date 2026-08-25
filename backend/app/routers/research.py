@@ -4,12 +4,13 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, get_current_user_of_querytoken
+from .. import documenten
 from ..database import get_db
 from ..models import (
     BronKandidaat, Company, JaarverslagMonitoring, ResearchRun, User,
@@ -551,6 +552,17 @@ async def bron_pdf(
     if not _is_bekende_bron(db, url):
         raise HTTPException(404, "onbekende bron")
 
+    # Onze eigen kopie gaat voor. Niet alleen sneller: een organisatie vervangt
+    # haar jaarverslag op dezelfde URL door de nieuwe editie, en dan is de
+    # versie waarop is beoordeeld alleen bij ons nog te vinden.
+    bewaard = documenten.lees(url)
+    if bewaard is not None:
+        return Response(
+            content=bewaard,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline"},
+        )
+
     client = httpx.AsyncClient(timeout=60, follow_redirects=True)
     try:
         request = client.build_request(
@@ -570,15 +582,23 @@ async def bron_pdf(
 
     async def doorgeven():
         gelezen = 0
+        blokken: list[bytes] = []
+        volledig = True
         try:
             async for blok in response.aiter_bytes():
                 gelezen += len(blok)
                 if gelezen > MAX_BRON_BYTES:
+                    volledig = False
                     break
+                blokken.append(blok)
                 yield blok
         finally:
             await response.aclose()
             await client.aclose()
+            # Pas ná het doorgeven bewaren, en alleen een compleet document:
+            # een half bestand als bewijs bewaren is erger dan niets bewaren.
+            if volledig and blokken:
+                documenten.bewaar(url, b"".join(blokken))
 
     return StreamingResponse(
         doorgeven(),

@@ -144,3 +144,71 @@ def test_monitoringbron_passeert_de_allowlist_ook(client, db_session, monkeypatc
     monkeypatch.setattr(research_router.httpx, "AsyncClient", FakeClient)
 
     assert client.get("/research/bron-pdf", params={"url": url}).status_code == 200
+
+
+def test_een_bekeken_document_wordt_bewaard(client, db_session, monkeypatch, tmp_path):
+    """Wat de reviewer opent, houden we vast.
+
+    Een organisatie vervangt haar jaarverslag op dezelfde URL door de nieuwe
+    editie; dan is de versie waarop is beoordeeld alleen bij ons nog te vinden.
+    """
+    from app import documenten
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "brondocumenten_pad", str(tmp_path / "docs"))
+    url = "https://voorbeeldzorg.nl/te-bewaren-2025.pdf"
+    _maak_kandidaat(db_session, url)
+
+    class FakeResponse:
+        headers = {"content-type": "application/pdf"}
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            yield b"%PDF-1.7 origineel"
+
+        async def aclose(self):
+            return None
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build_request(self, methode, doel, headers=None):
+            return object()
+
+        async def send(self, request, stream=False):
+            return FakeResponse()
+
+        async def aclose(self):
+            return None
+
+    import app.routers.research as research_router
+    monkeypatch.setattr(research_router.httpx, "AsyncClient", FakeClient)
+
+    assert client.get("/research/bron-pdf", params={"url": url}).status_code == 200
+    assert documenten.lees(url) == b"%PDF-1.7 origineel"
+
+
+def test_een_verdwenen_bron_blijft_te_bekijken(client, db_session, monkeypatch, tmp_path):
+    """Dit is waarvoor we bewaren. De bron geeft 404; het bewijs staat er nog."""
+    from app import documenten
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "brondocumenten_pad", str(tmp_path / "docs"))
+    url = "https://voorbeeldzorg.nl/verdwenen-2024.pdf"
+    _maak_kandidaat(db_session, url)
+    documenten.bewaar(url, b"%PDF-1.7 bewaard bewijs")
+
+    class KapotteClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("de bron mag niet meer worden benaderd")
+
+    import app.routers.research as research_router
+    monkeypatch.setattr(research_router.httpx, "AsyncClient", KapotteClient)
+
+    response = client.get("/research/bron-pdf", params={"url": url})
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF-1.7 bewaard bewijs"

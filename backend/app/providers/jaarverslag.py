@@ -9,6 +9,7 @@ from typing import TypedDict
 
 import httpx
 
+from .. import documenten
 from ..config import get_settings
 from ..pipeline.evidence import IdentityClass
 from ..pipeline.identity_scope import domain_matches_company
@@ -200,6 +201,10 @@ async def _relevante_bronpaginas(bron_url: str) -> list[tuple[int | None, str]]:
     ) as client:
         response = await client.get(bron_url)
         response.raise_for_status()
+    # We hebben het document toch al binnengehaald om het te lezen; bewaren kost
+    # hier niets extra's en zorgt dat het bewijs blijft bestaan als de
+    # organisatie de PDF vervangt of weghaalt.
+    documenten.bewaar(bron_url, response.content)
     document = fitz.open(stream=response.content, filetype="pdf")
     return [
         (index + 1, pagina.get_text())
