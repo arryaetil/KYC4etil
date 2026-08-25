@@ -91,6 +91,9 @@ function Dienststoring({storingen}) {
 
 export function KandidatenPaneel({
   api, company, batchJaar, geselecteerdeBronId, onSelecteerBron, onGewijzigd,
+  // Alleen in de monitoringmodule gevuld: de bron die de monitoring vond.
+  // Zonder dat gegeven kan dit paneel niet weten of "geen bronnen" klopt.
+  monitoringBron = null,
 }) {
   const [items, setItems] = useState([]);
   const [gemarkeerdeBronId, setGemarkeerdeBronId] = useState(null);
@@ -320,7 +323,13 @@ export function KandidatenPaneel({
         <Diagnostiek diagnostiek={diagnostiek} />
       ) : (
         <p className="py-10 text-center text-sm text-slate-500">
-          Nog geen bronnen. Start een onderzoek of voeg zelf een bron toe.
+          {/* "Nog geen bronnen" is onwaar zodra de monitoring hierboven een
+              jaarverslag toont. Die twee stonden onder elkaar op hetzelfde
+              scherm, en dan weet niemand meer wat er nu is. */}
+          {monitoringBron
+            ? "Het gevonden jaarverslag hierboven is nog niet als bronkaart beoordeeld. "
+              + "Start een onderzoek om er een beoordeelbare kaart van te maken."
+            : "Nog geen bronnen. Start een onderzoek of voeg zelf een bron toe."}
         </p>
       )}
 

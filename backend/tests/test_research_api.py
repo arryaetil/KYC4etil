@@ -519,3 +519,43 @@ def test_api_markeert_een_bron_die_bij_meerdere_vestigingen_terugkomt(
 
     assert response.status_code == 200
     assert response.json()["items"][0]["gedeeld_met_vestigingen"] == 2
+
+
+def test_een_latere_lege_run_verbergt_bestaande_bronkaarten_niet(client, db_session):
+    """Bij Eurocontrol stond bovenin het gevonden jaarverslag en eronder
+    "Nog geen bronnen", terwijl er drie beoordeelbare kaarten bestonden.
+
+    Een monitoringronde die niets vindt maakt óók een ResearchRun aan. Het
+    paneel toonde altijd de nieuwste run, dus die lege ronde verdrong alles wat
+    eerder was gevonden. Een bron verdwijnt niet omdat een latere ronde niets
+    opleverde.
+    """
+    company = _maak_company(db_session)
+    eerste = ResearchRun(
+        company_id=company.id, batch_id=company.batch_id,
+        doel="bronnen", status="completed", resultaat_status="review_nodig",
+        gevraagd_jaar=2025,
+    )
+    db_session.add(eerste)
+    db_session.flush()
+    db_session.add(BronKandidaat(
+        research_run_id=eerste.id, company_id=company.id,
+        url="https://voorbeeld.nl/jaarverslag-2025.pdf",
+        canonical_url="https://voorbeeld.nl/jaarverslag-2025.pdf",
+        brontype="jaarverslag", status="voorgesteld", wp_gevonden=412,
+        eenheid="werkzame_personen", rang=1,
+    ))
+    db_session.flush()
+    # Later: een monitoringronde die niets vond.
+    db_session.add(ResearchRun(
+        company_id=company.id, batch_id=company.batch_id,
+        doel="periodieke jaarverslagmonitoring", status="completed",
+        resultaat_status="niet_gevonden", gevraagd_jaar=2025,
+        created_at=datetime(2026, 8, 25, 12, 0, 0),
+    ))
+    db_session.commit()
+
+    data = client.get(f"/research/companies/{company.id}/candidates").json()
+
+    assert len(data["items"]) == 1
+    assert data["items"][0]["wp_gevonden"] == 412

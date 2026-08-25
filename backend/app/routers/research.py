@@ -318,21 +318,40 @@ def get_research_run(run_id: str, db: Session = Depends(get_db)):
 def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
     if db.get(Company, company_id) is None:
         raise HTTPException(404, "company niet gevonden")
-    laatste_run = (
+    runs = (
         db.query(ResearchRun)
         .filter_by(company_id=company_id)
         .order_by(ResearchRun.created_at.desc())
-        .first()
-    )
-    if laatste_run is None:
-        return {"items": [], "gevraagd_jaar": None, "diagnostiek": {},
-                "kosten": {}, "onderzoekspaden": [], "bronsamenvatting": None}
-    kandidaten = (
-        db.query(BronKandidaat)
-        .filter_by(research_run_id=laatste_run.id)
-        .order_by(BronKandidaat.rang)
         .all()
     )
+    if not runs:
+        return {"items": [], "gevraagd_jaar": None, "diagnostiek": {},
+                "kosten": {}, "onderzoekspaden": [], "bronsamenvatting": None}
+
+    # De nieuwste run die daadwerkelijk iets opleverde, niet simpelweg de
+    # nieuwste. Een monitoringronde die niets vindt maakt óók een run aan, en
+    # die verdrong de bronkaarten van eerdere rondes uit beeld: bij Eurocontrol
+    # stond bovenin het gevonden jaarverslag en eronder "Nog geen bronnen",
+    # terwijl er drie beoordeelbare kaarten bestonden. Een bron die eerder is
+    # gevonden verdwijnt niet omdat een latere ronde niets vond.
+    #
+    # Alles komt uit dezelfde run — kandidaten, routes, diagnostiek, kosten —
+    # zodat het paneel niet half het ene en half het andere onderzoek toont.
+    def _kandidaten_van(run_id: str) -> list[BronKandidaat]:
+        return (
+            db.query(BronKandidaat)
+            .filter_by(research_run_id=run_id)
+            .order_by(BronKandidaat.rang)
+            .all()
+        )
+
+    laatste_run, kandidaten = runs[0], _kandidaten_van(runs[0].id)
+    if not kandidaten:
+        for run in runs[1:]:
+            eerdere = _kandidaten_van(run.id)
+            if eerdere:
+                laatste_run, kandidaten = run, eerdere
+                break
     gedeelde_bronnen = _gedeelde_bronnen(db, laatste_run.batch_id)
     return {
         "items": [

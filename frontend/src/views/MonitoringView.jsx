@@ -249,6 +249,7 @@ export function MonitoringView({api}) {
                 api={api}
                 company={geselecteerd}
                 batchJaar={batch.jaar}
+                monitoringBron={geselecteerd.laatste_bron_url}
                 geselecteerdeBronId={geselecteerdeBron?.id}
                 onSelecteerBron={(candidate) => bekijkBewijs(candidate, setGeselecteerdeBron)}
                 onGewijzigd={() => load().catch(() => {})}
