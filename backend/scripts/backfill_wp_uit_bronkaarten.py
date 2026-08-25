@@ -57,12 +57,23 @@ def _te_doen(db) -> list[BronKandidaat]:
     ]
 
 
-async def _verwerk(kandidaat: BronKandidaat, naam: str, agent) -> dict | None:
+async def _verwerk(kandidaat: BronKandidaat, naam: str, agent):
+    """(uitkomst, gelezen) — gelezen zegt of het document überhaupt open ging.
+
+    Die twee moeten uit elkaar. `run_met_bron` geeft None terug in twee
+    gevallen die niets met elkaar te maken hebben: het document was niet op te
+    halen (404, time-out — dan weten we niets), of het is netjes gelezen en er
+    stond geen personeelsgetal in (dan weten we juist wél iets).
+
+    Alleen het tweede geval mag als "doorzocht" worden gemarkeerd. Het eerste
+    hoort een volgende keer opnieuw geprobeerd te worden, want een verlopen
+    certificaat of een tijdelijke storing is geen antwoord.
+    """
     try:
-        return await agent.run_met_bron(naam, kandidaat.url)
+        return await agent.run_met_bron(naam, kandidaat.url), True
     except Exception as exc:
-        print(f"    mislukt ({type(exc).__name__}: {str(exc)[:120]})")
-        return None
+        print(f"    niet op te halen ({type(exc).__name__}: {str(exc)[:110]})")
+        return None, False
 
 
 async def main() -> int:
@@ -86,11 +97,14 @@ async def main() -> int:
             company = db.get(Company, kandidaat.company_id)
             naam = company.naam if company else "onbekend"
             print(f"  {naam[:40]:42} {kandidaat.url[:70]}")
-            uitkomst = await _verwerk(kandidaat, naam, jaarverslag_agent)
-            if uitkomst is None:
+            uitkomst, gelezen = await _verwerk(kandidaat, naam, jaarverslag_agent)
+            if not gelezen:
                 mislukt += 1
                 continue
-            if uitkomst.wp_gevonden is None:
+            if uitkomst is None or uitkomst.wp_gevonden is None:
+                # Gelezen, maar er stond niets bruikbaars in. Dat is een
+                # uitkomst en geen mislukking; markeren voorkomt dat hetzelfde
+                # document elke ronde opnieuw wordt doorzocht.
                 leeg += 1
                 print("    geen WP-getal in dit document")
                 if args.toepassen:

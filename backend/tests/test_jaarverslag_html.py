@@ -95,3 +95,47 @@ async def test_webpagina_zonder_personeelswoorden_levert_niets(monkeypatch):
     monkeypatch.setattr(fetch, "_fetch_text", fake_fetch_text)
 
     assert await jaarverslag._relevante_bronpaginas("https://voorbeeld.nl/jv") == []
+
+
+def test_grote_documenten_gaan_niet_in_hun_geheel_naar_het_model():
+    """Een jaarverslag van 109 pagina's leverde er 59 met een personeelswoord op.
+
+    Samen 145.000 tekens. Het model faalt daar niet op, het verliest het getal in
+    de hooiberg: op het jaarverslag van SOML kwam `wp_gevonden: None` terug
+    terwijl "medewerkers" er 81 keer in staat.
+    """
+    from app.providers.jaarverslag import (
+        MAX_PAGINAS_NAAR_MODEL,
+        kies_paginas_voor_model,
+    )
+
+    paginas = [(i, f"pagina {i} met medewerkers") for i in range(1, 60)]
+    gekozen = kies_paginas_voor_model(paginas)
+
+    assert len(gekozen) == MAX_PAGINAS_NAAR_MODEL
+    # Leesvolgorde blijft staan, zodat citaat en paginanummer blijven kloppen.
+    assert [nummer for nummer, _ in gekozen] == sorted(
+        nummer for nummer, _ in gekozen
+    )
+
+
+def test_een_getal_naast_een_personeelswoord_weegt_zwaarder():
+    """Zo'n pagina is veel waarschijnlijker de vindplaats dan lopende tekst."""
+    from app.providers.jaarverslag import kies_paginas_voor_model
+
+    paginas = [
+        (i, "wij hechten aan onze medewerkers en hun ontwikkeling")
+        for i in range(1, 12)
+    ]
+    paginas.append((12, "Kerncijfers: 1.066 medewerkers in dienst per 31-12."))
+
+    gekozen = kies_paginas_voor_model(paginas)
+
+    assert 12 in [nummer for nummer, _ in gekozen]
+
+
+def test_een_kort_document_gaat_ongewijzigd_door():
+    from app.providers.jaarverslag import kies_paginas_voor_model
+
+    paginas = [(1, "412 medewerkers"), (2, "personeel")]
+    assert kies_paginas_voor_model(paginas) == paginas

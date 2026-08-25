@@ -123,6 +123,52 @@ _WP_TREFWOORDEN = (
 )
 
 
+# Hoeveel pagina's er hoogstens naar het model gaan. Een jaarverslag van 109
+# pagina's leverde er 59 met een personeelswoord op — samen 145.000 tekens, zo'n
+# 36.000 tokens. Het model faalt daar niet op, het verliest het getal in de
+# hooiberg: gemeten op het jaarverslag van SOML kwam er `wp_gevonden: None` uit
+# terwijl "medewerkers" er 81 keer in staat. Juist bij grote organisaties, waar
+# het cijfer er het meest toe doet.
+MAX_PAGINAS_NAAR_MODEL = 8
+
+# Een getal vlak vóór een personeelswoord: "1.066 medewerkers", "412 fte".
+# Zo'n pagina is veel waarschijnlijker de vindplaats dan een pagina waar het
+# woord alleen in lopende tekst voorkomt.
+_GETAL_BIJ_PERSONEEL = re.compile(
+    r"\d[\d.,\s]{0,8}\s*(?:mede|person|fte|collega|werknem|arbeidspl)",
+    re.IGNORECASE,
+)
+
+
+def _paginascore(tekst: str) -> int:
+    """Hoe waarschijnlijk staat het personeelsgetal op deze pagina?"""
+    laag = tekst.lower()
+    trefwoorden = sum(laag.count(woord) for woord in _WP_TREFWOORDEN)
+    getallen = len(_GETAL_BIJ_PERSONEEL.findall(tekst))
+    return trefwoorden + getallen * 5
+
+
+def kies_paginas_voor_model(
+    paginas: list[tuple[int | None, str]],
+) -> list[tuple[int | None, str]]:
+    """De meest belovende pagina's, in hun oorspronkelijke volgorde.
+
+    Trimmen en niet afkappen: een kale afkapping op tekenaantal gooit net zo
+    goed de juiste pagina weg. Deze selectie kijkt waar een getal naast een
+    personeelswoord staat en houdt daarna de leesvolgorde aan, zodat het
+    citaat en het paginanummer blijven kloppen.
+    """
+    if len(paginas) <= MAX_PAGINAS_NAAR_MODEL:
+        return paginas
+    beste = sorted(
+        paginas,
+        key=lambda item: _paginascore(item[1]),
+        reverse=True,
+    )[:MAX_PAGINAS_NAAR_MODEL]
+    gekozen = {id(item) for item in beste}
+    return [item for item in paginas if id(item) in gekozen]
+
+
 async def _relevante_bronpaginas(bron_url: str) -> list[tuple[int | None, str]]:
     """De stukken van een jaarverslag waar personeel in voorkomt.
 
@@ -490,7 +536,13 @@ class LiveJaarverslagAgent:
         relevant = await _relevante_bronpaginas(bron_url)
         if not relevant:
             return None
-        data = await llm._llm_extract(naam, None, "\n\n".join(tekst for _, tekst in relevant))
+        # Alleen naar het model gaat een selectie; de deterministische
+        # terugval leest gewoon alles, want die kost niets en heeft geen last
+        # van lange documenten.
+        voor_model = kies_paginas_voor_model(relevant)
+        data = await llm._llm_extract(
+            naam, None, "\n\n".join(tekst for _, tekst in voor_model),
+        )
         if not data or not data.get("wp_gevonden"):
             data = _deterministische_wp_uit_pdf(relevant)
             if data is None:
