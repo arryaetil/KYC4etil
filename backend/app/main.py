@@ -1,5 +1,8 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .database import Base, SessionLocal, engine, ensure_lightweight_migrations
@@ -15,6 +18,31 @@ ensure_lightweight_migrations()
 app = FastAPI(title="KYC4etil Bronnenwerkbank", version="0.2.0",
               description="Werkbank voor brononderzoek en menselijke bronbeoordeling")
 
+
+@app.middleware("http")
+async def vertaal_onverwachte_fouten(request, call_next):
+    """Een fout die niemand had voorzien moet nog steeds een antwoord zijn.
+
+    Zonder dit handelt Starlette hem af buiten de CORS-laag om: de browser
+    krijgt een reactie zonder CORS-headers en meldt "Failed to fetch". Dat leest
+    als een netwerkstoring terwijl de server gewoon antwoordde, en het verbergt
+    wát er misging — de traceback stond alleen in de serverlog.
+    """
+    try:
+        return await call_next(request)
+    except Exception:
+        logging.getLogger("api").exception(
+            "onverwachte fout bij %s %s", request.method, request.url.path,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Er ging iets mis bij deze actie. "
+                               "De fout is vastgelegd."},
+        )
+
+
+# Na de foutvertaler toegevoegd, en daarmee eromheen: anders mist het
+# 500-antwoord zijn CORS-headers en is het in de browser onleesbaar.
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"],
                    allow_headers=["*"], expose_headers=["Content-Disposition"])
 

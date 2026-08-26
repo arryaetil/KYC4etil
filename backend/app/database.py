@@ -108,6 +108,13 @@ def ensure_lightweight_migrations() -> None:
             "ON companies (organization_id)"
         ))
 
+    if "users" in tables:
+        existing_users = {col["name"] for col in inspector.get_columns("users")}
+        with engine.begin() as conn:
+            _add_column_if_missing(
+                conn, "users", existing_users, "verwijderd_op", "TIMESTAMP",
+            )
+
     if "enrichments" in tables:
         existing_enr = {col["name"] for col in inspector.get_columns("enrichments")}
         with engine.begin() as conn:

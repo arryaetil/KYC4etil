@@ -26,6 +26,11 @@ class User(Base):
     rol: Mapped[str] = mapped_column(String(50), default="reviewer")
     password_hash: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    # Toegang intrekken haalt de rij niet weg. Een gebruiker staat overal in
+    # het werk waar ze aan heeft gezeten: wie deze bron accepteerde, wie die
+    # lijst uploadde. Die verwijzingen horen te blijven kloppen nadat het
+    # account is ingetrokken, en in Postgres blokkeren ze een echte DELETE.
+    verwijderd_op: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class Map(Base):

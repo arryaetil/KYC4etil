@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react";
-import {AlertTriangle, History, Plus, RotateCcw, Trash2, UserPlus} from "lucide-react";
+import {History, Plus, RotateCcw, Trash2, UserPlus} from "lucide-react";
 import {formatMoment} from "../lib/format.js";
 import {Alert} from "../components/Alert.jsx";
 
@@ -28,7 +28,6 @@ export function InstellingenView({api, user}) {
   const [formulierOpen, setFormulierOpen] = useState(false);
   const [prullenbak, setPrullenbak] = useState([]);
   const [handelingen, setHandelingen] = useState([]);
-  const [storingen, setStoringen] = useState({onderzoeken: [], stappen: []});
   const [beheerFout, setBeheerFout] = useState("");
 
   async function laadGebruikers() {
@@ -39,12 +38,11 @@ export function InstellingenView({api, user}) {
 
   async function laadBeheer() {
     if (!isBeheerder) return;
-    const [bak, log, fouten] = await Promise.all([
-      api.prullenbak(), api.handelingen(30), api.storingen(),
+    const [bak, log] = await Promise.all([
+      api.prullenbak(), api.handelingen(30),
     ]);
     setPrullenbak(bak || []);
     setHandelingen(log.items || []);
-    setStoringen(fouten || {onderzoeken: [], stappen: []});
   }
 
   useEffect(() => {
@@ -303,42 +301,6 @@ export function InstellingenView({api, user}) {
             </ul>
           ) : (
             <p className="mt-3 text-sm text-slate-400">De prullenbak is leeg.</p>
-          )}
-        </section>
-      ) : null}
-
-      {isBeheerder ? (
-        <section className="mt-10 border-t border-line pt-6" aria-label="Storingen">
-          <h2 className="flex items-center gap-1.5 text-sm font-medium text-ink">
-            <AlertTriangle size={14} />Mislukte onderzoeken
-          </h2>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Een run die 's nachts vastloopt viel alleen op als iemand toevallig
-            die organisatie opende. Hier staan ze bij elkaar.
-          </p>
-          {storingen.onderzoeken.length || storingen.stappen.length ? (
-            <ul className="mt-3 divide-y divide-line border-y border-line text-sm">
-              {[...storingen.onderzoeken, ...storingen.stappen].map((item) => (
-                <li key={item.id} className="py-3">
-                  <p className="text-ink">
-                    {item.organisatie || "onbekende organisatie"}
-                    <span className="ml-2 text-xs text-slate-400">
-                      {item.stap || item.doel}
-                    </span>
-                  </p>
-                  <p className="mt-0.5 max-w-[80ch] text-xs text-red-800">
-                    {item.fout || "geen foutmelding vastgelegd"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    {formatMoment(item.created_at)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-3 text-sm text-slate-400">
-              Geen mislukte onderzoeken.
-            </p>
           )}
         </section>
       ) : null}

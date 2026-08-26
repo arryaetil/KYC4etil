@@ -45,7 +45,9 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def authenticate_user(db: Session, email: str, password: str) -> User | None:
     user = db.query(User).filter(User.email == email.lower()).one_or_none()
-    if not user or not verify_password(password, user.password_hash):
+    if not user or user.verwijderd_op is not None:
+        return None
+    if not verify_password(password, user.password_hash):
         return None
     return user
 
@@ -82,7 +84,9 @@ def get_current_user(
     if not isinstance(user_id, str):
         raise credentials_error
     user = db.get(User, user_id)
-    if user is None:
+    if user is None or user.verwijderd_op is not None:
+        # Ingetrokken toegang moet meteen gelden, niet pas als het token
+        # vanzelf verloopt.
         raise credentials_error
     return user
 

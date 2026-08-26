@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -106,7 +107,9 @@ def lees_gebruikers(
         "items": [
             {**_user_response(gebruiker),
              "created_at": gebruiker.created_at.isoformat() + "Z"}
-            for gebruiker in db.query(User).order_by(User.naam)
+            for gebruiker in db.query(User)
+            .filter(User.verwijderd_op.is_(None))
+            .order_by(User.naam)
         ],
     }
 
@@ -126,8 +129,26 @@ def maak_gebruiker(
     if payload.rol not in ROLLEN:
         raise HTTPException(422, "kies een geldige rol")
     email = payload.email.lower()
-    if db.query(User).filter(User.email == email).one_or_none() is not None:
+    bestaand = db.query(User).filter(User.email == email).one_or_none()
+    if bestaand is not None and bestaand.verwijderd_op is None:
         raise HTTPException(409, "er bestaat al een account met dit e-mailadres")
+    if bestaand is not None:
+        # Het adres was eerder ingetrokken. Zonder deze tak is een e-mailadres
+        # na een intrekking voorgoed onbruikbaar, terwijl dat juist het geval
+        # is waarin je het opnieuw nodig hebt: iemand komt terug.
+        bestaand.naam = payload.naam.strip()
+        bestaand.rol = payload.rol
+        bestaand.password_hash = hash_password(payload.wachtwoord)
+        bestaand.verwijderd_op = None
+        handelingen.leg_vast(
+            db, handelingen.GEBRUIKER_AANGEMAAKT,
+            f"Toegang van {bestaand.naam} ({bestaand.email}) hersteld "
+            f"als {bestaand.rol}",
+            door=_admin, onderwerp_id=bestaand.id,
+        )
+        db.commit()
+        db.refresh(bestaand)
+        return _user_response(bestaand)
     gebruiker = User(
         naam=payload.naam.strip(),
         email=email,
@@ -157,20 +178,31 @@ def verwijder_gebruiker(
 
     Niet jezelf, en nooit de laatste beheerder: dan kan niemand er nog bij en is
     het alleen met een script te herstellen.
+
+    De rij blijft staan met een datum erin. Een echte DELETE liep stuk zodra de
+    gebruiker ergens in het werk voorkwam — een toegewezen bellijstregel was al
+    genoeg — en dat kwam in de interface aan als "Failed to fetch". Belangrijker
+    dan die foutmelding: de verwijzingen horen te blijven kloppen. Wie deze bron
+    accepteerde blijft leesbaar nadat het account weg is.
     """
     gebruiker = db.get(User, user_id)
-    if gebruiker is None:
+    if gebruiker is None or gebruiker.verwijderd_op is not None:
         raise HTTPException(404, "gebruiker niet gevonden")
     if gebruiker.id == admin.id:
         raise HTTPException(422, "je kunt je eigen account niet verwijderen")
-    if gebruiker.rol == "admin" and db.query(User).filter(User.rol == "admin").count() <= 1:
+    actieve_admins = (
+        db.query(User)
+        .filter(User.rol == "admin", User.verwijderd_op.is_(None))
+        .count()
+    )
+    if gebruiker.rol == "admin" and actieve_admins <= 1:
         raise HTTPException(422, "dit is de laatste beheerder")
     handelingen.leg_vast(
         db, handelingen.GEBRUIKER_VERWIJDERD,
         f"Toegang van {gebruiker.naam} ({gebruiker.email}) ingetrokken",
         door=admin, onderwerp_id=gebruiker.id,
     )
-    db.delete(gebruiker)
+    gebruiker.verwijderd_op = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     return {"verwijderd": user_id}
 
@@ -204,64 +236,5 @@ def lees_handelingen(
                 "created_at": regel.created_at.isoformat() + "Z",
             }
             for regel in regels
-        ],
-    }
-
-
-@router.get("/storingen")
-def lees_storingen(
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(vereis_admin)],
-    limiet: int = 25,
-):
-    """Onderzoeken en controles die zijn misgelopen.
-
-    Een run die 's nachts crasht viel tot nu toe alleen op als iemand toevallig
-    die ene organisatie opende. De fout stond wel in de database — op de run —
-    maar nergens bij elkaar.
-    """
-    from ..models import Company, PipelineRun, ResearchRun
-
-    runs = (
-        db.query(ResearchRun)
-        .filter(ResearchRun.status == "error")
-        .order_by(ResearchRun.created_at.desc())
-        .limit(min(limiet, 100))
-        .all()
-    )
-    stappen = (
-        db.query(PipelineRun)
-        .filter(PipelineRun.status == "error")
-        .order_by(PipelineRun.created_at.desc())
-        .limit(min(limiet, 100))
-        .all()
-    )
-
-    def _naam(company_id: str | None) -> str | None:
-        if not company_id:
-            return None
-        company = db.get(Company, company_id)
-        return company.naam if company else None
-
-    return {
-        "onderzoeken": [
-            {
-                "id": run.id,
-                "organisatie": _naam(run.company_id),
-                "doel": run.doel,
-                "fout": (run.fout or "")[:300],
-                "created_at": run.created_at.isoformat() + "Z",
-            }
-            for run in runs
-        ],
-        "stappen": [
-            {
-                "id": stap.id,
-                "organisatie": _naam(stap.company_id),
-                "stap": stap.stap,
-                "fout": (stap.error or "")[:300],
-                "created_at": stap.created_at.isoformat() + "Z",
-            }
-            for stap in stappen
         ],
     }

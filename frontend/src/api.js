@@ -77,7 +77,6 @@ export function createApi(token, onUnauthorized) {
     }),
     gebruikers: () => request("/auth/users"),
     handelingen: (limiet = 50) => request(`/auth/handelingen?limiet=${limiet}`),
-    storingen: () => request("/auth/storingen"),
     prullenbak: () => request("/batches?prullenbak=true"),
     herstelLijst: (id) => request(`/batches/${id}/herstel`, {method: "POST"}),
     maakGebruiker: (velden) => request("/auth/users", {method: "POST", json: velden}),

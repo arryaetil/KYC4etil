@@ -106,3 +106,90 @@ def test_de_laatste_beheerder_blijft_bestaan(client, db_session):
     assert client.delete(f"/auth/users/{admin.id}").status_code == 422
     # De ander mag, want er blijft er dan één over.
     assert client.delete(f"/auth/users/{tweede.id}").status_code == 200
+
+
+def test_toegang_intrekken_laat_het_werk_van_die_gebruiker_staan(client, db_session):
+    """Een echte DELETE liep stuk zodra de gebruiker ergens in het werk stond.
+
+    In productie was een toegewezen bellijstregel al genoeg: Postgres weigerde,
+    en de interface meldde "Failed to fetch". Een lijst die zij heeft geüpload
+    doet hetzelfde, en dat is het geval dat iedereen heeft.
+    """
+    from app.models import Batch
+
+    _gebruiker(db_session, "test-user-id", "admin")
+    collega = _gebruiker(db_session, "collega", "reviewer")
+    db_session.add(Batch(naam="Lijst van de collega", jaar=2025,
+                         geupload_door=collega.id))
+    db_session.commit()
+
+    response = client.delete(f"/auth/users/{collega.id}")
+
+    assert response.status_code == 200
+    db_session.expire_all()
+    ingetrokken = db_session.get(User, "collega")
+    assert ingetrokken is not None
+    assert ingetrokken.verwijderd_op is not None
+    # De lijst wijst nog steeds naar haar; anders is niet meer na te gaan wie
+    # hem heeft geupload.
+    batch = db_session.query(Batch).filter_by(naam="Lijst van de collega").one()
+    assert batch.geupload_door == collega.id
+
+
+def test_een_ingetrokken_account_kan_niet_meer_inloggen(client, db_session):
+    from app.auth import authenticate_user
+
+    _gebruiker(db_session, "test-user-id", "admin")
+    collega = _gebruiker(db_session, "collega", "reviewer")
+
+    assert authenticate_user(db_session, collega.email, "startwachtwoord") is not None
+    client.delete(f"/auth/users/{collega.id}")
+    db_session.expire_all()
+    assert authenticate_user(db_session, collega.email, "startwachtwoord") is None
+
+
+def test_een_lopende_sessie_van_een_ingetrokken_account_stopt(client, db_session):
+    """Intrekken moet meteen gelden, niet pas als het token vanzelf verloopt."""
+    import pytest
+    from fastapi import HTTPException
+
+    from app.auth import create_access_token, get_current_user
+
+    _gebruiker(db_session, "test-user-id", "admin")
+    collega = _gebruiker(db_session, "collega", "reviewer")
+    token = create_access_token(collega)
+
+    assert get_current_user(token, db_session).id == collega.id
+    client.delete(f"/auth/users/{collega.id}")
+    db_session.expire_all()
+    with pytest.raises(HTTPException) as fout:
+        get_current_user(token, db_session)
+    assert fout.value.status_code == 401
+
+
+def test_een_ingetrokken_account_staat_niet_meer_in_de_lijst(client, db_session):
+    _gebruiker(db_session, "test-user-id", "admin")
+    collega = _gebruiker(db_session, "collega", "reviewer")
+
+    client.delete(f"/auth/users/{collega.id}")
+
+    emails = [item["email"] for item in client.get("/auth/users").json()["items"]]
+    assert "collega@etil.nl" not in emails
+
+
+def test_een_ingetrokken_adres_kan_opnieuw_worden_uitgegeven(client, db_session):
+    """Anders is een e-mailadres na een intrekking voorgoed onbruikbaar."""
+    _gebruiker(db_session, "test-user-id", "admin")
+    collega = _gebruiker(db_session, "collega", "reviewer")
+    client.delete(f"/auth/users/{collega.id}")
+
+    response = client.post("/auth/users", json={
+        "naam": "Collega", "email": "collega@etil.nl", "rol": "reviewer",
+        "wachtwoord": "een lang nieuw wachtwoord",
+    })
+
+    assert response.status_code == 200
+    db_session.expire_all()
+    hersteld = db_session.get(User, collega.id)
+    assert hersteld.verwijderd_op is None
+    assert verify_password("een lang nieuw wachtwoord", hersteld.password_hash)
