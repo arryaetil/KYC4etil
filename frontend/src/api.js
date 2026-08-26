@@ -72,6 +72,12 @@ export function createApi(token, onUnauthorized) {
       method: "POST",
       json: velden,
     }),
+    opmerkingen: (companyId) => request(`/research/companies/${companyId}/opmerkingen`),
+    voegOpmerkingToe: (companyId, tekst) => request(
+      `/research/companies/${companyId}/opmerkingen`,
+      {method: "POST", json: {tekst}},
+    ),
+    verwijderOpmerking: (id) => request(`/research/opmerkingen/${id}`, {method: "DELETE"}),
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
     monitoringStatus: () => request("/monitoring"),
     monitorRun: () => request("/monitoring/run", {method: "POST"}),

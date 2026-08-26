@@ -13,7 +13,8 @@ from ..auth import get_current_user, get_current_user_of_querytoken
 from .. import documenten
 from ..database import get_db
 from ..models import (
-    BronKandidaat, Company, JaarverslagMonitoring, ResearchRun, User,
+    BronKandidaat, Company, JaarverslagMonitoring, Opmerking, ResearchRun,
+    User,
 )
 from ..research.service import maak_research_run, run_research_run
 from ..providers.live import USER_AGENT
@@ -180,6 +181,84 @@ def _gedeelde_bronnen(
         .group_by(BronKandidaat.canonical_url)
         .all()
     )
+
+
+class NieuweOpmerking(BaseModel):
+    tekst: str = Field(min_length=2, max_length=4000)
+
+
+def _opmerking_dict(opmerking: Opmerking, naam_van: dict[str, str]) -> dict:
+    return {
+        "id": opmerking.id,
+        "company_id": opmerking.company_id,
+        "tekst": opmerking.tekst,
+        "geschreven_door": naam_van.get(opmerking.geschreven_door or ""),
+        "created_at": opmerking.created_at.isoformat() + "Z",
+    }
+
+
+def _namen_van_schrijvers(db: Session, opmerkingen: list[Opmerking]) -> dict[str, str]:
+    ids = {o.geschreven_door for o in opmerkingen if o.geschreven_door}
+    if not ids:
+        return {}
+    return {
+        gebruiker.id: gebruiker.naam
+        for gebruiker in db.query(User).filter(User.id.in_(ids))
+    }
+
+
+@router.post("/companies/{company_id}/opmerkingen")
+def voeg_opmerking_toe(
+    company_id: str,
+    payload: NieuweOpmerking,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Leg een vrije opmerking van een reviewer vast bij deze organisatie."""
+    if db.get(Company, company_id) is None:
+        raise HTTPException(404, "company niet gevonden")
+    opmerking = Opmerking(
+        company_id=company_id,
+        geschreven_door=current_user.id,
+        tekst=payload.tekst.strip(),
+    )
+    db.add(opmerking)
+    db.commit()
+    db.refresh(opmerking)
+    return _opmerking_dict(opmerking, {current_user.id: current_user.naam})
+
+
+@router.get("/companies/{company_id}/opmerkingen")
+def lees_opmerkingen(company_id: str, db: Session = Depends(get_db)):
+    opmerkingen = (
+        db.query(Opmerking)
+        .filter_by(company_id=company_id)
+        .order_by(Opmerking.created_at.desc())
+        .all()
+    )
+    namen = _namen_van_schrijvers(db, opmerkingen)
+    return {"items": [_opmerking_dict(o, namen) for o in opmerkingen]}
+
+
+@router.delete("/opmerkingen/{opmerking_id}")
+def verwijder_opmerking(
+    opmerking_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Alleen je eigen opmerking, en alleen zolang niemand anders erop bouwt.
+
+    Een vertikte of half afgemaakte opmerking moet weg kunnen; die van een
+    collega niet, want die is bewijs van wat zij zag.
+    """
+    opmerking = db.get(Opmerking, opmerking_id)
+    if opmerking is None:
+        raise HTTPException(404, "opmerking niet gevonden")
+    if opmerking.geschreven_door != current_user.id:
+        raise HTTPException(403, "je kunt alleen je eigen opmerking verwijderen")
+    db.delete(opmerking)
+    db.commit()
+    return {"verwijderd": opmerking_id}
 
 
 @router.get("/reviewer-statistics")

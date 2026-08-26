@@ -3,6 +3,7 @@ import {Plus, RefreshCw, Search} from "lucide-react";
 import {Alert} from "../Alert.jsx";
 import {BronKaart} from "./BronKaart.jsx";
 import {Diagnostiek} from "./Diagnostiek.jsx";
+import {Opmerkingen} from "./Opmerkingen.jsx";
 import {classNames} from "../../lib/format.js";
 import {
   TOON_STYLE, dienststoringLabel, onderzoeksadvies,
@@ -353,6 +354,8 @@ export function KandidatenPaneel({
             : "Nog geen bronnen. Start een onderzoek of voeg zelf een bron toe."}
         </p>
       )}
+
+      <Opmerkingen api={api} companyId={company.company_id} />
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <button

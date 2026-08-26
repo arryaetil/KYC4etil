@@ -432,6 +432,36 @@ class JaarverslagChatMessage(Base):
     upload: Mapped[JaarverslagUpload] = relationship(back_populates="berichten")
 
 
+class Opmerking(Base):
+    """Een vrije opmerking van een reviewer over één organisatie.
+
+    Naast de vaste afwijs- en extractieredenen, niet in plaats daarvan. Die
+    keuzelijsten vangen op wát er mis was met een bron; ze vangen niet op dat
+    een vestiging is gefuseerd, dat het onderzoek steeds het concernverslag
+    pakt, of dat een hele sector een bron mist die de reviewer wél kent.
+
+    Eén opmerking helpt niemand. De waarde zit in de stapel: vijftig ervan laten
+    zien waar het onderzoek structureel naast zit. Daarom platte tekst en geen
+    categorieën — een keuzelijst kan alleen antwoorden op vragen die we al
+    hadden bedacht.
+
+    Aan de organisatie en niet aan een bronkaart: dat is de eenheid waarin
+    gewerkt wordt, en een kaart kan verdwijnen bij een nieuwe run terwijl de
+    constatering blijft gelden.
+    """
+
+    __tablename__ = "opmerkingen"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    company_id: Mapped[str] = mapped_column(
+        ForeignKey("companies.id", ondelete="CASCADE"), index=True,
+    )
+    geschreven_door: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    tekst: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+    company: Mapped["Company"] = relationship()
+
+
 class JaarverslagMonitoring(Base):
     __tablename__ = "jaarverslag_monitoring"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
