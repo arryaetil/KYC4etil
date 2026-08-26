@@ -1,4 +1,4 @@
-import {LogOut} from "lucide-react";
+import {LogOut, Settings} from "lucide-react";
 import {classNames} from "../lib/format.js";
 
 const MODULES = [
@@ -43,6 +43,19 @@ export function AppShell({user, module, onModule, onLogout, children}) {
             <span className="hidden text-sm text-slate-500 sm:block">
               {user?.naam}
             </span>
+            <button
+              type="button"
+              onClick={() => onModule("instellingen")}
+              title="Instellingen"
+              aria-label="Instellingen"
+              aria-current={module === "instellingen" ? "page" : undefined}
+              className={classNames(
+                "focus-ring rounded-md p-2 transition hover:bg-panel hover:text-ink",
+                module === "instellingen" ? "bg-panel text-ink" : "text-slate-400",
+              )}
+            >
+              <Settings size={17} />
+            </button>
             <button
               type="button"
               onClick={onLogout}

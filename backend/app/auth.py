@@ -28,7 +28,19 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
+    """False bij een onbruikbare hash, geen uitzondering.
+
+    Een account zonder wachtwoord bestaat: `seed_users` maakt er een aan met een
+    lege hash zodra de omgevingsvariabele ontbreekt. Daar liep `pwd_context`
+    stuk op een UnknownHashError, en dan krijgt de gebruiker een 500 terwijl het
+    antwoord gewoon "dit wachtwoord klopt niet" is.
+    """
+    if not password_hash:
+        return False
+    try:
+        return pwd_context.verify(password, password_hash)
+    except Exception:
+        return False
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User | None:
@@ -89,3 +101,19 @@ def get_current_user_of_querytoken(
     ingesloten document altijd op een 401 stuklopen.
     """
     return get_current_user(header_token or token or "", db)
+
+
+def vereis_admin(gebruiker: "User" = Depends(get_current_user)) -> "User":
+    """Alleen een beheerder mag hier langs.
+
+    De rol stond al in het token en op de gebruiker, maar werd nergens
+    gecontroleerd: iedere reviewer kon lijsten uploaden, verwijderen en
+    exporteren. Voor drie collega's die elkaar vertrouwen valt dat mee, maar
+    accounts aanmaken is precies het soort handeling waar dat niet meer opgaat.
+    """
+    if gebruiker.rol != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="hiervoor heb je beheerdersrechten nodig",
+        )
+    return gebruiker

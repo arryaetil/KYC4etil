@@ -72,6 +72,12 @@ export function createApi(token, onUnauthorized) {
       method: "POST",
       json: velden,
     }),
+    wijzigWachtwoord: (huidig, nieuw) => request("/auth/wachtwoord", {
+      method: "POST", json: {huidig, nieuw},
+    }),
+    gebruikers: () => request("/auth/users"),
+    maakGebruiker: (velden) => request("/auth/users", {method: "POST", json: velden}),
+    verwijderGebruiker: (id) => request(`/auth/users/${id}`, {method: "DELETE"}),
     opmerkingen: (companyId) => request(`/research/companies/${companyId}/opmerkingen`),
     voegOpmerkingToe: (companyId, tekst) => request(
       `/research/companies/${companyId}/opmerkingen`,

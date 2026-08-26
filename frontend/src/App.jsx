@@ -3,6 +3,7 @@ import {createApi} from "./api.js";
 import {Login} from "./views/Login.jsx";
 import {AppShell} from "./components/AppShell.jsx";
 import {OnderzoekView} from "./views/OnderzoekView.jsx";
+import {InstellingenView} from "./views/InstellingenView.jsx";
 import {MonitoringView} from "./views/MonitoringView.jsx";
 
 export default function App() {
@@ -34,9 +35,11 @@ export default function App() {
 
   return (
     <AppShell user={user} module={module} onModule={setModule} onLogout={logout}>
-      {module === "onderzoek"
-        ? <OnderzoekView api={api} />
-        : <MonitoringView api={api} />}
+      {module === "instellingen"
+        ? <InstellingenView api={api} user={user} />
+        : module === "onderzoek"
+          ? <OnderzoekView api={api} />
+          : <MonitoringView api={api} />}
     </AppShell>
   );
 }
