@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # dit naar een volume, want zonder volume is de schijf bij de volgende
     # deploy weg en is "bewaard" een loze belofte.
     brondocumenten_pad: str = ""
+    # Waar de dagelijkse herstelpunten van de database staan. Leeg = uit;
+    # op Railway een submap van het gemonteerde volume, want daarbuiten
+    # verdwijnt het bestand bij de volgende deploy.
+    backup_pad: str = ""
     azure_openai_endpoint: str = ""
     azure_openai_api_key: str = ""
     azure_openai_api_version: str = "2025-04-01-preview"
