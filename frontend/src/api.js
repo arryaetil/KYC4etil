@@ -76,6 +76,10 @@ export function createApi(token, onUnauthorized) {
       method: "POST", json: {huidig, nieuw},
     }),
     gebruikers: () => request("/auth/users"),
+    handelingen: (limiet = 50) => request(`/auth/handelingen?limiet=${limiet}`),
+    storingen: () => request("/auth/storingen"),
+    prullenbak: () => request("/batches?prullenbak=true"),
+    herstelLijst: (id) => request(`/batches/${id}/herstel`, {method: "POST"}),
     maakGebruiker: (velden) => request("/auth/users", {method: "POST", json: velden}),
     verwijderGebruiker: (id) => request(`/auth/users/${id}`, {method: "DELETE"}),
     opmerkingen: (companyId) => request(`/research/companies/${companyId}/opmerkingen`),
@@ -108,7 +112,10 @@ export function createApi(token, onUnauthorized) {
     },
     cancelBatch: (id) => request(`/batches/${id}/cancel`, {method: "POST"}),
     resetVastgelopen: (id) => request(`/batches/${id}/reset-vastgelopen`, {method: "POST"}),
-    deleteBatch: (id) => request(`/batches/${id}`, {method: "DELETE"}),
+    deleteBatch: (id, definitief = false) => request(
+      `/batches/${id}${definitief ? "?definitief=true" : ""}`,
+      {method: "DELETE"},
+    ),
     download: async (path, filename) => {
       const headers = new Headers();
       if (token) headers.set("Authorization", `Bearer ${token}`);

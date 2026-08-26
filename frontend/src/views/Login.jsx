@@ -2,7 +2,7 @@ import {useState} from "react";
 import {ShieldCheck} from "lucide-react";
 import {IconButton} from "../components/IconButton.jsx";
 
-export function Login({api, onLogin}) {
+export function Login({api, onLogin, melding = ""}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -34,6 +34,13 @@ export function Login({api, onLogin}) {
             <p className="text-sm text-slate-500">Etil Research Group · Provincie Limburg</p>
           </div>
         </div>
+        {/* Waarom je hier weer bent. Zonder deze regel vlieg je er na twaalf
+            uur uit zonder uitleg, en dan lijkt het alsof er iets stuk is. */}
+        {melding ? (
+          <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {melding}
+          </p>
+        ) : null}
         <label className="mb-2 block text-sm font-medium" htmlFor="email">E-mail</label>
         <input
           id="email"

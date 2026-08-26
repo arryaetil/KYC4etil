@@ -1,5 +1,6 @@
 import {useEffect, useState} from "react";
-import {Plus, Trash2, UserPlus} from "lucide-react";
+import {AlertTriangle, History, Plus, RotateCcw, Trash2, UserPlus} from "lucide-react";
+import {formatMoment} from "../lib/format.js";
 import {Alert} from "../components/Alert.jsx";
 
 const LEGE_GEBRUIKER = {naam: "", email: "", rol: "reviewer", wachtwoord: ""};
@@ -25,6 +26,10 @@ export function InstellingenView({api, user}) {
   const [gebruikerFout, setGebruikerFout] = useState("");
   const [gebruikerMelding, setGebruikerMelding] = useState("");
   const [formulierOpen, setFormulierOpen] = useState(false);
+  const [prullenbak, setPrullenbak] = useState([]);
+  const [handelingen, setHandelingen] = useState([]);
+  const [storingen, setStoringen] = useState({onderzoeken: [], stappen: []});
+  const [beheerFout, setBeheerFout] = useState("");
 
   async function laadGebruikers() {
     if (!isBeheerder) return;
@@ -32,9 +37,30 @@ export function InstellingenView({api, user}) {
     setGebruikers(data.items || []);
   }
 
+  async function laadBeheer() {
+    if (!isBeheerder) return;
+    const [bak, log, fouten] = await Promise.all([
+      api.prullenbak(), api.handelingen(30), api.storingen(),
+    ]);
+    setPrullenbak(bak || []);
+    setHandelingen(log.items || []);
+    setStoringen(fouten || {onderzoeken: [], stappen: []});
+  }
+
   useEffect(() => {
     laadGebruikers().catch((err) => setGebruikerFout(err.message));
+    laadBeheer().catch((err) => setBeheerFout(err.message));
   }, [isBeheerder]);
+
+  async function herstelLijst(id, naam) {
+    setBeheerFout("");
+    try {
+      await api.herstelLijst(id);
+      await laadBeheer();
+    } catch (err) {
+      setBeheerFout(`${naam} terughalen mislukte: ${err.message}`);
+    }
+  }
 
   async function wijzigWachtwoord(event) {
     event.preventDefault();
@@ -241,6 +267,105 @@ export function InstellingenView({api, user}) {
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+
+      {isBeheerder ? (
+        <section className="mt-10 border-t border-line pt-6" aria-label="Prullenbak">
+          <h2 className="flex items-center gap-1.5 text-sm font-medium text-ink">
+            <RotateCcw size={14} />Prullenbak
+          </h2>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Weggegooide lijsten. Alles wat erin zat — organisaties, bronnen,
+            beoordelingen — staat er nog en komt terug bij herstellen.
+          </p>
+          {beheerFout ? <div className="mt-3"><Alert message={beheerFout} /></div> : null}
+          {prullenbak.length ? (
+            <ul className="mt-3 divide-y divide-line border-y border-line">
+              {prullenbak.map((lijst) => (
+                <li key={lijst.id} className="flex items-center gap-3 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-ink">{lijst.naam}</p>
+                    <p className="text-xs text-slate-500">
+                      {lijst.totaal} organisaties · weggegooid{" "}
+                      {formatMoment(lijst.verwijderd_op)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => herstelLijst(lijst.id, lijst.naam)}
+                    className="focus-ring rounded-md border border-line px-2.5 py-1.5 text-sm text-ink transition hover:bg-panel"
+                  >
+                    Terughalen
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-slate-400">De prullenbak is leeg.</p>
+          )}
+        </section>
+      ) : null}
+
+      {isBeheerder ? (
+        <section className="mt-10 border-t border-line pt-6" aria-label="Storingen">
+          <h2 className="flex items-center gap-1.5 text-sm font-medium text-ink">
+            <AlertTriangle size={14} />Mislukte onderzoeken
+          </h2>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Een run die 's nachts vastloopt viel alleen op als iemand toevallig
+            die organisatie opende. Hier staan ze bij elkaar.
+          </p>
+          {storingen.onderzoeken.length || storingen.stappen.length ? (
+            <ul className="mt-3 divide-y divide-line border-y border-line text-sm">
+              {[...storingen.onderzoeken, ...storingen.stappen].map((item) => (
+                <li key={item.id} className="py-3">
+                  <p className="text-ink">
+                    {item.organisatie || "onbekende organisatie"}
+                    <span className="ml-2 text-xs text-slate-400">
+                      {item.stap || item.doel}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 max-w-[80ch] text-xs text-red-800">
+                    {item.fout || "geen foutmelding vastgelegd"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    {formatMoment(item.created_at)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-slate-400">
+              Geen mislukte onderzoeken.
+            </p>
+          )}
+        </section>
+      ) : null}
+
+      {isBeheerder ? (
+        <section className="mt-10 border-t border-line pt-6" aria-label="Handelingen">
+          <h2 className="flex items-center gap-1.5 text-sm font-medium text-ink">
+            <History size={14} />Wie deed wat
+          </h2>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Uploads, verwijderingen en accountwijzigingen. Bronbeslissingen
+            staan bij de bron zelf.
+          </p>
+          {handelingen.length ? (
+            <ul className="mt-3 divide-y divide-line border-y border-line text-sm">
+              {handelingen.map((regel) => (
+                <li key={regel.id} className="py-2.5">
+                  <p className="max-w-[80ch] text-ink">{regel.omschrijving}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    {regel.door || "onbekend"} · {formatMoment(regel.created_at)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-slate-400">Nog niets vastgelegd.</p>
+          )}
         </section>
       ) : null}
     </div>

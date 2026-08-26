@@ -168,6 +168,13 @@ def ensure_lightweight_migrations() -> None:
         with engine.begin() as conn:
             _add_column_if_missing(conn, "candidates", existing_cand, "reviewer_signaal", "TEXT")
 
+    if "batches" in tables:
+        existing_batches = {col["name"] for col in inspector.get_columns("batches")}
+        with engine.begin() as conn:
+            _add_column_if_missing(
+                conn, "batches", existing_batches, "verwijderd_op", "TIMESTAMP",
+            )
+
     if "bron_kandidaten" in tables:
         existing_bronnen = {
             col["name"] for col in inspector.get_columns("bron_kandidaten")

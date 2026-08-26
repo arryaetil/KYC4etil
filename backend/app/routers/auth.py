@@ -13,6 +13,7 @@ from ..auth import (
     verify_password,
     vereis_admin,
 )
+from .. import handelingen
 from ..database import get_db
 from ..models import User
 
@@ -87,6 +88,11 @@ def wijzig_eigen_wachtwoord(
     if payload.nieuw == payload.huidig:
         raise HTTPException(422, "kies een ander wachtwoord dan het huidige")
     current_user.password_hash = hash_password(payload.nieuw)
+    handelingen.leg_vast(
+        db, handelingen.WACHTWOORD_GEWIJZIGD,
+        f"{current_user.naam} wijzigde het eigen wachtwoord",
+        door=current_user, onderwerp_id=current_user.id,
+    )
     db.commit()
     return {"gewijzigd": True}
 
@@ -129,6 +135,13 @@ def maak_gebruiker(
         password_hash=hash_password(payload.wachtwoord),
     )
     db.add(gebruiker)
+    db.flush()
+    handelingen.leg_vast(
+        db, handelingen.GEBRUIKER_AANGEMAAKT,
+        f"Account voor {gebruiker.naam} ({gebruiker.email}) aangemaakt "
+        f"als {gebruiker.rol}",
+        door=_admin, onderwerp_id=gebruiker.id,
+    )
     db.commit()
     db.refresh(gebruiker)
     return _user_response(gebruiker)
@@ -152,6 +165,103 @@ def verwijder_gebruiker(
         raise HTTPException(422, "je kunt je eigen account niet verwijderen")
     if gebruiker.rol == "admin" and db.query(User).filter(User.rol == "admin").count() <= 1:
         raise HTTPException(422, "dit is de laatste beheerder")
+    handelingen.leg_vast(
+        db, handelingen.GEBRUIKER_VERWIJDERD,
+        f"Toegang van {gebruiker.naam} ({gebruiker.email}) ingetrokken",
+        door=admin, onderwerp_id=gebruiker.id,
+    )
     db.delete(gebruiker)
     db.commit()
     return {"verwijderd": user_id}
+
+
+@router.get("/handelingen")
+def lees_handelingen(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(vereis_admin)],
+    limiet: int = 50,
+):
+    """Wie deed wat, nieuwste eerst.
+
+    Alleen voor een beheerder: het is geen geheim, maar het is ook geen
+    informatie waar een reviewer iets aan heeft tijdens haar werk.
+    """
+    from ..models import Handeling
+
+    regels = (
+        db.query(Handeling)
+        .order_by(Handeling.created_at.desc())
+        .limit(min(limiet, 200))
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": regel.id,
+                "soort": regel.soort,
+                "omschrijving": regel.omschrijving,
+                "door": regel.door_naam,
+                "created_at": regel.created_at.isoformat() + "Z",
+            }
+            for regel in regels
+        ],
+    }
+
+
+@router.get("/storingen")
+def lees_storingen(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(vereis_admin)],
+    limiet: int = 25,
+):
+    """Onderzoeken en controles die zijn misgelopen.
+
+    Een run die 's nachts crasht viel tot nu toe alleen op als iemand toevallig
+    die ene organisatie opende. De fout stond wel in de database — op de run —
+    maar nergens bij elkaar.
+    """
+    from ..models import Company, PipelineRun, ResearchRun
+
+    runs = (
+        db.query(ResearchRun)
+        .filter(ResearchRun.status == "error")
+        .order_by(ResearchRun.created_at.desc())
+        .limit(min(limiet, 100))
+        .all()
+    )
+    stappen = (
+        db.query(PipelineRun)
+        .filter(PipelineRun.status == "error")
+        .order_by(PipelineRun.created_at.desc())
+        .limit(min(limiet, 100))
+        .all()
+    )
+
+    def _naam(company_id: str | None) -> str | None:
+        if not company_id:
+            return None
+        company = db.get(Company, company_id)
+        return company.naam if company else None
+
+    return {
+        "onderzoeken": [
+            {
+                "id": run.id,
+                "organisatie": _naam(run.company_id),
+                "doel": run.doel,
+                "fout": (run.fout or "")[:300],
+                "created_at": run.created_at.isoformat() + "Z",
+            }
+            for run in runs
+        ],
+        "stappen": [
+            {
+                "id": stap.id,
+                "organisatie": _naam(stap.company_id),
+                "stap": stap.stap,
+                "fout": (stap.error or "")[:300],
+                "created_at": stap.created_at.isoformat() + "Z",
+            }
+            for stap in stappen
+        ],
+    }

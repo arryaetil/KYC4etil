@@ -20,6 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
+from .. import handelingen
 from ..database import get_db
 from ..models import (
     AgentResult, Batch, BronKandidaat, CallListItem, Candidate, ChatSession,
@@ -221,6 +222,12 @@ async def upload_batch(
     )
     if lopende_watchlist is not None:
         telling = _voeg_rijen_toe(db, lopende_watchlist, rows)
+        handelingen.leg_vast(
+            db, handelingen.LIJST_GEUPLOAD,
+            f"Monitoringlijst aangevuld met {telling['toegevoegd']} organisaties "
+            f"uit {file.filename}",
+            door=current_user, onderwerp_id=lopende_watchlist.id,
+        )
         db.commit()
         return {
             "batch_id": lopende_watchlist.id,
@@ -242,6 +249,11 @@ async def upload_batch(
     db.add(batch)
     db.flush()
     telling = _voeg_rijen_toe(db, batch, rows)
+    handelingen.leg_vast(
+        db, handelingen.LIJST_GEUPLOAD,
+        f"Lijst '{batch.naam}' geüpload met {telling['toegevoegd']} organisaties",
+        door=current_user, onderwerp_id=batch.id,
+    )
     db.commit()
     return {
         "batch_id": batch.id,
@@ -269,6 +281,7 @@ def voeg_bedrijf_toe(
     batch_id: str,
     payload: HandmatigBedrijf,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Voeg één organisatie toe aan een bestaande lijst.
 
@@ -282,6 +295,12 @@ def voeg_bedrijf_toe(
 
     velden = payload.model_dump()
     telling = _voeg_rijen_toe(db, batch, [velden])
+    if telling["toegevoegd"]:
+        handelingen.leg_vast(
+            db, handelingen.ORGANISATIE_TOEGEVOEGD,
+            f"{payload.naam} met de hand toegevoegd aan '{batch.naam}'",
+            door=current_user, onderwerp_id=batch.id,
+        )
     db.commit()
     company = (
         db.query(Company)
@@ -350,14 +369,40 @@ def reset_vastgelopen(batch_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/{batch_id}")
-def delete_batch(batch_id: str, db: Session = Depends(get_db)):
-    """Verwijder één lijst; ruim historische afhankelijkheden defensief mee op."""
+def delete_batch(
+    batch_id: str,
+    definitief: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Gooi een lijst weg — standaard naar de prullenbak.
+
+    Verwijderen wiste eerder alles ineens: elke organisatie, elke bronkandidaat,
+    elke beoordeling die erin zat, zonder weg terug. In een werkbank waar het
+    werk juist in die beoordelingen zit is dat te scherp. Nu verdwijnt de lijst
+    uit beeld en is ze terug te halen; `definitief=true` wist haar echt.
+    """
     batch = db.get(Batch, batch_id)
     if batch is None:
         raise HTTPException(404, "batch niet gevonden")
     if batch.status == "running":
         raise HTTPException(409, "batch draait nog; annuleer eerst")
 
+    if not definitief:
+        batch.verwijderd_op = datetime.now(timezone.utc).replace(tzinfo=None)
+        handelingen.leg_vast(
+            db, handelingen.LIJST_VERWIJDERD,
+            f"Lijst '{batch.naam}' naar de prullenbak",
+            door=current_user, onderwerp_id=batch.id,
+        )
+        db.commit()
+        return {"deleted": batch_id, "definitief": False}
+
+    handelingen.leg_vast(
+        db, handelingen.LIJST_VERWIJDERD,
+        f"Lijst '{batch.naam}' definitief verwijderd, met alles wat erin zat",
+        door=current_user, onderwerp_id=batch.id,
+    )
     company_ids = [row[0] for row in db.query(Company.id).filter_by(batch_id=batch_id)]
     if company_ids:
         for model in (CallListItem, WPRecord, ChatSession, Enrichment,
@@ -378,13 +423,34 @@ def delete_batch(batch_id: str, db: Session = Depends(get_db)):
     db.query(Company).filter_by(batch_id=batch_id).delete(synchronize_session=False)
     db.delete(batch)
     db.commit()
-    return {"deleted": batch_id}
+    return {"deleted": batch_id, "definitief": True}
+
+
+@router.post("/{batch_id}/herstel")
+def herstel_batch(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Haal een weggegooide lijst terug uit de prullenbak."""
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(404, "batch niet gevonden")
+    batch.verwijderd_op = None
+    handelingen.leg_vast(
+        db, handelingen.LIJST_HERSTELD,
+        f"Lijst '{batch.naam}' teruggehaald uit de prullenbak",
+        door=current_user, onderwerp_id=batch.id,
+    )
+    db.commit()
+    return {"hersteld": batch_id}
 
 
 @router.get("")
 def list_batches(
     map_id: str | None = None,
     losse_lijsten: bool = False,
+    prullenbak: bool = False,
     db: Session = Depends(get_db),
 ):
     """Lijsten, optioneel beperkt tot één map.
@@ -394,6 +460,12 @@ def list_batches(
     buiten elke map staat.
     """
     query = db.query(Batch).filter(Batch.is_monitoringlijst.isnot(True))
+    # Weggegooide lijsten staan standaard niet tussen de rest; `prullenbak`
+    # laat juist alleen die zien.
+    query = (
+        query.filter(Batch.verwijderd_op.isnot(None)) if prullenbak
+        else query.filter(Batch.verwijderd_op.is_(None))
+    )
     if map_id:
         query = query.filter(Batch.map_id == map_id)
     elif losse_lijsten:

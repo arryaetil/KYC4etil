@@ -13,28 +13,39 @@ export default function App() {
     return raw ? JSON.parse(raw) : null;
   });
   const [module, setModule] = useState("onderzoek");
+  // Waarom je bent uitgelogd. Zonder dit vloog je er na twaalf uur uit op
+  // het inlogscherm, zonder enige uitleg — en dan denk je dat er iets stuk
+  // is in plaats van dat je sessie gewoon verlopen was.
+  const [uitlogreden, setUitlogreden] = useState("");
 
-  const api = useMemo(() => createApi(token, () => logout()), [token]);
+  const api = useMemo(
+    () => createApi(token, () => logout(
+      "Je sessie is verlopen. Log opnieuw in; je werk is bewaard.",
+    )),
+    [token],
+  );
 
   function login(nextToken, nextUser) {
+    setUitlogreden("");
     localStorage.setItem("token", nextToken);
     localStorage.setItem("user", JSON.stringify(nextUser));
     setToken(nextToken);
     setUser(nextUser);
   }
 
-  function logout() {
+  function logout(reden = "") {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setToken("");
     setUser(null);
     setModule("onderzoek");
+    setUitlogreden(reden);
   }
 
-  if (!token) return <Login api={api} onLogin={login} />;
+  if (!token) return <Login api={api} onLogin={login} melding={uitlogreden} />;
 
   return (
-    <AppShell user={user} module={module} onModule={setModule} onLogout={logout}>
+    <AppShell user={user} module={module} onModule={setModule} onLogout={() => logout()}>
       {module === "instellingen"
         ? <InstellingenView api={api} user={user} />
         : module === "onderzoek"

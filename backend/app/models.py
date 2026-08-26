@@ -66,6 +66,11 @@ class Batch(Base):
     # koppeling: een lijst die via de API binnenkomt zonder map moet vindbaar
     # blijven in plaats van nergens te staan.
     map_id: Mapped[str | None] = mapped_column(ForeignKey("mappen.id"))
+    # Prullenbak: gevuld = weggegooid maar nog terug te halen. Een lijst
+    # verwijderen wist eerder alles ineens — inclusief elke beoordeling die
+    # erin zat — zonder weg terug. Mappen kenden dit al (`gearchiveerd_op`);
+    # lijsten niet, terwijl daar het werk in zit.
+    verwijderd_op: Mapped[datetime | None] = mapped_column(DateTime)
 
     companies: Mapped[list["Company"]] = relationship(back_populates="batch")
     map: Mapped["Map | None"] = relationship(back_populates="batches")
@@ -430,6 +435,32 @@ class JaarverslagChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     upload: Mapped[JaarverslagUpload] = relationship(back_populates="berichten")
+
+
+class Handeling(Base):
+    """Wie deed wat, en wanneer.
+
+    Bronbeslissingen stonden al vast op de bronkandidaat zelf: wie accepteerde,
+    met welke reden, op welk moment. Alles daaromheen niet. Wie heeft die lijst
+    geüpload, wie heeft die vestiging toegevoegd, wie heeft dat account
+    ingetrokken — daar was geen spoor van, en dat merk je pas als iemand vraagt
+    "waar is die lijst gebleven".
+
+    Bewust plat: een soort, een omschrijving in gewone taal, en losse velden om
+    op terug te zoeken. Geen verwijzingen naar rijen die later verdwijnen — juist
+    bij een verwijdering moet de regel blijven kloppen als het object weg is.
+    """
+
+    __tablename__ = "handelingen"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    soort: Mapped[str] = mapped_column(String(50), index=True)
+    omschrijving: Mapped[str] = mapped_column(Text)
+    # Geen ForeignKey: de gebruiker kan later worden verwijderd, en dan hoort
+    # de handeling niet mee te verdwijnen of te blokkeren.
+    door_id: Mapped[str | None] = mapped_column(String(36))
+    door_naam: Mapped[str | None] = mapped_column(String(100))
+    onderwerp_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
 
 
 class Opmerking(Base):

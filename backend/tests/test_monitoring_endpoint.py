@@ -25,10 +25,12 @@ def test_batch_met_monitoring_status_kan_verwijderd_worden(client, db_session):
     ))
     db_session.commit()
 
-    response = client.delete(f"/batches/{batch_id}")
+    # Definitief: het opruimen van afhankelijke rijen hoort bij de échte
+    # verwijdering, niet bij de prullenbak.
+    response = client.delete(f"/batches/{batch_id}?definitief=true")
 
     assert response.status_code == 200
-    assert response.json() == {"deleted": batch_id}
+    assert response.json() == {"deleted": batch_id, "definitief": True}
     assert db_session.query(JaarverslagMonitoring).filter_by(company_id=company.id).count() == 0
 
 
@@ -60,7 +62,9 @@ def test_batch_met_researchresultaten_kan_verwijderd_worden(client, db_session):
     ))
     db_session.commit()
 
-    response = client.delete(f"/batches/{batch_id}")
+    # Definitief: het opruimen van afhankelijke rijen hoort bij de échte
+    # verwijdering, niet bij de prullenbak.
+    response = client.delete(f"/batches/{batch_id}?definitief=true")
 
     assert response.status_code == 200
     assert db_session.query(BronKandidaat).filter_by(company_id=company.id).count() == 0

@@ -168,10 +168,15 @@ export function BatchesView({api, onOpenBatch, mapId, mapNaam, onTerug}) {
               <IconButton
                 icon={Trash2}
                 variant="quiet"
-                title="Verwijderen"
+                title="Naar de prullenbak"
                 disabled={busy || batch.status === "running"}
                 onClick={() => {
-                  if (!window.confirm(`Lijst "${batch.naam}" verwijderen?`)) return;
+                  // Zeggen dat het terug te halen is: anders durft niemand te
+                  // klikken, of erger, iemand klikt en denkt dat alles weg is.
+                  if (!window.confirm(
+                    `Lijst "${batch.naam}" naar de prullenbak? `
+                    + "Je kunt hem terughalen bij Instellingen.",
+                  )) return;
                   voerUit(() => api.deleteBatch(batch.id));
                 }}
               />
