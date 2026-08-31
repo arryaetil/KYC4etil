@@ -10,6 +10,11 @@ Uitgangspunt: er staat niets Railway-specifieks in de code. Het is een gewone
 FastAPI-service, een PostgreSQL-database en een map statische bestanden. De
 verhuizing is bouw- en configuratiewerk, geen herschrijving.
 
+Wel duurder: ongeveer $29 per maand tegen ongeveer $5 nu. Railway rekent naar
+verbruik en onze werkbank staat het grootste deel van de dag stil; Azure rekent
+naar gereserveerde capaciteit. Kosten zijn dus geen argument om te verhuizen —
+zie [de vergelijking verderop](#wat-het-kost-en-waarom-het-meer-is-dan-nu).
+
 ## Het plaatje
 
 ```mermaid
@@ -18,9 +23,9 @@ flowchart TB
 
     subgraph azure["Azure — regio West Europe"]
         swa["Static Web Apps<br/><i>frontend (dist/)</i>"]
-        aca["Container Apps<br/><i>FastAPI + Playwright</i><br/>min 1, max 1 replica"]
+        app["App Service B1<br/><i>FastAPI + Playwright</i><br/>1 instantie, altijd aan"]
         pg[("PostgreSQL<br/>Flexible Server")]
-        files[["Azure Files<br/><i>/data/brondocumenten</i><br/>+ _backups"]]
+        files[["/home<br/><i>brondocumenten + back-ups</i><br/>inbegrepen in het plan"]]
         kv["Key Vault<br/><i>sleutels</i>"]
         foundry["AI Foundry<br/><i>modeldeployment</i>"]
     end
@@ -33,26 +38,26 @@ flowchart TB
     end
 
     reviewer --> swa
-    reviewer -->|"API-calls"| aca
-    aca --> pg
-    aca --> files
-    aca --> kv
-    aca --> foundry
-    aca --> serper
-    aca --> places
-    aca --> duo
-    aca --> resend
+    reviewer -->|"API-calls"| app
+    app --> pg
+    app --> files
+    app --> kv
+    app --> foundry
+    app --> serper
+    app --> places
+    app --> duo
+    app --> resend
 ```
 
 ## Component voor component
 
 | Nu (Railway) | Azure | Waarom deze |
 |---|---|---|
-| backend-service | **Container Apps** | Draait een eigen image, dus Chromium kan mee. Schaalt niet naar nul, wat hier nodig is. |
+| backend-service | **App Service B1 (Linux, container)** | Goedkoopste vorm die altijd aan staat én een eigen image draait, zodat Chromium mee kan. Container Apps kan ook, maar kost bij een altijd-aan replica het dubbele tot het viervoudige. |
 | frontend-service (`serve dist`) | **Static Web Apps** | Het is een gebouwde Vite-map. Een container ervoor is verspilling. |
 | Railway PostgreSQL | **Azure Database for PostgreSQL — Flexible Server** | Zelfde Postgres, `DATABASE_URL` wijst er gewoon heen. |
-| volume op `/data/brondocumenten` (88 MB / 5 GB) | **Azure Files**, gemount op hetzelfde pad | `documenten.py` en `backup.py` werken met een gewoon bestandspad. Mount je hem op dezelfde plek, dan verandert er niets. |
-| omgevingsvariabelen met sleutels erin | **Key Vault** + Container Apps-secrets | Nu staan `OPENAI_API_KEY`, `SERPER_API_KEY` en `JWT_SECRET` als platte variabelen ingesteld. |
+| volume op `/data/brondocumenten` (90 MB / 5 GB) | **`/home`**, het meegeleverde schijfruimte van het App Service-plan | `documenten.py` en `backup.py` werken met een gewoon bestandspad; twee variabelen wijzen het om. B1 bevat 10 GB, ruim genoeg. Vereist `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`, anders is de schijf bij elke herstart leeg. |
+| omgevingsvariabelen met sleutels erin | **Key Vault** + App Service-instellingen | Nu staan `OPENAI_API_KEY`, `SERPER_API_KEY` en `JWT_SECRET` als platte variabelen ingesteld. |
 | OpenAI rechtstreeks | **AI Foundry-deployment** | Eén variabele om: `AZURE_OPENAI_ENDPOINT`. |
 
 Regio **West Europe** (Amsterdam) — relevant als de vraag opkomt waar de
@@ -81,7 +86,9 @@ op met twee instellingen die je in geen enkele repository terugvindt:
 
 Op Azure moet dat in een Dockerfile, die er nu niet is. De pakketlijst hebben
 we — die staat in de Railway-variabelen en kan er rechtstreeks in. Reken op een
-image van rond de 2 GB en een container met minstens 2 GiB geheugen.
+image van rond de 2 GB. B1 heeft 1,75 GB werkgeheugen; dat is genoeg voor de
+146 MB die de service nu gebruikt plus Chromium tijdens een run, maar het is
+niet ruim. Blijkt het te krap, dan is B2 de volgende stap (± $26).
 
 ### 2. Foundry is niet één-op-één OpenAI
 
@@ -95,18 +102,20 @@ Twee dingen om te controleren vóór de overstap, niet erna:
   temperature-eigenaardigheid die luna heeft (`llm.py` vangt die nu af). Dat is
   een testronde, geen instelling.
 
-### 3. Eén replica, niet nul en niet twee
+### 3. Eén instantie, niet nul en niet twee
 
 De onderzoeksrun draait in het proces zelf, en de nachtelijke back-up hangt aan
-een APScheduler in datzelfde proces. Dus:
+een planner in datzelfde proces. Dus:
 
-- **niet naar nul schalen** — een container die tussendoor afschakelt, breekt
-  een lopende run af;
-- **niet meer dan één replica** — twee processen betekent twee back-ups per
-  nacht en twee monitoringrondes.
+- **niet naar nul schalen** — een instantie die tussendoor afschakelt, breekt
+  een lopende run af. Daarom valt de goedkope schaal-naar-nul-optie af, en
+  daarmee de goedkoopste Azure-vorm;
+- **niet meer dan één instantie** — twee processen betekent twee back-ups per
+  nacht en twee monitoringrondes. Zet `Always On` aan en het aantal instanties
+  op één.
 
-Wil je later wél meerdere replica's, dan moet de planner eruit en wordt het een
-losse Container Apps Job. Nu niet nodig.
+Wil je later wél meerdere instanties, dan moet de planner eruit en wordt het
+een aparte geplande taak. Nu niet nodig.
 
 ### 4. Losse eindjes
 
@@ -142,7 +151,7 @@ over. Daar komt bij:
 
 Serper laten staan is dus het voorstel. Hosting op Azure betekent niet dat elke
 afhankelijkheid van Microsoft moet zijn: het is een HTTPS-call, die werkt vanaf
-Container Apps net zo goed als vanaf Railway. Wat er naartoe gaat is een
+Azure net zo goed als vanaf Railway. Wat er naartoe gaat is een
 zoekopdracht met een organisatienaam erin — geen persoonsgegevens, geen
 documenten.
 
@@ -153,20 +162,62 @@ realistische vervangers, en dat is één functie in
 *Azure AI Search is iets anders, mocht die naam vallen: dat doorzoekt je eigen
 documenten, niet het web.*
 
-## Kosten, indicatief
+## Wat het kost, en waarom het meer is dan nu
+
+Eerst de eerlijke vergelijking, want die valt niet in Azure's voordeel.
+
+**Railway rekent naar verbruik.** Vandaag gemeten: de backend gebruikt 146 MB
+geheugen en vrijwel geen rekenkracht, de frontend 31 MB, de database 68 MB.
+Samen 245 MB en nul vCPU zolang niemand een onderzoek start. Bij Railway's
+tarieven is dat een paar dollar per maand; met het volume erbij zit je rond de
+$5.
+
+**Azure rekent naar gereserveerde capaciteit.** Een instantie die altijd aan
+staat kost hetzelfde of hij nu werkt of stilstaat. Dat is het hele verschil.
+Niet dat Azure duur is, maar dat wij een applicatie hebben die 99% van de tijd
+niets doet — en dat is precies het geval waarin verbruiksfacturering wint.
+
+Met de goedkoopste vorm die nog aan alle eisen voldoet:
 
 | Onderdeel | Configuratie | Per maand |
 |---|---|---|
-| Container Apps | 1 vCPU / 2 GiB, altijd aan | ± $24 |
-| Container Apps | 2 vCPU / 4 GiB, altijd aan | ± $47 |
-| PostgreSQL Flexible Server | B1ms, 32 GB opslag | vanaf ± $12 + opslag |
-| Static Web Apps | Free of Standard | $0 – $9 |
-| Azure Files | 5 GB | enkele euro's |
+| App Service | B1 Linux, container, altijd aan | ± $13 |
+| PostgreSQL Flexible Server | B1ms + 32 GB opslag | ± $16 |
+| Static Web Apps | Free | $0 |
+| Documentopslag | `/home`, 10 GB inbegrepen bij B1 | $0 |
+| Key Vault | enkele duizenden bewerkingen | < $1 |
 | AI Foundry | per token, zoals nu | gelijk |
 
-Grofweg **$40–$70 per maand** aan infrastructuur, plus het modelverbruik dat we
-nu ook al betalen. Deze getallen zijn richtwaarden uit publieke prijspagina's —
-laat ze door de Azure-prijscalculator lopen voordat je ze doorgeeft.
+Samen **ongeveer $29 per maand**, tegen ongeveer $5 nu. Zo'n €22 per maand
+meer, of €270 per jaar.
+
+Kies je Container Apps in plaats van App Service, dan wordt het $40–$70; die
+dienst rekent bij een altijd-aan replica het dubbele tot het viervoudige. Dat
+was mijn eerste inschatting en die was te ruim.
+
+Drie dingen die het verder omlaag brengen:
+
+- **Een reservering van één jaar** scheelt ongeveer een derde op App Service en
+  Postgres.
+- **Bestaande afspraken.** Heeft Etil een Enterprise Agreement of ergens
+  Azure-tegoed staan, dan verandert het hele plaatje. Dat is een vraag aan
+  inkoop, geen technische.
+- **Het eerste jaar** is PostgreSQL Flexible Server B1ms gratis voor nieuwe
+  abonnementen.
+
+Deze bedragen zijn richtwaarden uit publieke prijspagina's. Laat ze door de
+Azure-prijscalculator lopen voordat je ze doorgeeft.
+
+### Dus: is dit een reden om te verhuizen?
+
+Nee. Op kosten wint Railway, en dat blijft zo zolang de werkbank het grootste
+deel van de dag stilstaat. De reden om naar Azure te gaan is dat productie daar
+volgens afspraak hoort — beheer, inkoop, en de vraag waar de gegevens staan.
+Als niemand dat eist, is er geen technische reden om nu iets te doen.
+
+Wat wél verstandig is, ongeacht de keuze: de Dockerfile bouwen. Die maakt de
+werkbank draagbaar en haalt tegelijk het enige echte risico uit de verhuizing.
+Daarna kun je op elk moment overstappen zonder dat het een project wordt.
 
 ## Volgorde van uitvoeren
 
@@ -178,7 +229,7 @@ laat ze door de Azure-prijscalculator lopen voordat je ze doorgeeft.
    kalibratie ≥80%. Blijft dat staan, dan klopt het model.
 4. Postgres opzetten, back-up van Railway terugzetten met
    `scripts/herstel_backup.py` in de lege database.
-5. Container Apps + Azure Files + Key Vault inrichten.
+5. App Service en Key Vault inrichten; `/home` als documentmap zetten.
 6. Frontend naar Static Web Apps, `VITE_API_URL` en `FRONTEND_ORIGIN` omzetten.
 7. Railway laten draaien tot Azure aantoonbaar werkt, dan pas afschakelen.
 
