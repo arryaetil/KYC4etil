@@ -1,0 +1,37 @@
+# Wat níet mee de image in gaat.
+#
+# Twee redenen: kleiner (elk bestand hier is bouwtijd en schijfruimte), en
+# veiliger. `.env` staat bovenaan met opzet — die bevat sleutels, en een image
+# gaat naar een register waar meer mensen bij kunnen.
+
+.env
+.env.*
+*.pem
+*.key
+
+# Lokale databases en uitvoer
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+scripts/ui_check_output/
+scripts/eval_output/
+
+# Caches en bouwresten
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Versiebeheer en editor
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Documentatie hoort niet in een draaiende image
+*.md
