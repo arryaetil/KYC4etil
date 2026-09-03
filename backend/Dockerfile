@@ -75,7 +75,9 @@ COPY . .
 # die bij de volgende deploy verdwijnt (zie app/documenten.py).
 ENV BRONDOCUMENTEN_PAD=/data/brondocumenten \
     BACKUP_PAD=/data/brondocumenten/_backups
-VOLUME ["/data/brondocumenten"]
+# Geen VOLUME-instructie: Railway weigert die ("use Railway Volumes"), en ook
+# op Azure koppel je de schijf van buitenaf. Het pad hierboven is dus alleen
+# de afspraak; het koppelen gebeurt in het platform.
 
 # 8080 is wat Azure App Service standaard verwacht. Railway en Container Apps
 # geven een eigen poort mee via $PORT; die wint.
