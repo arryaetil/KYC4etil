@@ -10,7 +10,8 @@ Uitgangspunt: er staat niets Railway-specifieks in de code. Het is een gewone
 FastAPI-service, een PostgreSQL-database en een map statische bestanden. De
 verhuizing is bouw- en configuratiewerk, geen herschrijving.
 
-Wel duurder: ongeveer $29 per maand tegen ongeveer $5 nu. Railway rekent naar
+De Dockerfile is er inmiddels en Railway bouwt ermee, dus de werkbank is al
+draagbaar. Wel duurder: ongeveer $29 per maand tegen ongeveer $5 nu. Railway rekent naar
 verbruik en onze werkbank staat het grootste deel van de dag stil; Azure rekent
 naar gereserveerde capaciteit. Kosten zijn dus geen argument om te verhuizen —
 zie [de vergelijking verderop](#wat-het-kost-en-waarom-het-meer-is-dan-nu).
@@ -53,7 +54,7 @@ flowchart TB
 
 | Nu (Railway) | Azure | Waarom deze |
 |---|---|---|
-| backend-service | **App Service B1 (Linux, container)** | Goedkoopste vorm die altijd aan staat én een eigen image draait, zodat Chromium mee kan. Container Apps kan ook, maar kost bij een altijd-aan replica het dubbele tot het viervoudige. |
+| backend-service | **App Service B1 (Linux, container)** | Goedkoopste vorm die altijd aan staat én een eigen image draait, zodat Chromium mee kan. Container Apps kan ook, maar kost bij een altijd-aan replica het dubbele tot het viervoudige. De image is er al en draait. |
 | frontend-service (`serve dist`) | **Static Web Apps** | Het is een gebouwde Vite-map. Een container ervoor is verspilling. |
 | Railway PostgreSQL | **Azure Database for PostgreSQL — Flexible Server** | Zelfde Postgres, `DATABASE_URL` wijst er gewoon heen. |
 | volume op `/data/brondocumenten` (90 MB / 5 GB) | **`/home`**, het meegeleverde schijfruimte van het App Service-plan | `documenten.py` en `backup.py` werken met een gewoon bestandspad; twee variabelen wijzen het om. B1 bevat 10 GB, ruim genoeg. Vereist `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`, anders is de schijf bij elke herstart leeg. |
@@ -76,19 +77,42 @@ gegevens staan. Let op: modelbeschikbaarheid verschilt per regio, zie hieronder.
 
 ## Waar het werk zit
 
-### 1. Een Dockerfile met Chromium — het grootste deel
+### 1. De Dockerfile — gedaan en bewezen
 
-`crawl4ai` en Playwright hebben een echte browser nodig. Railway lost dat nu
-op met twee instellingen die je in geen enkele repository terugvindt:
+*Bijgewerkt 3 september 2026.* Dit was het grootste risico; het is er nu uit.
 
-- `RAILPACK_DEPLOY_APT_PACKAGES` met twintig X11- en font-bibliotheken
-- `crawl4ai-setup` in de buildstap (`backend/railway.toml`)
+`backend/Dockerfile` staat in de repository en **Railway bouwt er sinds vandaag
+mee**. Daarmee is hij niet alleen geschreven maar ook draaiend bewezen, in een
+gewone Linux-container op amd64 — dezelfde vorm die App Service straks draait.
 
-Op Azure moet dat in een Dockerfile, die er nu niet is. De pakketlijst hebben
-we — die staat in de Railway-variabelen en kan er rechtstreeks in. Reken op een
-image van rond de 2 GB. B1 heeft 1,75 GB werkgeheugen; dat is genoeg voor de
-146 MB die de service nu gebruikt plus Chromium tijdens een run, maar het is
-niet ruim. Blijkt het te krap, dan is B2 de volgende stap (± $26).
+Wat erin zit:
+
+- Twee lagen. Compilers in de bouwstap, alleen het resultaat in de laag die
+  draait. De code komt als laatste binnen, zodat een tekstwijziging niet
+  opnieuw Chromium installeert.
+- `playwright install --with-deps chromium`. Playwright bepaalt zelf welke
+  apt-pakketten zijn versie nodig heeft. Dat vervangt
+  `RAILPACK_DEPLOY_APT_PACKAGES` — twintig X11-bibliotheken die alleen in
+  Railway's instellingenscherm bestonden. Die variabele is verwijderd.
+- De build **start Chromium ook echt op** en print de versie (151.0.7922.34).
+  Een ontbrekende systeembibliotheek geeft bij het installeren geen fout; die
+  merk je pas als crawl4ai een pagina probeert te openen, en dan komt het aan
+  als "niets gevonden". Nu faalt de build, en een mislukte build vervangt niets
+  wat het wel deed.
+
+Twee dingen kwamen daarbij boven, allebei gevonden zonder dat productie een
+seconde uit de lucht was:
+
+- Railway weigert de `VOLUME`-instructie; een volume koppel je in het platform.
+  Op Azure geldt hetzelfde, dus die instructie hoort er sowieso niet in.
+- Railway geeft een `startCommand` bij een Dockerfile door **zonder shell**,
+  waardoor `$PORT` letterlijke tekst bleef. De startopdracht staat nu in de
+  Dockerfile zelf, in shell-vorm, en is daarmee op elk platform dezelfde.
+
+Wat voor Azure nog open staat: B1 heeft 1,75 GB werkgeheugen. De service
+gebruikt in rust 146 MB, en Chromium komt daar tijdens een run bovenop. Dat
+past, maar ruim is het niet; blijkt het te krap, dan is B2 de volgende stap
+(± $26).
 
 ### 2. Foundry is niet één-op-één OpenAI
 
@@ -215,15 +239,16 @@ deel van de dag stilstaat. De reden om naar Azure te gaan is dat productie daar
 volgens afspraak hoort — beheer, inkoop, en de vraag waar de gegevens staan.
 Als niemand dat eist, is er geen technische reden om nu iets te doen.
 
-Wat wél verstandig is, ongeacht de keuze: de Dockerfile bouwen. Die maakt de
-werkbank draagbaar en haalt tegelijk het enige echte risico uit de verhuizing.
-Daarna kun je op elk moment overstappen zonder dat het een project wordt.
+Dat is ook precies waarom de Dockerfile er nu al ligt: die maakt de werkbank
+draagbaar en heeft het enige echte risico uit de verhuizing gehaald, zonder dat
+je vandaag iets hoeft te beslissen. Overstappen is daarmee een middag geworden
+in plaats van een project.
 
 ## Volgorde van uitvoeren
 
 1. Versies pinnen in `requirements.txt`.
-2. Dockerfile schrijven en **lokaal** draaien tot `scripts.ui_check` erdoorheen
-   komt. Chromium is hier het risico; dat wil je niet in de cloud ontdekken.
+2. ~~Dockerfile schrijven en draaiend krijgen.~~ **Gedaan op 3 september 2026**;
+   Railway bouwt er nu mee, dus hij blijft vanzelf werkend.
 3. Foundry-deployment aanmaken, `AZURE_OPENAI_ENDPOINT` zetten en
    `scripts.validate` draaien. Streefwaarden: coverage ≥70%, MAPE ≤10%,
    kalibratie ≥80%. Blijft dat staan, dan klopt het model.
