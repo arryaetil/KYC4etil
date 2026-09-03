@@ -7,7 +7,10 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+# Geen startCommand meer. Railway geeft die bij een Dockerfile door zonder
+# shell, waardoor $PORT letterlijke tekst blijft en uvicorn afhaakt op
+# "'$PORT' is not a valid integer". De CMD in de Dockerfile staat in shell-vorm
+# en vult hem wel in — en is meteen dezelfde opdracht op elk platform.
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
