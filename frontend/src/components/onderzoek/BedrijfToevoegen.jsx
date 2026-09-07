@@ -72,7 +72,7 @@ export function BedrijfToevoegen({api, batchId, onToegevoegd}) {
           <Plus size={14} />Organisatie toevoegen
         </button>
         {melding ? (
-          <p className="mt-2 text-xs text-slate-500">{melding}</p>
+          <p className="mt-2 text-xs text-mist-65">{melding}</p>
         ) : null}
       </div>
     );
@@ -86,7 +86,7 @@ export function BedrijfToevoegen({api, batchId, onToegevoegd}) {
           type="button"
           onClick={() => { setOpen(false); setError(""); }}
           aria-label="Sluiten"
-          className="focus-ring ml-auto rounded p-1 text-slate-500 transition hover:text-ink"
+          className="focus-ring ml-auto rounded p-1 text-mist-65 transition hover:text-ink"
         >
           <X size={14} />
         </button>
@@ -100,7 +100,7 @@ export function BedrijfToevoegen({api, batchId, onToegevoegd}) {
             key={veld.sleutel}
             className={veld.breed ? "sm:col-span-2" : undefined}
           >
-            <span className="block text-xs text-slate-500">
+            <span className="block text-xs text-mist-65">
               {veld.label}{veld.verplicht ? " *" : ""}
             </span>
             <input
@@ -121,7 +121,7 @@ export function BedrijfToevoegen({api, batchId, onToegevoegd}) {
         >
           <Plus size={14} />{bezig ? "Bezig…" : "Toevoegen"}
         </button>
-        {melding ? <span className="text-xs text-slate-500">{melding}</span> : null}
+        {melding ? <span className="text-xs text-mist-65">{melding}</span> : null}
       </div>
     </form>
   );

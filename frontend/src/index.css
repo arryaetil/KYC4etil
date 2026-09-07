@@ -1,4 +1,4 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -9,8 +9,8 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: #eef2f5;
-  color: #1f2933;
+  background: #F8F9FA;
+  color: #121212;
 }
 
 button,
@@ -29,8 +29,21 @@ button:disabled {
   @apply focus:outline-none focus:ring-2 focus:ring-etil focus:ring-offset-2;
 }
 
+/* Op het donkere inlogscherm is een Night-ring onzichtbaar; daar moet de
+   ring licht zijn en de offset meelopen met het glaspaneel. */
+.focus-ring-licht {
+  @apply focus:outline-none focus:ring-2 focus:ring-seasalt focus:ring-offset-2 focus:ring-offset-night;
+}
+
+/* Het Data-verloop uit de ibc-gids — hetzelfde streepje als in het Etil-logo.
+   Staat hier één keer: het wordt gebruikt op de inlogknop en als hairline
+   onder de header, en twee kopieën lopen vroeg of laat uit elkaar. */
+.data-verloop {
+  background: linear-gradient(90deg, #ff3333 0%, #ff6600 50%, #ffff33 100%);
+}
+
 @keyframes fieldPulse {
-  0% { background-color: rgba(30, 58, 95, 0.15); }
+  0% { background-color: rgba(18, 18, 18, 0.10); }
   100% { background-color: transparent; }
 }
 .field-pulse {

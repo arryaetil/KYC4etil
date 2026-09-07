@@ -50,7 +50,7 @@ export function ActieMenu({label, items}) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((vorige) => !vorige)}
-        className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-slate-500 transition hover:border-line hover:bg-panel hover:text-ink"
+        className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-mist-65 transition hover:border-line hover:bg-panel hover:text-ink"
       >
         <MoreHorizontal size={17} />
       </button>
@@ -71,7 +71,7 @@ export function ActieMenu({label, items}) {
               }}
               className={classNames(
                 "focus-ring flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-panel",
-                item.destructief ? "text-red-700" : "text-ink",
+                item.destructief ? "text-fout" : "text-ink",
               )}
             >
               {item.icon ? <item.icon size={15} /> : null}

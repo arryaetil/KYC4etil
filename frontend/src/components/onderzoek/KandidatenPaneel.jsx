@@ -77,7 +77,7 @@ function Dienststoring({storingen}) {
   return (
     <section
       aria-label="Dienst niet beschikbaar"
-      className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-3 text-red-800"
+      className="mb-4 rounded-md border border-spectrum-red/35 bg-spectrum-red/10 px-3 py-3 text-fout"
     >
       <p className="text-sm font-semibold">
         Dit onderzoek is onvolledig: niet alles kon worden geraadpleegd.
@@ -255,7 +255,7 @@ export function KandidatenPaneel({
     <div className="px-5 py-5" aria-label="Bronbeoordeling">
       <header className="mb-5">
         <h2 className="text-lg font-semibold text-ink">{company.naam}</h2>
-        <p className="mt-0.5 text-xs text-slate-500">
+        <p className="mt-0.5 text-xs text-mist-65">
           {[company.gemeente, company.vestigingsnummer, company.kvk_nummer
             ? `KvK ${company.kvk_nummer}` : null]
             .filter(Boolean).join(" · ")}
@@ -270,12 +270,12 @@ export function KandidatenPaneel({
             Onderzoeksroutes · {onderzoekspaden.filter((item) => item.status === "afgerond").length}
             /{onderzoekspaden.length} afgerond
           </summary>
-          <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
+          <ul className="mt-2 space-y-1.5 text-xs text-mist-85">
             {onderzoekspaden.map((item) => (
               <li key={item.route}>
                 <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
                   <span>{item.route.replaceAll("_", " ")} · {item.reden}</span>
-                  <span className="tabular-nums text-slate-500">
+                  <span className="tabular-nums text-mist-65">
                     {item.status}{item.aantal_bronnen != null ? ` · ${item.aantal_bronnen} bronnen` : ""}
                   </span>
                 </div>
@@ -285,7 +285,7 @@ export function KandidatenPaneel({
                     dus "overgeslagen" en "mislukt" waren niet van elkaar te
                     onderscheiden in oorzaak. */}
                 {item.statusreden ? (
-                  <p className="text-slate-500">{item.statusreden}</p>
+                  <p className="text-mist-65">{item.statusreden}</p>
                 ) : null}
               </li>
             ))}
@@ -336,15 +336,15 @@ export function KandidatenPaneel({
           ))}
         </div>
       ) : loopt ? (
-        <p className="py-10 text-center text-sm text-slate-500">
+        <p className="py-10 text-center text-sm text-mist-65">
           De agent onderzoekt websites, documenten en recente media…
         </p>
       ) : Object.keys(diagnostiek).length ? (
         <Diagnostiek diagnostiek={diagnostiek} />
       ) : !geladen ? (
-        <p className="py-10 text-center text-sm text-slate-400">Bronnen laden…</p>
+        <p className="py-10 text-center text-sm text-mist-50">Bronnen laden…</p>
       ) : (
-        <p className="py-10 text-center text-sm text-slate-500">
+        <p className="py-10 text-center text-sm text-mist-65">
           {/* "Nog geen bronnen" is onwaar zodra de monitoring hierboven een
               jaarverslag toont. Die twee stonden onder elkaar op hetzelfde
               scherm, en dan weet niemand meer wat er nu is. */}
@@ -370,7 +370,7 @@ export function KandidatenPaneel({
         <button
           type="button"
           onClick={() => setHandmatigOpen((open) => !open)}
-          className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-slate-500 transition hover:text-ink"
+          className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-mist-65 transition hover:text-ink"
         >
           <Plus size={14} />Bron toevoegen
         </button>
@@ -518,7 +518,7 @@ export function KandidatenPaneel({
             <button
               type="button"
               onClick={() => setBeoordelen(null)}
-              className="focus-ring rounded-md px-3 py-2 text-sm text-slate-600"
+              className="focus-ring rounded-md px-3 py-2 text-sm text-mist-85"
             >
               Annuleren
             </button>
@@ -580,7 +580,7 @@ export function KandidatenPaneel({
             <button
               type="button"
               onClick={() => setAfwijzen(null)}
-              className="focus-ring rounded-md px-3 py-1.5 text-sm text-slate-500"
+              className="focus-ring rounded-md px-3 py-1.5 text-sm text-mist-65"
             >
               Annuleren
             </button>
@@ -589,7 +589,7 @@ export function KandidatenPaneel({
       ) : null}
 
       {run?.status === "error" ? (
-        <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="mt-4 rounded-md border border-spectrum-red/35 bg-spectrum-red/10 p-3 text-sm text-fout">
           Het onderzoek is mislukt: {run.fout || "onbekende fout"}
         </p>
       ) : null}

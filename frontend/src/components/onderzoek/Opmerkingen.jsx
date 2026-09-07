@@ -59,7 +59,7 @@ export function Opmerkingen({api, companyId}) {
 
   return (
     <section className="mt-6 border-t border-line pt-4" aria-label="Opmerkingen">
-      <h3 className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-slate-400">
+      <h3 className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-mist-50">
         <MessageSquare size={12} />Opmerking
       </h3>
 
@@ -70,13 +70,13 @@ export function Opmerkingen({api, companyId}) {
               <p className="max-w-[70ch] text-sm leading-relaxed text-ink">
                 {item.tekst}
               </p>
-              <p className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+              <p className="mt-1 flex items-center gap-2 text-xs text-mist-50">
                 {item.geschreven_door || "onbekend"} · {formatMoment(item.created_at)}
                 <button
                   type="button"
                   onClick={() => verwijder(item.id)}
                   aria-label="Opmerking verwijderen"
-                  className="focus-ring rounded p-0.5 transition hover:text-red-700"
+                  className="focus-ring rounded p-0.5 transition hover:text-fout"
                 >
                   <Trash2 size={12} />
                 </button>
@@ -92,9 +92,9 @@ export function Opmerkingen({api, companyId}) {
           onChange={(event) => setTekst(event.target.value)}
           rows={2}
           placeholder="Wat valt je op bij deze organisatie? Bijvoorbeeld: hij pakt steeds het concernverslag in plaats van deze locatie."
-          className="focus-ring w-full rounded-md border border-line bg-white px-2.5 py-2 text-sm leading-relaxed text-ink placeholder:text-slate-400"
+          className="focus-ring w-full rounded-md border border-line bg-white px-2.5 py-2 text-sm leading-relaxed text-ink placeholder:text-mist-50"
         />
-        {error ? <p className="mt-1 text-xs text-red-700">{error}</p> : null}
+        {error ? <p className="mt-1 text-xs text-fout">{error}</p> : null}
         <button
           type="submit"
           disabled={bezig || !tekst.trim()}

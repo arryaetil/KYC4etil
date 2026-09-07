@@ -84,7 +84,7 @@ export function BatchesView({api, onOpenBatch, mapId, mapNaam, onTerug}) {
             <button
               type="button"
               onClick={onTerug}
-              className="focus-ring -ml-1 mb-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-sm text-slate-500 transition hover:text-ink"
+              className="focus-ring -ml-1 mb-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-sm text-mist-65 transition hover:text-ink"
             >
               <ChevronLeft size={16} />Alle mappen
             </button>
@@ -92,7 +92,7 @@ export function BatchesView({api, onOpenBatch, mapId, mapNaam, onTerug}) {
           <h1 className="truncate text-xl font-semibold text-ink">
             {mapNaam || "Onderzoek"}
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-mist-65">
             Kies een populatie om bronnen voor te beoordelen.
           </p>
         </div>
@@ -128,12 +128,12 @@ export function BatchesView({api, onOpenBatch, mapId, mapNaam, onTerug}) {
               >
                 {batch.naam || batch.id}
               </button>
-              <div className="mt-0.5 text-xs text-slate-500">
+              <div className="mt-0.5 text-xs text-mist-65">
                 {batch.jaar} · {formatDatum(batch.created_at)}
                 {batch.geupload_door_naam ? ` · ${batch.geupload_door_naam}` : ""}
               </div>
             </div>
-            <div className="w-32 shrink-0 text-right text-xs tabular-nums text-slate-500">
+            <div className="w-32 shrink-0 text-right text-xs tabular-nums text-mist-65">
               {batch.verwerkt || 0} / {batch.totaal || 0}
             </div>
             <div className="flex shrink-0 items-center gap-1">
@@ -184,7 +184,7 @@ export function BatchesView({api, onOpenBatch, mapId, mapNaam, onTerug}) {
           </li>
         ))}
         {!batches.length ? (
-          <li className="py-12 text-center text-sm text-slate-500">
+          <li className="py-12 text-center text-sm text-mist-65">
             {mapNaam && mapId !== undefined
               ? `Nog geen lijsten in "${mapNaam}". Upload een CSV- of Excel-bestand om te beginnen.`
               : "Nog geen lijsten. Upload een CSV- of Excel-bestand om te beginnen."}

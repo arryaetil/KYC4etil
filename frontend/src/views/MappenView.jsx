@@ -90,7 +90,7 @@ export function MappenView({api, onOpenMap}) {
               <button
                 type="button"
                 onClick={() => setToonArchief(false)}
-                className="focus-ring -ml-1 mb-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-sm text-slate-500 transition hover:text-ink"
+                className="focus-ring -ml-1 mb-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-sm text-mist-65 transition hover:text-ink"
               >
                 <ChevronLeft size={16} />Alle mappen
               </button>
@@ -98,7 +98,7 @@ export function MappenView({api, onOpenMap}) {
             <h1 className="text-xl font-semibold text-ink">
               {toonArchief ? "Archief" : "Onderzoek"}
             </h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-mist-65">
               {toonArchief
                 ? "Gearchiveerde mappen. De lijsten erin zijn niet verwijderd."
                 : "Kies een map om de lijsten erin te bekijken."}
@@ -122,7 +122,7 @@ export function MappenView({api, onOpenMap}) {
           {mappen.map((map) => (
             <li
               key={map.id}
-              className="flex items-start gap-2 rounded-lg border border-line bg-white p-2 transition hover:border-slate-300 hover:shadow-sm"
+              className="flex items-start gap-2 rounded-lg border border-line bg-white p-2 transition hover:border-mist-25 hover:shadow-sm"
             >
               <button
                 type="button"
@@ -131,13 +131,13 @@ export function MappenView({api, onOpenMap}) {
               >
                 <Folder
                   size={20}
-                  className={`mt-0.5 shrink-0 ${toonArchief ? "text-slate-300" : "text-slate-400"}`}
+                  className={`mt-0.5 shrink-0 ${toonArchief ? "text-mist-25" : "text-mist-50"}`}
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-ink">
                     {map.naam}
                   </span>
-                  <span className="mt-0.5 block text-xs text-slate-500">
+                  <span className="mt-0.5 block text-xs text-mist-65">
                     {lijstenLabel(map.aantal_lijsten)}
                   </span>
                 </span>
@@ -158,18 +158,18 @@ export function MappenView({api, onOpenMap}) {
           ))}
 
           {!toonArchief && losseLijsten ? (
-            <li className="rounded-lg border border-dashed border-line bg-white transition hover:border-slate-300">
+            <li className="rounded-lg border border-dashed border-line bg-white transition hover:border-mist-25">
               <button
                 type="button"
                 onClick={() => onOpenMap(null, "Zonder map")}
                 className="focus-ring flex w-full items-start gap-3 rounded-lg p-4 text-left"
               >
-                <Inbox size={20} className="mt-0.5 shrink-0 text-slate-400" />
+                <Inbox size={20} className="mt-0.5 shrink-0 text-mist-50" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-ink">
                     Zonder map
                   </span>
-                  <span className="mt-0.5 block text-xs text-slate-500">
+                  <span className="mt-0.5 block text-xs text-mist-65">
                     {lijstenLabel(losseLijsten)}
                   </span>
                 </span>
@@ -180,8 +180,8 @@ export function MappenView({api, onOpenMap}) {
 
         {!mappen.length ? (
           <div className="rounded-lg border border-dashed border-line py-16 text-center">
-            <Folder size={22} className="mx-auto text-slate-300" />
-            <p className="mt-3 text-sm text-slate-500">
+            <Folder size={22} className="mx-auto text-mist-25" />
+            <p className="mt-3 text-sm text-mist-65">
               {toonArchief
                 ? "Het archief is leeg."
                 : "Nog geen mappen. Maak er een aan om je lijsten te ordenen."}
@@ -193,7 +193,7 @@ export function MappenView({api, onOpenMap}) {
           <button
             type="button"
             onClick={() => setToonArchief(true)}
-            className="focus-ring mt-6 inline-flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-500 transition hover:text-ink"
+            className="focus-ring mt-6 inline-flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-mist-65 transition hover:text-ink"
           >
             <Archive size={16} />
             Archief bekijken ({aantalGearchiveerd})

@@ -9,10 +9,10 @@
  */
 
 export const TOON_STYLE = {
-  neutraal: "border-line bg-white text-slate-600",
-  aandacht: "border-amber-200 bg-amber-50 text-amber-900",
-  fout: "border-red-200 bg-red-50 text-red-800",
-  gekozen: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  neutraal: "border-line bg-white text-mist-85",
+  aandacht: "border-spectrum-orange/35 bg-spectrum-orange/10 text-aandacht",
+  fout: "border-spectrum-red/35 bg-spectrum-red/10 text-fout",
+  gekozen: "border-spectrum-green/35 bg-spectrum-green/[0.07] text-gekozen",
 };
 
 const IDENTITEIT = {

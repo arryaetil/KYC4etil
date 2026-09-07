@@ -115,7 +115,7 @@ export function MonitoringView({api}) {
     // doodlopende mededeling, en een eerste watchlist alleen via de API aan te
     // maken.
     return (
-      <div className="px-6 py-16 text-center text-sm text-slate-500">
+      <div className="px-6 py-16 text-center text-sm text-mist-65">
         <p>{error || "Nog geen monitoringlijst ingesteld."}</p>
         <input
           ref={fileRef}
@@ -150,22 +150,22 @@ export function MonitoringView({api}) {
             <strong className="text-sm font-semibold">{status.actueel}</strong>
             {" "}nieuw{status.doeljaar ? ` — verslag ${status.doeljaar}` : ""}
           </span>
-          <span className="text-amber-700">
+          <span className="text-aandacht">
             <strong className="text-sm font-semibold">{status.verouderd}</strong>
             {" "}gevonden, maar ouder
           </span>
-          <span className="text-slate-500">
+          <span className="text-mist-65">
             <strong className="text-sm font-semibold">{status.ontbreekt}</strong>
             {" "}niet gevonden
           </span>
-          <span className="text-slate-400">van {status.totaal}</span>
+          <span className="text-mist-50">van {status.totaal}</span>
         </span>
-        <span className="text-xs text-slate-400">
+        <span className="text-xs text-mist-50">
           {status.gecontroleerd} gecontroleerd
           {status.fouten ? ` · ${status.fouten} mislukt` : ""}
         </span>
         {ronde ? (
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-mist-65">
             {ronde.aantal_companies === 0
               ? "Niets te doen: elk verslag over het doeljaar is al beoordeelbaar."
               : `Ronde gestart voor ${ronde.aantal_companies} organisatie${
@@ -208,7 +208,7 @@ export function MonitoringView({api}) {
 
       {error ? <div className="px-4 pt-4"><Alert message={error} /></div> : null}
       {melding ? (
-        <p className="px-4 pt-3 text-xs text-slate-500">{melding}</p>
+        <p className="px-4 pt-3 text-xs text-mist-65">{melding}</p>
       ) : null}
       {batch ? (
         <BedrijfToevoegen
@@ -268,7 +268,7 @@ export function MonitoringView({api}) {
               />
             </>
           ) : (
-            <div className="px-5 py-16 text-center text-sm text-slate-500">
+            <div className="px-5 py-16 text-center text-sm text-mist-65">
               Kies een organisatie om de gevonden bronnen te beoordelen.
             </div>
           )}

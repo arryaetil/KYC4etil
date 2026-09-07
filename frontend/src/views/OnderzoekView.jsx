@@ -79,12 +79,12 @@ export function OnderzoekView({api}) {
         <button
           type="button"
           onClick={() => setBatchId(null)}
-          className="focus-ring inline-flex items-center gap-1 rounded-md px-1 py-1 text-sm text-slate-500 transition hover:text-ink"
+          className="focus-ring inline-flex items-center gap-1 rounded-md px-1 py-1 text-sm text-mist-65 transition hover:text-ink"
         >
           <ChevronLeft size={16} />Alle lijsten
         </button>
         <span className="text-sm font-medium text-ink">{batch?.naam}</span>
-        <span className="text-xs text-slate-400">{batch?.jaar}</span>
+        <span className="text-xs text-mist-50">{batch?.jaar}</span>
       </div>
 
       {error ? <div className="px-4 pt-4"><Alert message={error} /></div> : null}
@@ -124,7 +124,7 @@ export function OnderzoekView({api}) {
               onGewijzigd={() => load(batchId).catch(() => {})}
             />
           ) : (
-            <div className="px-5 py-16 text-center text-sm text-slate-500">
+            <div className="px-5 py-16 text-center text-sm text-mist-65">
               Kies een organisatie om de gevonden bronnen te beoordelen.
             </div>
           )}

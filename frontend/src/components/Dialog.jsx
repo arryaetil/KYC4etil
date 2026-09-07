@@ -58,7 +58,7 @@ export function Dialog({open, titel, beschrijving, onClose, children}) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-night/50 p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -73,7 +73,7 @@ export function Dialog({open, titel, beschrijving, onClose, children}) {
       >
         <h2 className="text-base font-semibold text-ink">{titel}</h2>
         {beschrijving ? (
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">{beschrijving}</p>
+          <p className="mt-2 text-sm leading-relaxed text-mist-85">{beschrijving}</p>
         ) : null}
         <div className="mt-4">{children}</div>
       </div>
