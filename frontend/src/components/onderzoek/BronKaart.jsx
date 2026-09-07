@@ -9,9 +9,9 @@ import {
 
 const TOON_TEKST = {
   neutraal: "text-ink",
-  aandacht: "text-amber-800",
-  fout: "text-red-800",
-  gekozen: "text-emerald-800",
+  aandacht: "text-aandacht",
+  fout: "text-fout",
+  gekozen: "text-gekozen",
 };
 
 function Signaal({label, toon}) {
@@ -29,15 +29,15 @@ function Kaartrij({label, waarde}) {
   return (
     <div className="flex gap-3">
       {/* w-20 en niet w-16: "Peilmoment" is het langste label en brak anders af. */}
-      <dt className="w-20 shrink-0 text-slate-500">{label}</dt>
+      <dt className="w-20 shrink-0 text-mist-65">{label}</dt>
       <dd className={classNames("flex-1", TOON_TEKST[waarde.toon])}>
         <span
           aria-hidden="true"
           className={classNames(
             "mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle",
-            waarde.toon === "aandacht" ? "bg-amber-500"
-              : waarde.toon === "fout" ? "bg-red-500"
-              : waarde.toon === "gekozen" ? "bg-emerald-500" : "bg-slate-300",
+            waarde.toon === "aandacht" ? "bg-spectrum-orange"
+              : waarde.toon === "fout" ? "bg-spectrum-red"
+              : waarde.toon === "gekozen" ? "bg-spectrum-green" : "bg-mist-25",
           )}
         />
         {waarde.label}
@@ -77,7 +77,7 @@ export function BronKaart({
       className={classNames(
         "px-4 py-5 transition",
         candidate.status === "geaccepteerd"
-          ? "bg-emerald-50/60"
+          ? "bg-spectrum-green/[0.06]"
           : isGeselecteerd ? "bg-panel" : "bg-transparent",
         candidate.status === "afgewezen" && "opacity-50",
         // Aangewezen vanuit de samenvatting: een rand binnenin, zodat de kaart
@@ -86,26 +86,26 @@ export function BronKaart({
       )}
     >
       <div className="flex items-baseline gap-2">
-        <span className="text-xs tabular-nums text-slate-400">{rang}</span>
+        <span className="text-xs tabular-nums text-mist-50">{rang}</span>
         <span className="text-sm font-medium text-ink">
           {brontypeLabel(candidate.brontype)}
         </span>
-        <span className="truncate text-xs text-slate-400">
+        <span className="truncate text-xs text-mist-50">
           {herkomst(candidate.url)}
         </span>
         {candidate.status === "geaccepteerd" ? (
-          <span className="ml-auto inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-900">
+          <span className="ml-auto inline-flex items-center gap-1 rounded border border-spectrum-green/35 bg-spectrum-green/[0.07] px-1.5 py-0.5 text-xs text-gekozen">
             <Check size={11} />Gekozen
           </span>
         ) : candidate.status === "alternatief" ? (
-          <span className="ml-auto rounded border border-line bg-white px-1.5 py-0.5 text-xs text-slate-700">
+          <span className="ml-auto rounded border border-line bg-white px-1.5 py-0.5 text-xs text-mist-85">
             Relevante bron
           </span>
         ) : null}
       </div>
 
       {candidate.gedeeld_met_vestigingen > 1 ? (
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-mist-65">
           Gedeelde bron voor {candidate.gedeeld_met_vestigingen} vestigingen
         </p>
       ) : null}
@@ -115,7 +115,7 @@ export function BronKaart({
           {conclusie.hoofd}
         </p>
         {conclusie.vervolg ? (
-          <p className="mt-1 max-w-[65ch] text-sm text-slate-600">{conclusie.vervolg}</p>
+          <p className="mt-1 max-w-[65ch] text-sm text-mist-85">{conclusie.vervolg}</p>
         ) : null}
       </div>
 
@@ -133,17 +133,17 @@ export function BronKaart({
       </dl>
 
       {candidate.bewijsfragment ? (
-        <blockquote className="mt-3 max-w-[65ch] border-l-2 border-line pl-3 text-sm italic leading-relaxed text-slate-600">
+        <blockquote className="mt-3 max-w-[65ch] border-l-2 border-line pl-3 text-sm italic leading-relaxed text-mist-85">
           “{candidate.bewijsfragment}”
         </blockquote>
       ) : null}
 
       {telling ? (
-        <div className="mt-3 max-w-[65ch] rounded-md border border-amber-200 bg-amber-50/60 p-3">
-          <p className="text-sm font-medium text-amber-900">
+        <div className="mt-3 max-w-[65ch] rounded-md border border-spectrum-orange/35 bg-spectrum-orange/[0.07] p-3">
+          <p className="text-sm font-medium text-aandacht">
             Tel de medewerkers zelf
           </p>
-          <p className="mt-0.5 text-sm text-amber-800">
+          <p className="mt-0.5 text-sm text-aandacht">
             {telling.uitleg}{" "}
             {telling.afgeleidAantal != null
               ? `De agent telde ${telling.afgeleidAantal} `
@@ -152,11 +152,11 @@ export function BronKaart({
               : "Het afgeleide getal is niet overgenomen als WP-getal."}
           </p>
           {telling.namen.length ? (
-            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-amber-900">
+            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-aandacht">
               {telling.namen.map((naam) => (
                 <li
                   key={naam}
-                  className="before:mr-1 before:text-amber-400 before:content-['•']"
+                  className="before:mr-1 before:text-spectrum-orange/70 before:content-['•']"
                 >
                   {naam}
                 </li>
@@ -196,7 +196,7 @@ export function BronKaart({
               type="button"
               onClick={() => onWijsAf(candidate)}
               disabled={bezig}
-              className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-slate-500 transition hover:text-ink disabled:opacity-50"
+              className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-mist-65 transition hover:text-ink disabled:opacity-50"
             >
               <X size={14} />Afwijzen
             </button>
@@ -206,7 +206,7 @@ export function BronKaart({
           type="button"
           onClick={() => setToonOnderbouwing((open) => !open)}
           aria-expanded={toonOnderbouwing}
-          className="focus-ring ml-auto inline-flex items-center gap-1 rounded px-1 py-1 text-xs text-slate-400 transition hover:text-slate-600"
+          className="focus-ring ml-auto inline-flex items-center gap-1 rounded px-1 py-1 text-xs text-mist-50 transition hover:text-mist-85"
         >
           Onderbouwing
           {toonOnderbouwing ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -214,12 +214,12 @@ export function BronKaart({
       </div>
 
       {toonOnderbouwing ? (
-        <dl className="mt-3 space-y-1 border-t border-line pt-3 text-xs text-slate-500">
+        <dl className="mt-3 space-y-1 border-t border-line pt-3 text-xs text-mist-65">
           <div className="flex flex-wrap items-center gap-1.5 pb-1">
             <Signaal {...identiteit} />
             <Signaal {...bereik} />
             {candidate.wp_gevonden != null ? (
-              <span className="tabular-nums text-slate-600">
+              <span className="tabular-nums text-mist-85">
                 {candidate.wp_gevonden} {
                   candidate.eenheid === "fte"
                     ? "FTE"
@@ -233,31 +233,31 @@ export function BronKaart({
               </span>
             ) : null}
             {candidate.verslagjaar ? (
-              <span className="text-slate-500">verslagjaar {candidate.verslagjaar}</span>
+              <span className="text-mist-65">verslagjaar {candidate.verslagjaar}</span>
             ) : null}
           </div>
           {candidate.validaties?.intelligente_review?.reden ? (
             <div>
-              <dt className="inline font-medium text-slate-600">Bronreview: </dt>
+              <dt className="inline font-medium text-mist-85">Bronreview: </dt>
               <dd className="inline">{candidate.validaties.intelligente_review.reden}</dd>
             </div>
           ) : null}
           {candidate.publicatiedatum ? (
             <div>
-              <dt className="inline font-medium text-slate-600">Gepubliceerd: </dt>
+              <dt className="inline font-medium text-mist-85">Gepubliceerd: </dt>
               <dd className="inline">{candidate.publicatiedatum}</dd>
             </div>
           ) : null}
           {/* Peilmoment staat nu in de altijd zichtbare regels hierboven; hier
               herhalen zou dezelfde constatering twee keer op de kaart zetten. */}
           <div>
-            <dt className="inline font-medium text-slate-600">Bron-URL: </dt>
+            <dt className="inline font-medium text-mist-85">Bron-URL: </dt>
             <dd className="inline break-all">
               <a
                 href={candidate.url}
                 target="_blank"
                 rel="noreferrer"
-                className="focus-ring rounded underline decoration-slate-300 underline-offset-2 transition hover:text-ink"
+                className="focus-ring rounded underline decoration-mist-25 underline-offset-2 transition hover:text-ink"
               >
                 {candidate.url}
               </a>

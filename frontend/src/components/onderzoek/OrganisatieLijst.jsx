@@ -4,10 +4,10 @@ import {classNames} from "../../lib/format.js";
 import {organisatieStatus} from "../../lib/onderzoekLabels.js";
 
 const STATUS_PUNT = {
-  neutraal: "bg-slate-300",
-  aandacht: "bg-amber-500",
-  fout: "bg-red-500",
-  gekozen: "bg-emerald-500",
+  neutraal: "bg-mist-25",
+  aandacht: "bg-spectrum-orange",
+  fout: "bg-spectrum-red",
+  gekozen: "bg-spectrum-green",
 };
 
 const ONDERZOEK_OPTIES = [
@@ -66,7 +66,7 @@ export function OrganisatieLijst({
       <div className="space-y-2 border-b border-line px-3 py-3">
         <div className="relative">
           <Search
-            className="pointer-events-none absolute left-2.5 top-2.5 text-slate-400"
+            className="pointer-events-none absolute left-2.5 top-2.5 text-mist-50"
             size={15}
           />
           <input
@@ -81,7 +81,7 @@ export function OrganisatieLijst({
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
           aria-label="Filter op status"
-          className="focus-ring h-9 w-full rounded-md border border-line bg-white px-2 text-sm text-slate-600"
+          className="focus-ring h-9 w-full rounded-md border border-line bg-white px-2 text-sm text-mist-85"
         >
           <option value="">Alle statussen</option>
           {statusOpties.map((optie) => (
@@ -115,7 +115,7 @@ export function OrganisatieLijst({
                 <span className="block truncate text-sm font-medium text-ink">
                   {company.naam}
                 </span>
-                <span className="block truncate text-xs text-slate-500">
+                <span className="block truncate text-xs text-mist-65">
                   {company.gemeente} · {company.status.label}
                 </span>
               </span>
@@ -123,13 +123,13 @@ export function OrganisatieLijst({
           </li>
         ))}
         {!zichtbaar.length ? (
-          <li className="px-3 py-8 text-center text-xs text-slate-500">
+          <li className="px-3 py-8 text-center text-xs text-mist-65">
             Geen organisaties
           </li>
         ) : null}
       </ul>
 
-      <div className="border-t border-line px-3 py-2 text-xs tabular-nums text-slate-500">
+      <div className="border-t border-line px-3 py-2 text-xs tabular-nums text-mist-65">
         {voetregel}
       </div>
     </div>

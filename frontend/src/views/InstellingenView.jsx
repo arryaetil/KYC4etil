@@ -117,13 +117,13 @@ export function InstellingenView({api, user}) {
 
       <section className="mt-6" aria-label="Wachtwoord wijzigen">
         <h2 className="text-sm font-medium text-ink">Wachtwoord wijzigen</h2>
-        <p className="mt-0.5 text-sm text-slate-500">
+        <p className="mt-0.5 text-sm text-mist-65">
           Minstens tien tekens. Een lange zin is makkelijker te onthouden en
           moeilijker te raden dan een kort wachtwoord met tekens erin.
         </p>
         <form onSubmit={wijzigWachtwoord} className="mt-3 max-w-md space-y-3">
           <label className="block">
-            <span className="block text-xs text-slate-500">Huidig wachtwoord</span>
+            <span className="block text-xs text-mist-65">Huidig wachtwoord</span>
             <input
               type="password"
               value={huidig}
@@ -133,7 +133,7 @@ export function InstellingenView({api, user}) {
             />
           </label>
           <label className="block">
-            <span className="block text-xs text-slate-500">Nieuw wachtwoord</span>
+            <span className="block text-xs text-mist-65">Nieuw wachtwoord</span>
             <input
               type="password"
               value={nieuw}
@@ -145,7 +145,7 @@ export function InstellingenView({api, user}) {
           </label>
           {wwFout ? <Alert message={wwFout} /> : null}
           {wwMelding ? (
-            <p className="text-sm text-emerald-800">{wwMelding}</p>
+            <p className="text-sm text-gekozen">{wwMelding}</p>
           ) : null}
           <button
             type="submit"
@@ -174,7 +174,7 @@ export function InstellingenView({api, user}) {
             <div className="mt-3"><Alert message={gebruikerFout} /></div>
           ) : null}
           {gebruikerMelding ? (
-            <p className="mt-3 text-sm text-emerald-800">{gebruikerMelding}</p>
+            <p className="mt-3 text-sm text-gekozen">{gebruikerMelding}</p>
           ) : null}
 
           {formulierOpen ? (
@@ -187,7 +187,7 @@ export function InstellingenView({api, user}) {
                 ["email", "E-mailadres", "email"],
               ].map(([sleutel, label, type]) => (
                 <label key={sleutel} className="block">
-                  <span className="block text-xs text-slate-500">{label}</span>
+                  <span className="block text-xs text-mist-65">{label}</span>
                   <input
                     type={type}
                     value={nieuweGebruiker[sleutel]}
@@ -200,7 +200,7 @@ export function InstellingenView({api, user}) {
                 </label>
               ))}
               <label className="block">
-                <span className="block text-xs text-slate-500">Rol</span>
+                <span className="block text-xs text-mist-65">Rol</span>
                 <select
                   value={nieuweGebruiker.rol}
                   onChange={(e) => setNieuweGebruiker({
@@ -213,7 +213,7 @@ export function InstellingenView({api, user}) {
                 </select>
               </label>
               <label className="block">
-                <span className="block text-xs text-slate-500">
+                <span className="block text-xs text-mist-65">
                   Startwachtwoord (minstens 10 tekens)
                 </span>
                 {/* Zichtbaar en niet verborgen: de beheerder moet dit doorgeven
@@ -246,18 +246,18 @@ export function InstellingenView({api, user}) {
               <li key={gebruiker.id} className="flex items-center gap-3 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-ink">{gebruiker.naam}</p>
-                  <p className="truncate text-xs text-slate-500">
+                  <p className="truncate text-xs text-mist-65">
                     {gebruiker.email} · {gebruiker.rol === "admin" ? "beheerder" : "reviewer"}
                   </p>
                 </div>
                 {gebruiker.id === user?.id ? (
-                  <span className="text-xs text-slate-400">jij</span>
+                  <span className="text-xs text-mist-50">jij</span>
                 ) : (
                   <button
                     type="button"
                     onClick={() => verwijder(gebruiker.id, gebruiker.naam)}
                     aria-label={`Toegang van ${gebruiker.naam} intrekken`}
-                    className="focus-ring rounded p-1.5 text-slate-400 transition hover:text-red-700"
+                    className="focus-ring rounded p-1.5 text-mist-50 transition hover:text-fout"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -273,7 +273,7 @@ export function InstellingenView({api, user}) {
           <h2 className="flex items-center gap-1.5 text-sm font-medium text-ink">
             <RotateCcw size={14} />Prullenbak
           </h2>
-          <p className="mt-0.5 text-sm text-slate-500">
+          <p className="mt-0.5 text-sm text-mist-65">
             Weggegooide lijsten. Alles wat erin zat — organisaties, bronnen,
             beoordelingen — staat er nog en komt terug bij herstellen.
           </p>
@@ -284,7 +284,7 @@ export function InstellingenView({api, user}) {
                 <li key={lijst.id} className="flex items-center gap-3 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-ink">{lijst.naam}</p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-mist-65">
                       {lijst.totaal} organisaties · weggegooid{" "}
                       {formatMoment(lijst.verwijderd_op)}
                     </p>
@@ -300,7 +300,7 @@ export function InstellingenView({api, user}) {
               ))}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-slate-400">De prullenbak is leeg.</p>
+            <p className="mt-3 text-sm text-mist-50">De prullenbak is leeg.</p>
           )}
         </section>
       ) : null}
@@ -310,7 +310,7 @@ export function InstellingenView({api, user}) {
           <h2 className="flex items-center gap-1.5 text-sm font-medium text-ink">
             <History size={14} />Wie deed wat
           </h2>
-          <p className="mt-0.5 text-sm text-slate-500">
+          <p className="mt-0.5 text-sm text-mist-65">
             Uploads, verwijderingen en accountwijzigingen. Bronbeslissingen
             staan bij de bron zelf.
           </p>
@@ -319,14 +319,14 @@ export function InstellingenView({api, user}) {
               {handelingen.map((regel) => (
                 <li key={regel.id} className="py-2.5">
                   <p className="max-w-[80ch] text-ink">{regel.omschrijving}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">
+                  <p className="mt-0.5 text-xs text-mist-50">
                     {regel.door || "onbekend"} · {formatMoment(regel.created_at)}
                   </p>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-slate-400">Nog niets vastgelegd.</p>
+            <p className="mt-3 text-sm text-mist-50">Nog niets vastgelegd.</p>
           )}
         </section>
       ) : null}

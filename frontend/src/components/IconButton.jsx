@@ -3,9 +3,12 @@ import {classNames} from "../lib/format.js";
 export function IconButton({children, icon: Icon, variant = "default", ...props}) {
   const styles = {
     default: "border-line bg-white text-ink hover:bg-panel",
+    // Primair is Night, geen spectrumkleur: rood betekent in deze applicatie
+    // afwijzen, en een accepteerknop in dezelfde kleur is een ongeluk dat op
+    // je wacht.
     primary: "border-etil bg-etil text-white hover:opacity-90",
-    danger: "border-red-600 bg-red-600 text-white hover:bg-red-700",
-    quiet: "border-transparent bg-transparent text-slate-600 hover:bg-panel",
+    danger: "border-spectrum-red bg-spectrum-red text-white hover:opacity-90",
+    quiet: "border-transparent bg-transparent text-mist-85 hover:bg-panel",
     ghost: "border-transparent bg-transparent text-white hover:bg-white/10",
   };
   return (

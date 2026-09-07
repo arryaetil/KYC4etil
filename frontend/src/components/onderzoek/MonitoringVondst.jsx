@@ -30,7 +30,7 @@ export function alsBewijsBron(company) {
 function Vondstrij({label, waarde}) {
   return (
     <div className="flex gap-3">
-      <dt className="w-20 shrink-0 text-slate-500">{label}</dt>
+      <dt className="w-20 shrink-0 text-mist-65">{label}</dt>
       <dd className="flex-1 text-ink">{waarde.label}</dd>
     </div>
   );
@@ -70,16 +70,16 @@ export function MonitoringVondst({
   return (
     <section className="border-b border-line px-5 py-5" aria-label="Monitoringvondst">
       <div className="flex items-baseline gap-2">
-        <h3 className="text-xs uppercase tracking-wide text-slate-400">
+        <h3 className="text-xs uppercase tracking-wide text-mist-50">
           Wat de monitoring vond
         </h3>
-        <span className="ml-auto text-xs text-slate-400">
+        <span className="ml-auto text-xs text-mist-50">
           Gecontroleerd: {formatMoment(company.laatst_gecontroleerd_op)}
         </span>
       </div>
 
       {!toonVondst ? null : company.fout ? (
-        <p className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="mt-3 rounded-md border border-spectrum-red/35 bg-spectrum-red/10 p-3 text-sm text-fout">
           De laatste controle is mislukt: {company.fout}
         </p>
       ) : bron ? (
@@ -89,7 +89,7 @@ export function MonitoringVondst({
               href={bron.url}
               target="_blank"
               rel="noreferrer"
-              className="focus-ring rounded underline decoration-slate-300 underline-offset-4 transition hover:decoration-ink"
+              className="focus-ring rounded underline decoration-mist-25 underline-offset-4 transition hover:decoration-ink"
             >
               {bron.url}
             </a>
@@ -130,7 +130,7 @@ export function MonitoringVondst({
           </div>
         </>
       ) : (
-        <p className="mt-3 text-sm text-slate-500">
+        <p className="mt-3 text-sm text-mist-65">
           {company.laatst_gecontroleerd_op
             ? "Bij de laatste controle is geen jaarverslag gevonden."
             : "Deze organisatie is nog niet gecontroleerd."}
@@ -142,7 +142,7 @@ export function MonitoringVondst({
           niet kiest. Het eerste zegt iets over de vórige ronde en niet over dit
           verslag; het tweede legt de module uit aan iemand die er al in werkt.
           Allebei stonden ze onder élke kaart, elke ronde. */}
-      <p className="mt-3 text-xs text-slate-400">
+      <p className="mt-3 text-xs text-mist-50">
         Status: {status.label}.
       </p>
     </section>
