@@ -54,6 +54,7 @@ export function createApi(token, onUnauthorized) {
       {method: "DELETE"},
     ),
     batch: (id) => request(`/batches/${id}`),
+    kostenindicatie: () => request("/batches/kostenindicatie"),
     companies: (batchId, label) => request(`/batches/${batchId}/companies${label ? `?label=${label}` : ""}`),
     company: (batchId, companyId) => request(`/batches/${batchId}/companies/${companyId}`),
     uploadBatch: (file, naam, jaar, mapId, {monitoringlijst = false} = {}) => {

@@ -427,6 +427,29 @@ async def run_research_run(run_id: str) -> None:
                 db.commit()
 
 
+def companies_zonder_afgeronde_research(db: Session, batch_id: str) -> list[str]:
+    """Welke organisaties in deze lijst moeten nog onderzocht worden?
+
+    Een lijst opnieuw starten doet niet alles over: wie al een afgeronde run
+    heeft wordt overgeslagen. Die regel stond alleen hier, terwijl het scherm
+    er ook op rekent — de kostenindicatie noemde het volledige aantal, ook als
+    er nog maar twaalf van de honderdacht te doen waren. Vandaar één plek.
+    """
+    afgerond = {
+        company_id
+        for (company_id,) in (
+            db.query(ResearchRun.company_id)
+            .filter_by(batch_id=batch_id, status="completed")
+            .distinct()
+        )
+    }
+    return [
+        company.id
+        for company in db.query(Company).filter_by(batch_id=batch_id).all()
+        if company.id not in afgerond
+    ]
+
+
 def _tel_verwerkt_op(batch_id: str) -> None:
     """Eén organisatie erbij, in de database opgeteld en niet in Python.
 
@@ -504,22 +527,13 @@ async def run_research_batch(batch_id: str) -> None:
                 stale_run.resultaat_status = "error"
                 stale_run.fout = "onderbroken proces; opnieuw ingepland"
                 stale_run.completed_at = _now()
-            afgeronde_company_ids = {
-                company_id
-                for (company_id,) in (
-                    db.query(ResearchRun.company_id)
-                    .filter_by(batch_id=batch.id, status="completed")
-                    .distinct()
-                )
-            }
-            company_ids = [
-                item.id
-                for item in db.query(Company).filter_by(batch_id=batch.id).all()
-                if item.id not in afgeronde_company_ids
-            ]
+            company_ids = companies_zonder_afgeronde_research(db, batch.id)
+            aantal_companies = (
+                db.query(Company).filter_by(batch_id=batch.id).count()
+            )
             gevraagd_jaar = batch.jaar - 1
             batch.status = "running"
-            batch.verwerkt = len(afgeronde_company_ids)
+            batch.verwerkt = aantal_companies - len(company_ids)
             batch.completed_at = None
             db.commit()
 

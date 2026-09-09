@@ -27,7 +27,11 @@ from ..models import (
     Company, Enrichment, JaarverslagMonitoring, PipelineRun, ResearchRun, User,
     VastgoedRecord, WPRecord,
 )
-from ..research.service import run_research_batch
+from ..research.kostenraming import kosten_per_organisatie
+from ..research.service import (
+    companies_zonder_afgeronde_research,
+    run_research_batch,
+)
 
 router = APIRouter(
     prefix="/batches", tags=["batches"], dependencies=[Depends(get_current_user)],
@@ -474,6 +478,13 @@ def list_batches(
         batch for batch in query.order_by(Batch.created_at.desc()).all()
         if not _lijkt_monitoringlijst_batch(batch)
     ]
+    # Hoeveel er nog te onderzoeken zijn, met dezelfde regel als de run zelf.
+    # Zonder dit rekende de kostenindicatie op het scherm met de hele lijst,
+    # ook als er nog maar een handvol organisaties over was.
+    nog_te_doen = {
+        batch.id: len(companies_zonder_afgeronde_research(db, batch.id))
+        for batch in batches
+    }
     uploader_ids = {batch.geupload_door for batch in batches if batch.geupload_door}
     naam_per_id = {
         user.id: user.naam
@@ -492,7 +503,14 @@ def list_batches(
         ),
         "geupload_door_naam": naam_per_id.get(batch.geupload_door),
         "map_id": batch.map_id,
+        "nog_te_onderzoeken": nog_te_doen[batch.id],
     } for batch in batches]
+
+
+@router.get("/kostenindicatie")
+def get_kostenindicatie(db: Session = Depends(get_db)):
+    """Wat kost het onderzoeken van één organisatie, volgens de vorige runs."""
+    return kosten_per_organisatie(db)
 
 
 @router.get("/{batch_id}")

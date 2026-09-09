@@ -15,6 +15,9 @@ function formatDatum(iso) {
 export function BatchesView({api, onOpenBatch, mapId, mapNaam, onTerug}) {
   const fileRef = useRef(null);
   const [batches, setBatches] = useState([]);
+  // Het bedrag per organisatie komt uit de vorige runs; een vast getal in
+  // deze code liep binnen zes weken twee tot drie keer achter.
+  const [kostenband, setKostenband] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -28,6 +31,12 @@ export function BatchesView({api, onOpenBatch, mapId, mapNaam, onTerug}) {
   useEffect(() => {
     load().catch((err) => setError(err.message));
   }, [mapId]);
+
+  useEffect(() => {
+    // Mislukt dit, dan valt de bevestiging terug op de gemeten standaardband.
+    // Een kostenindicatie is geen reden om het scherm te laten mislukken.
+    api.kostenindicatie().then(setKostenband).catch(() => {});
+  }, []);
 
   const heeftLopende = batches.some((batch) => batch.status === "running");
 
@@ -71,7 +80,10 @@ export function BatchesView({api, onOpenBatch, mapId, mapNaam, onTerug}) {
   }
 
   function startOnderzoek(batch) {
-    if (!window.confirm(researchBevestiging(batch.totaal))) return;
+    // Het aantal dat de run daadwerkelijk oppakt, niet de hele lijst: een
+    // herstart slaat over wat al onderzocht is.
+    const teDoen = batch.nog_te_onderzoeken ?? batch.totaal;
+    if (!window.confirm(researchBevestiging(teDoen, kostenband, batch.totaal))) return;
     voerUit(() => api.runBatch(batch.id));
   }
 
