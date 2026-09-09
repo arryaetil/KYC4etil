@@ -89,8 +89,8 @@ async def verzamel_seed_documenten(
         ]
 
     async def _bestaande_documenten() -> list[SourceDocument]:
-        async def _inspecteer(bron: BestaandeBron):
-            route = (
+        def _route_van(bron: BestaandeBron) -> str:
+            return (
                 "digimv" if bron.brontype == "digimv"
                 else "media" if bron.brontype == "media"
                 else "document" if bron.documenttype in {
@@ -98,6 +98,65 @@ async def verzamel_seed_documenten(
                 }
                 else "website"
             )
+
+        def _mag_hergebruiken(bron: BestaandeBron) -> bool:
+            """Opnieuw lezen, of overnemen wat er al uit gelezen is?
+
+            Drie voorwaarden, en alle drie zijn nodig:
+
+            - van een zustervestiging. Een eigen bron opnieuw ophalen is juist
+              de bedoeling — dat is het actualiseren waar deze seed voor is.
+            - uit dezelfde lijstverwerking. Alleen dan is het document zojuist
+              gelezen en kan er niets tussentijds veranderd zijn. Een kaart van
+              drie maanden terug wordt gewoon opnieuw opgehaald.
+            - er is destijds echt in gezocht. Anders nemen we een leeg
+              resultaat over als bevinding.
+
+            Wat we overnemen is het lézen (ophalen + extractie), niet het
+            óórdeel: identiteit en scope worden voor deze vestiging opnieuw
+            bepaald, en dat is nu juist het stuk dat per vestiging verschilt.
+            """
+            return (
+                bron.van_andere_vestiging
+                and bron.zelfde_lijst
+                and bron.gelezen
+            )
+
+        def _uit_bewaarde_bron(bron: BestaandeBron) -> SourceDocument:
+            return SourceDocument(
+                naam=context.naam,
+                company_website_url=context.website_url,
+                url=bron.url,
+                titel=bron.titel,
+                # Leeg, net als bij een PDF: de paginatekst bewaren we niet.
+                # Titel en bewijsfragment dragen het identiteitsoordeel.
+                tekst="",
+                brontype=bron.brontype,
+                documenttype=bron.documenttype,
+                gevraagd_jaar=context.gevraagd_jaar,
+                verslagjaar=bron.verslagjaar,
+                publicatiedatum=bron.publicatiedatum,
+                informatie_peilmoment=bron.informatie_peilmoment,
+                wp_gevonden=bron.wp_gevonden,
+                eenheid=bron.eenheid,
+                bewijsfragment=bron.bewijsfragment,
+                bron_pagina=bron.bron_pagina,
+                # Bewust niet overgenomen: waar het getal over gaat is een
+                # vraag over déze vestiging, niet over de zuster waar de bron
+                # vandaan komt.
+                scope_class=None,
+                research_route=_route_van(bron),
+                wp_extractie_gedaan=True,
+                raw_data={
+                    **(bron.raw_data or {}),
+                    "seed_origin": "organization_source",
+                    "van_andere_vestiging": True,
+                    "hergebruikt_zonder_herlezen": True,
+                },
+            )
+
+        async def _inspecteer(bron: BestaandeBron):
+            route = _route_van(bron)
             document = await _veilig(tools.inspect(
                 context,
                 PlannedQuery(
@@ -127,12 +186,21 @@ async def verzamel_seed_documenten(
                 },
             )
 
-        return [
+        te_lezen = [
+            bron for bron in (bestaande_bronnen or [])
+            if not _mag_hergebruiken(bron)
+        ]
+        hergebruikt = [
+            _uit_bewaarde_bron(bron) for bron in (bestaande_bronnen or [])
+            if _mag_hergebruiken(bron)
+        ]
+        gelezen = [
             document for document in await asyncio.gather(*[
-                _inspecteer(bron) for bron in (bestaande_bronnen or [])
+                _inspecteer(bron) for bron in te_lezen
             ])
             if document is not None
         ]
+        return [*gelezen, *hergebruikt]
 
     (
         officiele_website, nieuwste_document, duo_bron, digimv_bronnen,

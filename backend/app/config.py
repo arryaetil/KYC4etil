@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     openai_prijs_in_cent_per_1k: float = 0.02
     openai_prijs_out_cent_per_1k: float = 0.12
     research_company_timeout_seconds: int = 300
+    # Hoeveel organisaties tegelijk. Stond vast op één: de lijst was precies zo
+    # lang als de som van haar runs — gemeten op productie 100% bezetting, geen
+    # dode tijd ertussen, dus 108 vestigingen betekende 6 uur 19. De rem zat er
+    # om API-budgetten te bewaken, maar dat is een taak voor een limiet en niet
+    # voor het op een rij zetten van al het werk. De gedeelde browser heeft een
+    # eigen rem (crawl4ai_max_parallel), en de kostenteller loopt per taak via
+    # contextvars. Op 1 zetten geeft exact het oude gedrag terug.
+    research_max_parallel_companies: int = 4
     playwright_enabled: bool = False
     # Altijd via Crawl4AI renderen in plaats van alleen als fallback bij te
     # weinig platte tekst. Levert markdown met behoud van koppen, lijsten en

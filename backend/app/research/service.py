@@ -1,7 +1,9 @@
 """Persistente uitvoering van een begrensde bronnenresearchrun."""
 import asyncio
+import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -425,11 +427,67 @@ async def run_research_run(run_id: str) -> None:
                 db.commit()
 
 
-async def run_research_batch(batch_id: str) -> None:
-    """Voert de primaire researchworkflow begrensd en sequentieel uit.
+def _tel_verwerkt_op(batch_id: str) -> None:
+    """Eén organisatie erbij, in de database opgeteld en niet in Python.
 
-    Sequentieel is bewust: het bewaakt API-budgetten en voorkomt dat een batch
-    van twintig organisaties honderden extractiecalls tegelijk start.
+    `batch.verwerkt += 1` is lezen, optellen en terugschrijven. Zolang er één
+    organisatie tegelijk draaide kon daar niets tussen komen; nu wel, en dan
+    verdwijnt er stilletjes voortgang uit de teller.
+    """
+    with SessionLocal() as db:
+        db.execute(
+            update(Batch)
+            .where(Batch.id == batch_id)
+            .values(verwerkt=Batch.verwerkt + 1),
+        )
+        db.commit()
+
+
+async def _verwerk_company(
+    batch_id: str,
+    company_id: str,
+    gevraagd_jaar: int | None,
+    plaatsen: asyncio.Semaphore,
+) -> None:
+    async with plaatsen:
+        with SessionLocal() as db:
+            batch = db.get(Batch, batch_id)
+            # Bij "annuleren" stoppen de organisaties die nog niet begonnen
+            # waren; wie al bezig is maakt zijn run af en wordt netjes
+            # weggeschreven.
+            if batch is None or batch.status == "cancelled":
+                return
+            company = db.get(Company, company_id)
+            if company is None:
+                return
+            run = maak_research_run(db, company, gevraagd_jaar)
+            run_id = run.id
+        await run_research_run(run_id)
+    _tel_verwerkt_op(batch_id)
+
+
+async def run_research_batch(batch_id: str) -> None:
+    """Voert de primaire researchworkflow begrensd uit, meerdere tegelijk.
+
+    Dit was bewust sequentieel, om API-budgetten te bewaken. Dat werkte, maar
+    het maakte de doorlooptijd van een lijst gelijk aan de som van al haar
+    runs: op productie gemeten 100% bezetting, geen dode tijd ertussen, en dus
+    6 uur 19 voor 108 vestigingen. Budgetbewaking is een taak voor een limiet,
+    niet voor het op een rij zetten van al het werk.
+
+    Hoeveel er tegelijk mogen staat in `research_max_parallel_companies`; op 1
+    is het gedrag exact als voorheen. De gedeelde browser heeft een eigen rem
+    (`crawl4ai_max_parallel`), en de kostenteller loopt per taak via
+    contextvars, dus die telt niet door elkaar heen.
+
+    Alle vestigingen staan hier door elkaar, en dat is met opzet. Het lag voor
+    de hand om vestigingen van dezelfde organisatie te groeperen en er één
+    vooruit te sturen, zodat de rest haar gedeelde bronnen kan hergebruiken in
+    plaats van ze allemaal tegelijk op te halen. Gemeten (`scripts.bench_batch`)
+    kost die kopvestiging meer dan ze oplevert: alleen de eerste golf loopt het
+    hergebruik mis, alles daarna pakt het vanzelf mee. Bij 48 vestigingen
+    scheelde groeperen zes leesbeurten en kostte het anderhalve seconde op
+    zeventien. Niet doen dus.
     """
     try:
         with SessionLocal() as db:
@@ -465,24 +523,28 @@ async def run_research_batch(batch_id: str) -> None:
             batch.completed_at = None
             db.commit()
 
-        for company_id in company_ids:
-            with SessionLocal() as db:
-                batch = db.get(Batch, batch_id)
-                if batch is None or batch.status == "cancelled":
-                    return
-                company = db.get(Company, company_id)
-                run = maak_research_run(db, company, gevraagd_jaar)
-            await run_research_run(run.id)
-            with SessionLocal() as db:
-                batch = db.get(Batch, batch_id)
-                if batch is None:
-                    return
-                batch.verwerkt += 1
-                db.commit()
+        plaatsen = asyncio.Semaphore(
+            max(1, get_settings().research_max_parallel_companies),
+        )
+        # return_exceptions: één organisatie die alsnog omvalt mag de rest van
+        # de lijst niet meenemen. De fout staat dan al op haar eigen run.
+        resultaten = await asyncio.gather(*[
+            _verwerk_company(batch_id, company_id, gevraagd_jaar, plaatsen)
+            for company_id in company_ids
+        ], return_exceptions=True)
+        for resultaat in resultaten:
+            if isinstance(resultaat, BaseException):
+                logging.getLogger(__name__).warning(
+                    "organisatie in lijst %s mislukt (%s: %s)",
+                    batch_id, type(resultaat).__name__, str(resultaat)[:200],
+                )
 
         with SessionLocal() as db:
             batch = db.get(Batch, batch_id)
-            if batch is not None:
+            # Een geannuleerde lijst blijft geannuleerd. De oude lus verliet de
+            # functie bij "cancelled" en kwam hier dus nooit; nu lopen de
+            # organisaties in een gather en komen we hier altijd langs.
+            if batch is not None and batch.status != "cancelled":
                 batch.status = "review"
                 batch.completed_at = _now()
                 db.commit()
