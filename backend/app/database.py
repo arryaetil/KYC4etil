@@ -69,16 +69,33 @@ def _vul_demomap(conn) -> None:
     )
 
 
-def _add_column_if_missing(conn, table: str, existing: set[str], name: str, ddl_type: str) -> None:
-    if name in existing:
-        return
+def _add_column_if_missing(conn, table: str, name: str, ddl_type: str) -> bool:
+    """Voeg één kolom toe. Geeft terug of dat daadwerkelijk gebeurd is.
+
+    Twee processen kunnen tegelijk opstarten en dezelfde kolom willen
+    toevoegen; dan is "bestaat al" de gewenste uitkomst en geen fout.
+    """
     try:
         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl_type}"))
+        return True
     except (OperationalError, ProgrammingError) as exc:
         message = str(exc).lower()
         if "duplicate column" in message or "already exists" in message:
-            return
+            return False
         raise
+
+
+def _scalaire_standaardwaarde(kolom):
+    """De vaste waarde die het model aan deze kolom geeft, of None.
+
+    Alleen een échte constante (`default=False`, `default=0`). Een callable
+    zoals `_now` of `_uuid` hoort niet met terugwerkende kracht over bestaande
+    rijen te worden uitgesmeerd — dat zou een tijdstip verzinnen.
+    """
+    standaard = kolom.default
+    if standaard is None or not getattr(standaard, "is_scalar", False):
+        return None
+    return standaard.arg
 
 
 def get_db():
@@ -90,139 +107,76 @@ def get_db():
 
 
 def ensure_lightweight_migrations() -> None:
+    """Breng de database bij met wat er in `models.py` staat.
+
+    Dit stond hier als honderdtwintig regels `ALTER TABLE`, één per kolom, met
+    de hand bijgehouden. Dat werkt zolang niemand het vergeet, en precies dat
+    is het probleem: een veld toevoegen aan een model deed lokaal niets (daar
+    maakt `create_all` de tabel opnieuw) en brak pas op Railway, waar de tabel
+    al bestond. De lijst was dus een tweede beschrijving van hetzelfde schema,
+    die stilzwijgend uit de pas kon lopen met de eerste.
+
+    Nu wordt het verschil afgeleid: elke kolom die het model kent en de
+    database niet, wordt toegevoegd. Alleen toevoegen — nooit wijzigen, nooit
+    weggooien. Een kolom die verdwijnt uit een model blijft dus in de database
+    staan, en dat hoort ook: die keuze is niet aan een opstartroutine.
+
+    Wat hieronder wél met de hand staat, is het eenmalige werk dat geen enkele
+    schemavergelijking kan bedenken: bestaande rijen ergens in zetten.
+    """
     inspector = inspect(engine)
-    tables = set(inspector.get_table_names())
-    if "companies" not in tables:
+    tabellen = set(inspector.get_table_names())
+    if "companies" not in tabellen:
         return
 
-    existing_companies = {col["name"] for col in inspector.get_columns("companies")}
+    toegevoegd: set[tuple[str, str]] = set()
     with engine.begin() as conn:
-        for name, ddl_type in [
-            ("website_url", "TEXT"), ("telefoonnummer", "VARCHAR(50)"),
-            ("afgewerkt", "BOOLEAN DEFAULT FALSE"),
-            ("organization_id", "VARCHAR(36)"),
-        ]:
-            _add_column_if_missing(conn, "companies", existing_companies, name, ddl_type)
-        conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_companies_organization_id "
-            "ON companies (organization_id)"
-        ))
+        for tabel in Base.metadata.sorted_tables:
+            if tabel.name not in tabellen:
+                continue  # nieuwe tabellen komen uit create_all
+            bestaand = {kolom["name"] for kolom in inspector.get_columns(tabel.name)}
+            for kolom in tabel.columns:
+                if kolom.name in bestaand:
+                    continue
+                ddl_type = kolom.type.compile(dialect=engine.dialect)
+                if not _add_column_if_missing(
+                    conn, tabel.name, kolom.name, ddl_type,
+                ):
+                    continue
+                toegevoegd.add((tabel.name, kolom.name))
+                # Een nieuwe kolom is leeg, terwijl het model een vaste waarde
+                # belooft. `afgewerkt` en `is_monitoringlijst` kwamen daardoor
+                # als NULL terug in plaats van False.
+                standaard = _scalaire_standaardwaarde(kolom)
+                if standaard is not None:
+                    conn.execute(
+                        text(
+                            f"UPDATE {tabel.name} SET {kolom.name} = :waarde "
+                            f"WHERE {kolom.name} IS NULL"
+                        ),
+                        {"waarde": standaard},
+                    )
 
-    if "users" in tables:
-        existing_users = {col["name"] for col in inspector.get_columns("users")}
-        with engine.begin() as conn:
-            _add_column_if_missing(
-                conn, "users", existing_users, "verwijderd_op", "TIMESTAMP",
-            )
+        # Indexen horen bij de kolom, niet bij een aparte lijst. `create_all`
+        # maakt ze alleen mee bij een nieuwe tabel; op een bestaande tabel
+        # moeten ze los.
+        for tabel in Base.metadata.sorted_tables:
+            if tabel.name not in tabellen:
+                continue
+            for index in tabel.indexes:
+                index.create(bind=conn, checkfirst=True)
 
-    if "enrichments" in tables:
-        existing_enr = {col["name"] for col in inspector.get_columns("enrichments")}
-        with engine.begin() as conn:
-            _add_column_if_missing(conn, "enrichments", existing_enr, "email", "VARCHAR(255)")
-
-    if "batches" in tables:
-        existing_batches = {col["name"] for col in inspector.get_columns("batches")}
-        with engine.begin() as conn:
-            if "created_at" not in existing_batches:
-                conn.execute(text("ALTER TABLE batches ADD COLUMN created_at TIMESTAMP"))
-                conn.execute(text(
-                    "UPDATE batches SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"
-                ))
-            if "completed_at" not in existing_batches:
-                conn.execute(text("ALTER TABLE batches ADD COLUMN completed_at TIMESTAMP"))
-            if "is_monitoringlijst" not in existing_batches:
-                conn.execute(text(
-                    "ALTER TABLE batches ADD COLUMN is_monitoringlijst BOOLEAN DEFAULT FALSE"
-                ))
-            if "geupload_door" not in existing_batches:
-                conn.execute(text("ALTER TABLE batches ADD COLUMN geupload_door VARCHAR(36)"))
-            if "map_id" not in existing_batches:
-                conn.execute(text("ALTER TABLE batches ADD COLUMN map_id VARCHAR(36)"))
-                # Alles wat er al stond bij elkaar in één map, zodat de nieuwe
-                # mappenpagina niet leeg opent en geen enkele bestaande lijst
-                # buiten beeld raakt. Alleen bij het aanmaken van de kolom:
-                # daarna bepaalt de gebruiker zelf waar een lijst hoort.
-                _vul_demomap(conn)
+    # Eenmalig, en alleen op het moment dat de kolom ontstaat.
+    if ("batches", "created_at") in toegevoegd:
+        # Geen verzonnen datum per rij, maar één moment: vanaf nu bekend.
         with engine.begin() as conn:
             conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_batches_map_id ON batches (map_id)"
+                "UPDATE batches SET created_at = CURRENT_TIMESTAMP "
+                "WHERE created_at IS NULL"
             ))
-
-    # De tabel zelf komt uit create_all, maar op omgevingen waar die al bestond
-    # vóór het archiveren bestond, ontbreekt deze kolom.
-    if "mappen" in tables:
-        existing_mappen = {col["name"] for col in inspector.get_columns("mappen")}
+    if ("batches", "map_id") in toegevoegd:
+        # Alles wat er al stond bij elkaar in één map, zodat de mappenpagina
+        # niet leeg opent en geen enkele bestaande lijst buiten beeld raakt.
+        # Daarna bepaalt de gebruiker zelf waar een lijst hoort.
         with engine.begin() as conn:
-            _add_column_if_missing(
-                conn, "mappen", existing_mappen, "gearchiveerd_op", "TIMESTAMP",
-            )
-
-    if "agent_results" in tables:
-        existing_ar = {col["name"] for col in inspector.get_columns("agent_results")}
-        with engine.begin() as conn:
-            for name, ddl_type in [
-                ("eigen_personeel", "INTEGER"), ("uitzend", "INTEGER"),
-                ("detachering", "INTEGER"), ("wsw", "INTEGER"),
-                ("man", "INTEGER"), ("vrouw", "INTEGER"),
-                ("voltijd", "INTEGER"), ("deeltijd", "INTEGER"),
-                ("pct_op_locatie", "FLOAT"), ("bron_pagina", "INTEGER"),
-                ("identity_class", "VARCHAR(30)"), ("scope_class", "VARCHAR(30)"),
-            ]:
-                _add_column_if_missing(conn, "agent_results", existing_ar, name, ddl_type)
-
-    if "candidates" in tables:
-        existing_cand = {col["name"] for col in inspector.get_columns("candidates")}
-        with engine.begin() as conn:
-            _add_column_if_missing(conn, "candidates", existing_cand, "reviewer_signaal", "TEXT")
-
-    if "batches" in tables:
-        existing_batches = {col["name"] for col in inspector.get_columns("batches")}
-        with engine.begin() as conn:
-            _add_column_if_missing(
-                conn, "batches", existing_batches, "verwijderd_op", "TIMESTAMP",
-            )
-
-    if "bron_kandidaten" in tables:
-        existing_bronnen = {
-            col["name"] for col in inspector.get_columns("bron_kandidaten")
-        }
-        with engine.begin() as conn:
-            for name, ddl_type in [
-                ("review_reason_code", "VARCHAR(50)"),
-                ("bron_relevant", "BOOLEAN"),
-                ("bron_volledig_ingelezen", "BOOLEAN"),
-                ("wp_oordeel", "VARCHAR(30)"),
-                ("gecorrigeerd_wp", "INTEGER"),
-                ("extractie_reason_code", "VARCHAR(50)"),
-                ("extractie_toelichting", "TEXT"),
-            ]:
-                _add_column_if_missing(
-                    conn, "bron_kandidaten", existing_bronnen, name, ddl_type,
-                )
-
-    if "jaarverslag_monitoring" in tables:
-        existing_monitoring = {
-            col["name"] for col in inspector.get_columns("jaarverslag_monitoring")
-        }
-        with engine.begin() as conn:
-            _add_column_if_missing(
-                conn,
-                "jaarverslag_monitoring",
-                existing_monitoring,
-                "laatste_verslagjaar",
-                "INTEGER",
-            )
-
-    if "chat_sessions" in tables:
-        existing_cs = {col["name"] for col in inspector.get_columns("chat_sessions")}
-        with engine.begin() as conn:
-            if "verwerkt" not in existing_cs:
-                conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN verwerkt BOOLEAN DEFAULT FALSE"))
-            if "vragen" not in existing_cs:
-                conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN vragen JSON"))
-            if "antwoorden" not in existing_cs:
-                conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN antwoorden JSON"))
-            if "messages" not in existing_cs:
-                conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN messages JSON"))
-            if "expires_at" not in existing_cs:
-                conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN expires_at TIMESTAMP"))
+            _vul_demomap(conn)

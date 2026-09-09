@@ -250,101 +250,12 @@ def test_companies_lijst_toont_vestigingsnummer_cber_kvk_en_sector(client, db_se
     assert item["sbi_omschrijving"] == "Detailhandel"
 
 
-def test_afgewerkt_migratie_geeft_bestaande_rijen_false_default():
-    """Verifieer dat wanneer de afgewerkt-kolom wordt toegevoegd aan een
-    bestaande companies-tabel, bestaande rijen de waarde False krijgen
-    (via DEFAULT FALSE in de ALTER TABLE) i.p.v. NULL.
-    Dit test de fix voor het issue waar een migrations-helper geen DEFAULT
-    clause toevoegde."""
-    from sqlalchemy import create_engine, event, inspect, text
-    from sqlite3 import Connection as SQLite3Connection
-
-    # Maak een apart testdatabase zonder afgewerkt kolom (simuleer oud schema)
-    test_engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False}
-    )
-
-    @event.listens_for(test_engine, "connect")
-    def set_sqlite_pragma(dbapi_conn, connection_record):
-        if isinstance(dbapi_conn, SQLite3Connection):
-            cursor = dbapi_conn.cursor()
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.close()
-
-    # Maak batches en companies tabellen zonder afgewerkt kolom
-    with test_engine.begin() as conn:
-        conn.execute(text("""
-            CREATE TABLE batches (
-                id TEXT PRIMARY KEY,
-                naam TEXT,
-                jaar INTEGER,
-                status TEXT DEFAULT 'pending',
-                totaal INTEGER,
-                verwerkt INTEGER DEFAULT 0,
-                created_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                is_monitoringlijst BOOLEAN DEFAULT FALSE
-            )
-        """))
-        conn.execute(text("""
-            CREATE TABLE companies (
-                id TEXT PRIMARY KEY,
-                batch_id TEXT NOT NULL,
-                vestigingsnummer TEXT,
-                naam TEXT NOT NULL,
-                cb_er TEXT,
-                adres TEXT,
-                gemeente TEXT,
-                sbi_code TEXT,
-                sbi_omschrijving TEXT,
-                kvk_nummer TEXT,
-                website_url TEXT,
-                telefoonnummer TEXT,
-                created_at TIMESTAMP,
-                FOREIGN KEY(batch_id) REFERENCES batches(id)
-            )
-        """))
-
-        # Voeg testdata in: bestaande batch en bedrijf
-        conn.execute(text("""
-            INSERT INTO batches (id, naam, jaar, created_at)
-            VALUES ('batch-1', 'test-batch', 2026, CURRENT_TIMESTAMP)
-        """))
-        conn.execute(text("""
-            INSERT INTO companies (id, batch_id, naam, created_at)
-            VALUES
-                ('comp-1', 'batch-1', 'Bedrijf 1', CURRENT_TIMESTAMP),
-                ('comp-2', 'batch-1', 'Bedrijf 2', CURRENT_TIMESTAMP)
-        """))
-
-    # Verifieer dat afgewerkt kolom nog niet bestaat
-    inspector = inspect(test_engine)
-    existing_companies = {col["name"] for col in inspector.get_columns("companies")}
-    assert "afgewerkt" not in existing_companies
-
-    # Voer de migratie uit
-    from app.database import _add_column_if_missing
-    with test_engine.begin() as conn:
-        _add_column_if_missing(conn, "companies", existing_companies, "afgewerkt", "BOOLEAN DEFAULT FALSE")
-
-    # Controleer dat de kolom nu bestaat
-    inspector = inspect(test_engine)
-    existing_companies = {col["name"] for col in inspector.get_columns("companies")}
-    assert "afgewerkt" in existing_companies
-
-    # Controleer dat bestaande rijen afgewerkt=0 (False in SQLite) hebben
-    with test_engine.begin() as conn:
-        result = conn.execute(text("SELECT id, afgewerkt FROM companies ORDER BY id"))
-        rows = result.fetchall()
-
-    assert len(rows) == 2
-    # SQLite returneerde 0 voor False en 1 voor True
-    for row_id, afgewerkt_waarde in rows:
-        assert afgewerkt_waarde == 0, (
-            f"Bestaande rij {row_id} moet afgewerkt=0 (False) hebben door DEFAULT FALSE, "
-            f"maar heeft {afgewerkt_waarde} (NULL zou None zijn)"
-        )
+# `test_afgewerkt_migratie_geeft_bestaande_rijen_false_default` stond hier.
+# Die test riep de private migratiehelper rechtstreeks aan met een handgemaakt
+# oud schema, en legde zo één kolom vast in plaats van de regel erachter. De
+# regel — een nieuwe kolom krijgt de standaardwaarde uit het model in plaats
+# van NULL — staat nu in `test_migraties.py`, samen met de rest van wat er
+# gebeurt als de database achterloopt op de modellen.
 
 
 def test_upload_batch_slaat_ingelogde_gebruiker_op(client, db_session):

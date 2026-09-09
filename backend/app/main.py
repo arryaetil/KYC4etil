@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,8 +16,30 @@ settings = get_settings()
 Base.metadata.create_all(bind=engine)
 ensure_lightweight_migrations()
 
+
+@asynccontextmanager
+async def levensduur(app: FastAPI):
+    """Wat er bij het starten en het stoppen van de service moet gebeuren.
+
+    Stond als drie losse `@app.on_event`-handlers. Die vorm is in FastAPI
+    afgeschreven en verdwijnt op enig moment; met een `requirements.txt` die
+    geen versies vastlegt is "op enig moment" een willekeurige dinsdag. Hier
+    staat opstarten en afsluiten bovendien naast elkaar, in de volgorde waarin
+    het gebeurt.
+    """
+    _reset_vastgelopen_batches()
+    start_scheduler()
+    yield
+    # Crawl4AI houdt één browser open voor de hele proceslevensduur; zonder dit
+    # blijft Chromium achter bij een herstart van de service.
+    from .providers.fetch import sluit_crawler
+
+    await sluit_crawler()
+
+
 app = FastAPI(title="KYC4etil Bronnenwerkbank", version="0.2.0",
-              description="Werkbank voor brononderzoek en menselijke bronbeoordeling")
+              description="Werkbank voor brononderzoek en menselijke bronbeoordeling",
+              lifespan=levensduur)
 
 
 @app.middleware("http")
@@ -54,10 +77,8 @@ app.include_router(research.router)
 app.include_router(research.bron_router)
 
 
-@app.on_event("startup")
-def reset_stuck_batches() -> None:
+def _reset_vastgelopen_batches() -> None:
     """Zet batches die tijdens een service-herstart liepen terug naar 'error'."""
-    import logging
     _log = logging.getLogger("startup")
     if settings.jwt_secret == "change-me":
         _log.critical(
@@ -83,24 +104,9 @@ def reset_stuck_batches() -> None:
             db.commit()
 
     except Exception as exc:
-        import logging
-        logging.getLogger("startup").error("Startup event fout: %s", exc)
+        _log.error("Startup event fout: %s", exc)
     finally:
         db.close()
-
-
-@app.on_event("startup")
-def start_jaarverslag_scheduler() -> None:
-    start_scheduler()
-
-
-@app.on_event("shutdown")
-async def sluit_gedeelde_browser() -> None:
-    """Crawl4AI houdt één browser open voor de hele proceslevensduur; zonder
-    dit blijft Chromium achter bij een herstart van de service."""
-    from .providers.fetch import sluit_crawler
-
-    await sluit_crawler()
 
 
 @app.get("/health")

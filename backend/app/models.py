@@ -70,7 +70,7 @@ class Batch(Base):
     # Leeg = losse lijst, zichtbaar buiten elke map. Bewust geen verplichte
     # koppeling: een lijst die via de API binnenkomt zonder map moet vindbaar
     # blijven in plaats van nergens te staan.
-    map_id: Mapped[str | None] = mapped_column(ForeignKey("mappen.id"))
+    map_id: Mapped[str | None] = mapped_column(ForeignKey("mappen.id"), index=True)
     # Prullenbak: gevuld = weggegooid maar nog terug te halen. Een lijst
     # verwijderen wist eerder alles ineens — inclusief elke beoordeling die
     # erin zat — zonder weg terug. Mappen kenden dit al (`gearchiveerd_op`);
