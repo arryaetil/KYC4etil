@@ -377,6 +377,87 @@ def test_handmatige_bron_wordt_als_reviewerinput_bewaard(client, db_session):
     assert kandidaat.reviewed_by == "test-user-id"
 
 
+def test_handmatige_bron_verdringt_de_gevonden_bronnen_niet(client, db_session):
+    """Een eigen bron toevoegen mag het onderzoek niet uit beeld duwen.
+
+    `add_manual_source` maakt een eigen run aan, en dit endpoint toonde de
+    kandidaten van precies één run — de nieuwste met kandidaten. Dat was dus
+    de handmatige run: drie gevonden bronkaarten in, één kaart over. Ook de
+    context (routes, diagnostiek, gevraagd jaar) kwam dan uit een run die die
+    niet heeft.
+    """
+    company = _maak_company(db_session)
+    run = ResearchRun(
+        company_id=company.id, batch_id=company.batch_id, doel="onderzoek",
+        status="completed", resultaat_status="review_nodig", gevraagd_jaar=2025,
+        onderzoekspaden=[{"route": "website", "verplicht": True,
+                          "status": "afgerond", "reden": "basis"}],
+        created_at=datetime(2026, 1, 1),
+    )
+    db_session.add(run)
+    db_session.flush()
+    for nummer in range(3):
+        db_session.add(BronKandidaat(
+            research_run_id=run.id, company_id=company.id,
+            url=f"https://voorbeeldzorg.nl/bron-{nummer}",
+            canonical_url=f"https://voorbeeldzorg.nl/bron-{nummer}",
+            brontype="website", status="voorgesteld", rang=nummer + 1,
+        ))
+    db_session.commit()
+
+    client.post(
+        f"/research/companies/{company.id}/manual-source",
+        json={"url": "https://voorbeeldzorg.nl/eigen-vondst"},
+    )
+
+    data = client.get(f"/research/companies/{company.id}/candidates").json()
+
+    assert [item["brontype"] for item in data["items"]] == [
+        "website", "website", "website", "handmatig",
+    ]
+    assert data["gevraagd_jaar"] == 2025
+    assert [pad["route"] for pad in data["onderzoekspaden"]] == ["website"]
+
+
+def test_er_is_hoogstens_een_gekozen_bron_per_vestiging(client, db_session):
+    """De keuze geldt per vestiging, niet per run.
+
+    De onttroning keek alleen binnen dezelfde onderzoeksrun. Een handmatige
+    bron zit in een eigen run en werd meteen geaccepteerd, dus stonden er twee
+    kaarten tegelijk op "Gekozen" zodra ze samen in beeld kwamen.
+    """
+    company = _maak_company(db_session)
+    run = ResearchRun(company_id=company.id, batch_id=company.batch_id,
+                      doel="onderzoek", status="completed")
+    db_session.add(run)
+    db_session.flush()
+    gevonden = BronKandidaat(
+        research_run_id=run.id, company_id=company.id,
+        url="https://voorbeeldzorg.nl/jaarverslag",
+        canonical_url="https://voorbeeldzorg.nl/jaarverslag",
+        brontype="jaarverslag", status="voorgesteld", rang=1,
+    )
+    db_session.add(gevonden)
+    db_session.commit()
+
+    client.post(
+        f"/research/candidates/{gevonden.id}/review",
+        json={"beslissing": "accepteren"},
+    )
+    client.post(
+        f"/research/companies/{company.id}/manual-source",
+        json={"url": "https://voorbeeldzorg.nl/eigen-vondst"},
+    )
+
+    data = client.get(f"/research/companies/{company.id}/candidates").json()
+    gekozen = [item for item in data["items"] if item["status"] == "geaccepteerd"]
+
+    assert [item["brontype"] for item in gekozen] == ["handmatig"]
+    assert [item["status"] for item in data["items"]] == [
+        "alternatief", "geaccepteerd",
+    ]
+
+
 def test_run_api_toont_onderzoeksdiagnostiek(client, db_session):
     company = _maak_company(db_session)
     run = ResearchRun(

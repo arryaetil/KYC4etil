@@ -86,7 +86,9 @@ export function BronKaart({
       )}
     >
       <div className="flex items-baseline gap-2">
-        <span className="text-xs tabular-nums text-mist-50">{rang}</span>
+        {rang ? (
+          <span className="text-xs tabular-nums text-mist-50">{rang}</span>
+        ) : null}
         <span className="text-sm font-medium text-ink">
           {brontypeLabel(candidate.brontype)}
         </span>

@@ -164,6 +164,37 @@ def _onderzoekspaden(run: ResearchRun) -> list[dict]:
     ]
 
 
+def _zet_andere_keuzes_op_alternatief(
+    db: Session,
+    candidate: BronKandidaat,
+) -> None:
+    """Per vestiging is er één gekozen bron.
+
+    Dit keek eerder alleen binnen dezelfde onderzoeksrun. Dat was hetzelfde
+    zolang het paneel ook maar één run toonde, maar een handmatig toegevoegde
+    bron zit per definitie in een eigen run: zodra die naast de gevonden
+    bronnen staat, zeggen twee kaarten tegelijk "Gekozen". De run is hier niet
+    de juiste eenheid — een `Company` hoort bij precies één lijst, dus alle
+    runs eronder gaan over dezelfde vestiging, en daarvoor kiest de reviewer
+    één bron.
+
+    De vorige keuze wordt "alternatief" en geen afwijzing: ze was relevant, ze
+    is alleen niet meer de gekozene. De reviewerstatistiek telt beide als
+    geaccepteerd, dus dit vertekent geen cijfers.
+    """
+    andere = (
+        db.query(BronKandidaat)
+        .filter(
+            BronKandidaat.company_id == candidate.company_id,
+            BronKandidaat.id != candidate.id,
+            BronKandidaat.status == "geaccepteerd",
+        )
+        .all()
+    )
+    for item in andere:
+        item.status = "alternatief"
+
+
 def _gedeelde_bronnen(
     db: Session,
     batch_id: str,
@@ -396,17 +427,30 @@ def get_research_run(run_id: str, db: Session = Depends(get_db)):
 
 @router.get("/companies/{company_id}/candidates")
 def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
-    if db.get(Company, company_id) is None:
+    company = db.get(Company, company_id)
+    if company is None:
         raise HTTPException(404, "company niet gevonden")
+
+    # Een bron die de reviewer zelf aandraagt hoort bij de vestiging, niet bij
+    # één onderzoeksrun. `add_manual_source` geeft hem wel een eigen run — dat
+    # houdt het werk van de agent en dat van de reviewer uit elkaar — maar die
+    # run is daardoor ook de nieuwste, en dit endpoint toonde de kandidaten van
+    # precies één run. Eén eigen bron toevoegen liet zo alle gevonden
+    # bronkaarten uit het paneel verdwijnen: drie kaarten in, één kaart over.
+    # Vandaar apart ophalen en er altijd bij.
+    handmatig = (
+        db.query(BronKandidaat)
+        .filter_by(company_id=company_id, brontype="handmatig")
+        .order_by(BronKandidaat.created_at)
+        .all()
+    )
+
     runs = (
         db.query(ResearchRun)
         .filter_by(company_id=company_id)
         .order_by(ResearchRun.created_at.desc())
         .all()
     )
-    if not runs:
-        return {"items": [], "gevraagd_jaar": None, "diagnostiek": {},
-                "kosten": {}, "onderzoekspaden": [], "bronsamenvatting": None}
 
     # De nieuwste run die daadwerkelijk iets opleverde, niet simpelweg de
     # nieuwste. Een monitoringronde die niets vindt maakt óók een run aan, en
@@ -417,40 +461,53 @@ def get_company_candidates(company_id: str, db: Session = Depends(get_db)):
     #
     # Alles komt uit dezelfde run — kandidaten, routes, diagnostiek, kosten —
     # zodat het paneel niet half het ene en half het andere onderzoek toont.
+    # De handmatige run telt hier niet mee: die heeft geen routes, geen
+    # diagnostiek en geen gevraagd jaar, en zou dat alles dus leegmaken.
     def _kandidaten_van(run_id: str) -> list[BronKandidaat]:
         return (
             db.query(BronKandidaat)
-            .filter_by(research_run_id=run_id)
+            .filter(
+                BronKandidaat.research_run_id == run_id,
+                BronKandidaat.brontype != "handmatig",
+            )
             .order_by(BronKandidaat.rang)
             .all()
         )
 
-    laatste_run, kandidaten = runs[0], _kandidaten_van(runs[0].id)
+    laatste_run = runs[0] if runs else None
+    kandidaten = _kandidaten_van(laatste_run.id) if laatste_run else []
     if not kandidaten:
         for run in runs[1:]:
             eerdere = _kandidaten_van(run.id)
             if eerdere:
                 laatste_run, kandidaten = run, eerdere
                 break
-    gedeelde_bronnen = _gedeelde_bronnen(db, laatste_run.batch_id)
+
+    gedeelde_bronnen = _gedeelde_bronnen(db, company.batch_id)
+    # De eigen bronnen onderaan: de rangorde erboven is die van de agent, en
+    # een reviewersbron heeft daar geen plaats in.
+    items = kandidaten + handmatig
     return {
         "items": [
             _candidate_dict(
                 item,
                 gedeelde_bronnen.get(item.canonical_url, 1),
             )
-            for item in kandidaten
+            for item in items
         ],
         # Het jaar dat déze run vroeg, zodat de bronkaart het niet hoeft te
         # raden uit het batchjaar. Een monitoringronde en een handmatig gestarte
         # run kunnen een ander gevraagd_jaar hebben.
-        "gevraagd_jaar": laatste_run.gevraagd_jaar,
-        "kosten": _run_kosten(laatste_run),
-        "diagnostiek": _run_diagnostiek(laatste_run),
+        "gevraagd_jaar": laatste_run.gevraagd_jaar if laatste_run else None,
+        "kosten": _run_kosten(laatste_run) if laatste_run else {},
+        "diagnostiek": _run_diagnostiek(laatste_run) if laatste_run else {},
         # De gegenereerde alinea. De kop en de kleur erboven blijven uit de
         # vaste regels komen; dit vervangt alleen de toelichting.
-        "bronsamenvatting": (laatste_run.configuratie or {}).get("bronsamenvatting"),
-        "onderzoekspaden": _onderzoekspaden(laatste_run),
+        "bronsamenvatting": (
+            (laatste_run.configuratie or {}).get("bronsamenvatting")
+            if laatste_run else None
+        ),
+        "onderzoekspaden": _onderzoekspaden(laatste_run) if laatste_run else [],
     }
 
 
@@ -498,17 +555,7 @@ def review_candidate(
         raise HTTPException(422, "een toelichting is verplicht bij 'anders'")
 
     if body.beslissing == "accepteren":
-        andere = (
-            db.query(BronKandidaat)
-            .filter(
-                BronKandidaat.research_run_id == candidate.research_run_id,
-                BronKandidaat.id != candidate.id,
-                BronKandidaat.status == "geaccepteerd",
-            )
-            .all()
-        )
-        for item in andere:
-            item.status = "alternatief"
+        _zet_andere_keuzes_op_alternatief(db, candidate)
         candidate.status = "geaccepteerd"
         candidate.review_reason_code = ACCEPT_REASON
         candidate.bron_relevant = True
@@ -583,6 +630,10 @@ def add_manual_source(
         validaties={"handmatig_toegevoegd": True},
     )
     db.add(candidate)
+    db.flush()
+    # Een eigen bron toevoegen ís de keuze maken. Stond er al een gekozen bron,
+    # dan wordt dat het alternatief — anders zeggen er twee kaarten "Gekozen".
+    _zet_andere_keuzes_op_alternatief(db, candidate)
     db.commit()
     return {"candidate_id": candidate.id, "run_id": run.id}
 

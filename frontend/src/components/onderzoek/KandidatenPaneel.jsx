@@ -315,7 +315,9 @@ export function KandidatenPaneel({
             <BronKaart
               key={candidate.id}
               candidate={candidate}
-              rang={candidate.rang || index + 1}
+              // Een handmatig toegevoegde bron staat buiten de rangorde van de
+              // agent; een nummer erbij zou een positie suggereren die ze niet heeft.
+              rang={candidate.brontype === "handmatig" ? null : candidate.rang || index + 1}
               gevraagdJaar={gevraagdJaar}
               isGeselecteerd={candidate.id === geselecteerdeBronId}
               isAangewezen={candidate.id === gemarkeerdeBronId}
