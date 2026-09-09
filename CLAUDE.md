@@ -49,6 +49,10 @@ niet meer geregistreerd en de publieke chatroute is uit de frontend gehaald.
   DSM-Firmenich en BAM komen er bewust met een grote afwijking doorheen: hun
   bovenste kaart zegt `organisatieomvang` en dus niet dat het om déze
   vestiging gaat.
+- Snelheid: `cd backend && PROVIDER_MODE=mock python -m scripts.bench_batch` —
+  meet de doorlooptijd van een lijst met de echte `run_research_batch` en een
+  gereedschapslaag die wacht in plaats van het netwerk op te gaan. Wachttijden
+  geijkt op productie en door tien gedeeld; lees verhoudingen, geen seconden.
 - **UI-rookproef: `cd backend && python -m scripts.ui_check`.** Verplicht bij
   elke frontendwijziging. Groene tests en een geslaagde build zeggen niets
   over of de interface het dóet — de mappenlaag ging live met 463 groene
