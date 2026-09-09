@@ -36,9 +36,19 @@ niet meer geregistreerd en de publieke chatroute is uit de frontend gehaald.
   waarde won voorheen, wat drie tests stil over het netwerk liet gaan.
 - Frontend: `cd frontend && npm test -- --run`.
 - Validatie: `cd backend && PROVIDER_MODE=mock python -m scripts.validate` —
-  streefwaarden coverage ≥70%, MAPE 🟢 ≤10%, kalibratie ≥80%. Staat nu op
-  100% / 0,0% / 100%. Zonder die variabele stopt het script met uitleg in
-  plaats van een nulmeting te rapporteren.
+  streefwaarden dekking ≥70%, afwijking op hard bewijs ≤10%, kalibratie ≥80%.
+  Staat nu op 95% / 0,0% / 100%. Zonder die variabele stopt het script met
+  uitleg in plaats van een nulmeting te rapporteren.
+
+  Dit script draaide tot 09-09-2026 `pipeline.runner.run_batch` — de oude
+  Candidate-pipeline, die nergens meer wordt aangeroepen. Het gaf dus groen
+  licht op code die niet meer draait. Het meet nu `run_research_batch`, en de
+  drie maten gaan over bronkaarten: heeft de organisatie een WP-getal, zitten
+  de bronnen die zichzelf als hard bewijs aandienen (rol `direct_wp_bewijs`)
+  er ver naast, en belooft de bovenste kaart niets wat ze niet waarmaakt.
+  DSM-Firmenich en BAM komen er bewust met een grote afwijking doorheen: hun
+  bovenste kaart zegt `organisatieomvang` en dus niet dat het om déze
+  vestiging gaat.
 - **UI-rookproef: `cd backend && python -m scripts.ui_check`.** Verplicht bij
   elke frontendwijziging. Groene tests en een geslaagde build zeggen niets
   over of de interface het dóet — de mappenlaag ging live met 463 groene
