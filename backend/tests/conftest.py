@@ -12,6 +12,7 @@ import os
 # in de repository staat.
 os.environ["PROVIDER_MODE"] = "mock"
 
+
 import fitz  # noqa: E402  (PyMuPDF)
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -56,6 +57,60 @@ def _override_db():
         yield db
     finally:
         db.close()
+
+
+class _GeenNetwerkInTests:
+    """Een OpenAI-client die niet belt, maar het zegt.
+
+    PROVIDER_MODE=mock hierboven is niet genoeg: niet elke modelcall kijkt
+    ernaar. `_llm_classify_scope` bijvoorbeeld belt altijd, en dat gebeurde ook
+    in de testsuite. De aanroeper vangt elke fout af en levert een lege
+    uitkomst, dus dat kwam terug als een assertie die faalde op iets heel
+    anders — of, met een geldige sleutel in `.env`, als een test die geld kost
+    en per run een ander antwoord krijgt.
+
+    Een `OPENAI_BASE_URL` naar een dode poort werkt ook, maar dan retryt de SDK
+    eerst: dit bestand deed er 78 seconden over. Zo faalt het meteen, en staat
+    er in de melding wat er echt aan de hand is.
+
+    Een test die de client zélf vervangt (test_live_openai) overschrijft deze
+    patch in zijn eigen body en merkt hier niets van.
+    """
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __getattr__(self, naam):
+        raise RuntimeError(
+            "Deze test roept een echt OpenAI-model aan. Vervang de modelcall "
+            "(monkeypatch de betreffende functie) of laat de test hier niet "
+            "langs komen."
+        )
+
+
+@pytest.fixture(autouse=True)
+def _geen_echte_modelcalls(monkeypatch):
+    import openai
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", _GeenNetwerkInTests)
+    monkeypatch.setattr(openai, "AsyncAzureOpenAI", _GeenNetwerkInTests)
+
+
+@pytest.fixture(autouse=True)
+def _schone_temperature_cache():
+    """`llm._ZONDER_TEMPERATURE` is state op moduleniveau en overleeft dus de
+    test die hem vult.
+
+    Een test in dit bestand die echt het netwerk op gaat krijgt van luna een
+    400 op `temperature` terug, waarna het model in die set belandt. Elke
+    latere test die luna gebruikt ziet dan geen temperature meer worden
+    doorgegeven en faalt op iets wat niets met die test te maken heeft. Dat
+    hing tot nu toe af van welk model er lokaal in `.env` stond.
+    """
+    from app.providers import llm
+    llm._ZONDER_TEMPERATURE.clear()
+    yield
+    llm._ZONDER_TEMPERATURE.clear()
 
 
 @pytest.fixture(autouse=True)

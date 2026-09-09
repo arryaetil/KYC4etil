@@ -229,9 +229,19 @@ async def test_correcte_bron_vorig_jaar_blijft_als_context_beschikbaar():
 
 
 @pytest.mark.asyncio
-async def test_officieel_groepsdocument_is_niet_automatisch_exacte_vestiging():
+async def test_officieel_groepsdocument_is_niet_automatisch_exacte_vestiging(
+    monkeypatch,
+):
     reviewer = IntelligentSourceReviewer()
     reviewer._llm_review = AsyncMock()
+    # De scope wordt op het eigen domein apart geclassificeerd; die call werd
+    # hier nooit vervangen en ging dus echt het netwerk op. Wat deze test
+    # vastlegt is de bedrading: de tak neemt `document.scope_class` niet blind
+    # over (dat wás de regressie) maar vraagt het na, en gebruikt het antwoord.
+    scope_call = AsyncMock(return_value="concern")
+    monkeypatch.setattr(
+        "app.research.source_reviewer._llm_classify_scope", scope_call,
+    )
     document = SourceDocument(
         naam="Zorglocatie Binnenhof",
         company_website_url="https://zorggroep.example/locaties/binnenhof",
@@ -249,13 +259,11 @@ async def test_officieel_groepsdocument_is_niet_automatisch_exacte_vestiging():
 
     assert reviewed.is_afgewezen is False
     assert reviewed.identity_class == "same_brand_or_group"
-    # "concern", niet "unknown": 4.900 is het groepstotaal en niet het aantal
-    # van déze locatie. Deze assertie stond op "unknown" omdat de scope-call
-    # onder PROVIDER_MODE=live faalde en stil op de fallback uitkwam; met de
-    # deterministische classifier komt het juiste label eruit. Het onderscheid
-    # doet er ook echt toe: kandidaten met scope "concern" zaten in de
-    # productiedata 9% van de tijd binnen 10% van de waarheid, tegen 65% voor
-    # scope "limburg".
+    # 4.900 is het groepstotaal en niet het aantal van déze locatie. Het
+    # onderscheid doet er ook echt toe: kandidaten met scope "concern" zaten in
+    # de productiedata 9% van de tijd binnen 10% van de waarheid, tegen 65%
+    # voor scope "limburg".
+    scope_call.assert_awaited_once()
     assert reviewed.document.scope_class == "concern"
     assert reviewed.validaties["intelligente_review"]["beslissing"] == "context_only"
     reviewer._llm_review.assert_not_awaited()

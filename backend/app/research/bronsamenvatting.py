@@ -77,6 +77,12 @@ async def schrijf_samenvatting(
     settings = get_settings()
     if not kandidaten or not settings.openai_api_key:
         return None
+    # Ook in mockmodus zwijgen. De sleutelcontrole hierboven dekt dat niet: met
+    # een sleutel in `.env` deed een "deterministische" mockrun alsnog één
+    # modelcall per organisatie, en dan is `scripts.validate` noch de
+    # testsuite reproduceerbaar of gratis.
+    if settings.provider_mode != "live":
+        return None
 
 
     from ..providers import llm
