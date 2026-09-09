@@ -206,10 +206,14 @@ async def _relevante_bronpaginas(bron_url: str) -> list[tuple[int | None, str]]:
     # organisatie de PDF vervangt of weghaalt.
     documenten.bewaar(bron_url, response.content)
     document = fitz.open(stream=response.content, filetype="pdf")
+    # Eerst uitpakken, dan filteren. Stond dit in één comprehension, dan riep
+    # de conditie get_text() nog een keer aan naast de tuple: bij een verslag
+    # van 109 pagina's 218 extracties in plaats van 109.
+    paginas = [(index + 1, pagina.get_text()) for index, pagina in enumerate(document)]
     return [
-        (index + 1, pagina.get_text())
-        for index, pagina in enumerate(document)
-        if any(woord in pagina.get_text().lower() for woord in _WP_TREFWOORDEN)
+        (nummer, tekst)
+        for nummer, tekst in paginas
+        if any(woord in tekst.lower() for woord in _WP_TREFWOORDEN)
     ]
 
 
