@@ -43,13 +43,26 @@ def _naamconflict(naam: str, botsing: Map) -> str:
     return f'Er bestaat al een map met de naam "{naam}"'
 
 
-def _lijsten_in_map(db: Session, map_id: str) -> int:
+def _telbare_lijsten(db: Session):
+    """De lijsten die een teller in dit scherm hoort mee te tellen.
+
+    Eén plek, want de twee tellers hieronder gaan over hetzelfde begrip en
+    liepen uit elkaar: ze telden wel de monitoringlijsten weg maar niet de
+    prullenbak, terwijl het lijstoverzicht (batches.py) dat wel doet. Een map
+    bleef daardoor "1 lijst" melden die er niet meer was, en bij "Zonder map"
+    was dat erger dan cosmetisch: die tegel verschijnt alleen zolang de teller
+    boven nul staat, dus hij bleef staan en leidde naar een leeg scherm,
+    zonder iets dat je kon weghalen.
+    """
     return (
         db.query(Batch)
-        .filter(Batch.map_id == map_id)
         .filter(Batch.is_monitoringlijst.isnot(True))
-        .count()
+        .filter(Batch.verwijderd_op.is_(None))
     )
+
+
+def _lijsten_in_map(db: Session, map_id: str) -> int:
+    return _telbare_lijsten(db).filter(Batch.map_id == map_id).count()
 
 
 def _als_json(db: Session, map_obj: Map) -> dict:
@@ -89,10 +102,7 @@ def list_mappen(gearchiveerd: bool = False, db: Session = Depends(get_db)):
         # Lijsten zonder map horen zichtbaar te blijven. Zonder deze teller zou
         # een lijst die buiten een map is aangemaakt nergens opduiken.
         "losse_lijsten": (
-            db.query(Batch)
-            .filter(Batch.map_id.is_(None))
-            .filter(Batch.is_monitoringlijst.isnot(True))
-            .count()
+            _telbare_lijsten(db).filter(Batch.map_id.is_(None)).count()
         ),
     }
 

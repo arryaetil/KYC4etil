@@ -141,6 +141,36 @@ def test_monitoringlijst_telt_niet_mee_in_een_map(client, db_session):
     assert client.delete(f"/mappen/{gemaakt['id']}").status_code == 200
 
 
+def test_weggegooide_lijst_telt_niet_meer_mee(client, db_session):
+    """Een lijst in de prullenbak is uit beeld en hoort nergens meer te tellen.
+
+    Deed hij wel, en bij "Zonder map" was dat vervelender dan een verkeerd
+    getal: die tegel verschijnt alleen zolang de teller boven nul staat, dus
+    hij bleef staan, leidde naar een leeg scherm, en er viel niets te
+    verwijderen omdat het geen echte map is.
+    """
+    lijst = Batch(naam="Wegwerp", jaar=2026, totaal=1)
+    db_session.add(lijst)
+    db_session.commit()
+    assert client.get("/mappen").json()["losse_lijsten"] == 1
+
+    assert client.delete(f"/batches/{lijst.id}").status_code == 200
+    assert client.get("/mappen").json()["losse_lijsten"] == 0
+
+
+def test_map_met_alleen_weggegooide_lijsten_oogt_en_telt_leeg(client, db_session):
+    """En blokkeert het verwijderen van de map dus ook niet: de melding
+    "deze map bevat 1 lijst" over een map die leeg oogt is niet te volgen."""
+    gemaakt = _maak_map(client, "Oud werk")
+    lijst = Batch(naam="Wegwerp", jaar=2026, totaal=1, map_id=gemaakt["id"])
+    db_session.add(lijst)
+    db_session.commit()
+    assert client.delete(f"/batches/{lijst.id}").status_code == 200
+
+    assert client.get("/mappen").json()["mappen"][0]["aantal_lijsten"] == 0
+    assert client.delete(f"/mappen/{gemaakt['id']}").status_code == 200
+
+
 def test_onbekende_map_geeft_404(client):
     assert client.patch("/mappen/bestaat-niet", json={"naam": "X"}).status_code == 404
     assert client.delete("/mappen/bestaat-niet").status_code == 404
