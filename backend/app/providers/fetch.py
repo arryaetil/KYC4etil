@@ -170,7 +170,12 @@ async def _brontekst(url: str, max_tekens: int = 20_000) -> str:
 # Crawl4AI draait op een echte browser. Eén gedeelde instantie per proces is
 # fors goedkoper dan een browser per pagina, en de semafoor voorkomt dat het
 # parallelle inspecteren in de supervisor (tot research_max_pages pagina's in
-# één asyncio.gather) evenveel Chromium-instanties tegelijk openzet.
+# één asyncio.gather) evenveel tabs tegelijk openzet.
+#
+# Eén semafoor voor het hele proces, dus voor alle organisaties samen. Meer
+# organisaties tegelijk betekent daarom niet vanzelf meer renders tegelijk;
+# Settings.crawl4ai_max_parallel laat de rem meegroeien, zodat het parallelle
+# werk niet alsnog achter drie plaatsen op een rij komt te staan.
 _crawler = None
 _crawler_lock: asyncio.Lock | None = None
 _crawler_semafoor: asyncio.Semaphore | None = None
@@ -265,9 +270,11 @@ async def _haal_pagina_op_crawl4ai(url: str) -> dict:
         # in de timeout — totaal verlies in plaats van een tragere pagina.
         wait_until="domcontentloaded",
         # Krapper dan de default (60s): met research_max_pages=15 en drie
-        # renders tegelijk zijn dat vijf golven. Bij 60s zou één trage site de
-        # research_company_timeout_seconds (300s) alleen al met renderen
-        # kunnen opmaken.
+        # renders per organisatie tegelijk zijn dat vijf golven. Bij 60s zou
+        # één trage site de research_company_timeout_seconds (300s) alleen al
+        # met renderen kunnen opmaken. Die rekensom klopt alleen zolang de rem
+        # meegroeit met het aantal organisaties dat tegelijk loopt — zie
+        # Settings.crawl4ai_max_parallel.
         page_timeout=30000,
         markdown_generator=DefaultMarkdownGenerator(
             content_filter=PruningContentFilter(

@@ -70,10 +70,17 @@ class Settings(BaseSettings):
     # tabellen en zonder navigatie-boilerplate: minder ruis én minder
     # inputtokens. Werkt alleen als playwright_enabled aanstaat.
     crawl4ai_altijd: bool = True
-    # Maximaal aantal gelijktijdige renders op de gedeelde browser. De
-    # supervisor inspecteert tot research_max_pages pagina's in één gather;
-    # zonder deze rem zouden dat evenveel gelijktijdige tabs zijn.
-    crawl4ai_max_parallel: int = 3
+    # Maximaal aantal gelijktijdige renders op de gedeelde browser, per
+    # organisatie. De supervisor inspecteert tot research_max_pages pagina's in
+    # één gather; zonder deze rem zouden dat evenveel gelijktijdige tabs zijn.
+    #
+    # Per organisatie, want de semafoor in fetch.py is er één voor het hele
+    # proces. Toen dit getal werd gekozen liep er één organisatie tegelijk en
+    # was het verschil er niet. Sinds research_max_parallel_companies boven 1
+    # staat delen alle organisaties diezelfde plaatsen, en dan is een vast
+    # getal stilzwijgend een deling: vier organisaties kregen samen nog steeds
+    # drie tabs. Zie crawl4ai_max_parallel hieronder voor de procesbrede rem.
+    crawl4ai_max_parallel_per_organisatie: int = 3
     frontend_origin: str = "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174"
     frontend_url: str = "http://localhost:5173"  # publieke URL voor chat-links in emails
     resend_api_key: str = ""
@@ -111,6 +118,26 @@ class Settings(BaseSettings):
     rank_w_relevantie: float = 0.20
     rank_w_actualiteit: float = 0.15
     rank_w_bewijs: float = 0.10
+
+    @property
+    def crawl4ai_max_parallel(self) -> int:
+        """Procesbrede rem op de gedeelde browser: zoveel renders per
+        organisatie, maal het aantal organisaties dat tegelijk loopt.
+
+        Afgeleid en niet apart in te stellen, omdat de twee getallen niet los
+        van elkaar kunnen bestaan: de semafoor in fetch.py geldt voor het hele
+        proces, dus elke organisatie die erbij komt deelt mee. Twee losse
+        constanten hielden dat verband verborgen, en daar ging het eerder mis.
+
+        Het raakt ook de timeout en niet alleen de snelheid. page_timeout staat
+        op 30s en research_max_pages op 15: met drie renders tegelijk zijn dat
+        vijf golven (150s) en dat past binnen research_company_timeout_seconds
+        (300s). Zouden vier organisaties samen drie plaatsen houden, dan worden
+        het twintig golven en loopt een organisatie in haar eigen timeout.
+        """
+        return self.crawl4ai_max_parallel_per_organisatie * max(
+            1, self.research_max_parallel_companies,
+        )
 
     @property
     def effective_database_url(self) -> str:

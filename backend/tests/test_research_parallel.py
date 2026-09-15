@@ -255,3 +255,27 @@ async def test_bron_uit_een_andere_lijst_wordt_wel_opnieuw_gelezen(db_session):
     )
 
     assert gelezen == ["https://concern.example/jaarverslag-2025.pdf"]
+
+def test_browserrem_groeit_mee_met_het_aantal_organisaties():
+    """De semafoor in fetch.py geldt voor het hele proces, dus alle
+    organisaties delen die plaatsen. Toen dit een vast getal was kregen vier
+    organisaties samen nog steeds drie renders tegelijk, en stond het
+    parallelle werk alsnog in de rij. Dat verband is nergens af te lezen aan
+    de code die hem gebruikt, vandaar deze test."""
+    settings = get_settings()
+    per_organisatie = settings.crawl4ai_max_parallel_per_organisatie
+    origineel = settings.research_max_parallel_companies
+    try:
+        settings.research_max_parallel_companies = 4
+        assert settings.crawl4ai_max_parallel == per_organisatie * 4
+
+        # Op 1 is het gedrag exact als vóór het parallelliseren: de rem is
+        # dan weer precies het getal per organisatie.
+        settings.research_max_parallel_companies = 1
+        assert settings.crawl4ai_max_parallel == per_organisatie
+
+        # 0 of minder mag de browser niet stilzetten.
+        settings.research_max_parallel_companies = 0
+        assert settings.crawl4ai_max_parallel == per_organisatie
+    finally:
+        settings.research_max_parallel_companies = origineel

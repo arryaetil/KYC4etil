@@ -18,6 +18,14 @@ Twee vormen van lijst, want ze hebben niet dezelfde bottleneck:
   vestigingen, 407 bronkaarten over 149 unieke URL's. Daar telt ook of
   hetzelfde jaarverslag één keer of tien keer wordt gelezen.
 
+De gedeelde browser laat maar een beperkt aantal pagina's tegelijk renderen
+(`fetch._crawler_semafoor`, procesbreed), en die rem zit hier in de meting.
+Dat is nodig sinds er meer organisaties tegelijk lopen: ze delen die plaatsen,
+dus een rem die niet meegroeit zet het parallelle werk weer op een rij. Elke
+HTML-leesbeurt rendert hier; in productie staat CRAWL4AI_ALTIJD op false en
+rendert alleen wat de platte HTTP-poging niet prijsgeeft. Wat je hier van de
+rem ziet is dus de bovengrens, niet het dagelijkse beeld.
+
 Deze benchmark heeft één idee al afgeschoten: vestigingen van dezelfde
 organisatie groeperen en er één vooruitsturen, zodat de rest haar bronnen kan
 overnemen. Dat kost meer dan het oplevert — alleen de eerste golf loopt het
@@ -45,7 +53,14 @@ from app.research.validation import SourceDocument, valideer_bron  # noqa: E402
 # Alles door tien. Zie de moduletekst: het gaat om de verhouding.
 SCHAAL = 10
 T_ZOEKEN = 0.6 / SCHAAL      # één Serper-zoekopdracht
-T_LEZEN = 3.0 / SCHAAL       # ophalen + extractiecall over de paginatekst
+# Ophalen + extractiecall over de paginatekst: samen 3,0s, zoals eerder geijkt.
+# Hier gesplitst, want alleen het ophalen staat achter de browserrem: de
+# semafoor in fetch.py omsluit `crawler.arun` en niet de extractie die erop
+# volgt. De verdeling half/half is een aanname — is het renderdeel in
+# werkelijkheid groter, dan knijpt de rem harder dan hier te zien is.
+T_RENDEREN = 1.5 / SCHAAL
+T_EXTRACTIE = 1.5 / SCHAAL
+T_LEZEN = T_RENDEREN + T_EXTRACTIE
 T_REVIEW = 2.0 / SCHAAL      # de bronreview-call
 T_SCOPE = 1.5 / SCHAAL       # losse scope-call als de scope nog niet vaststaat
 T_SAMENVATTING = 1.5 / SCHAAL
@@ -54,14 +69,24 @@ AANTAL = 12
 
 
 class TraagTools:
-    """Doet niets, maar doet er wel even over. Telt wat het gedaan heeft."""
+    """Doet niets, maar doet er wel even over. Telt wat het gedaan heeft.
 
-    def __init__(self, gedeeld: bool):
+    `rem` staat voor `fetch._crawler_semafoor`: de gedeelde browser laat maar
+    een beperkt aantal renders tegelijk toe, en die semafoor geldt voor het
+    hele proces — dus voor alle organisaties samen. Zonder dat hier zat de
+    benchmark naast de werkelijkheid: hij mat de winst van parallel draaien
+    zonder de rem die dat parallelle werk juist opnieuw op een rij zet.
+    """
+
+    def __init__(self, gedeeld: bool, rem: asyncio.Semaphore):
         # Bij een organisatie met meer vestigingen wijst iedereen naar hetzelfde
         # concernjaarverslag; dat is precies de bron die herbruikbaar is.
         self.gedeeld = gedeeld
+        self.rem = rem
         self.gelezen = 0
+        self.gerenderd = 0
         self.gezocht = 0
+        self.remwacht = 0.0
 
     def _documenten_voor(self, naam: str) -> list[tuple[str, str, str]]:
         stam = "concern" if self.gedeeld else naam.lower().replace(" ", "-")
@@ -86,7 +111,19 @@ class TraagTools:
 
     async def inspect(self, context, query, result) -> SourceDocument | None:
         self.gelezen += 1
-        await asyncio.sleep(T_LEZEN)
+        if ".pdf" in result.url:
+            # De PDF-route raakt de browser niet aan: fetch.py stuurt een
+            # PDF-URL langs de renderpoging heen, en live_tools laat hem door
+            # de jaarverslag-agent lezen. Die leesbeurt wacht dus op niets.
+            await asyncio.sleep(T_LEZEN)
+        else:
+            self.gerenderd += 1
+            begin = time.perf_counter()
+            async with self.rem:
+                self.remwacht += time.perf_counter() - begin
+                await asyncio.sleep(T_RENDEREN)
+            # De extractiecall staat buiten de semafoor; de tab is dan al vrij.
+            await asyncio.sleep(T_EXTRACTIE)
         scope = next(
             (s for url, _, s in self._documenten_voor(context.naam)
              if url == result.url),
@@ -194,8 +231,8 @@ def _zet_klaar(naam: str, gedeeld: bool, aantal: int = AANTAL) -> str:
         return batch.id
 
 
-def _patch(monkeys, gedeeld: bool, hergebruik: bool):
-    tools = TraagTools(gedeeld=gedeeld)
+def _patch(monkeys, gedeeld: bool, hergebruik: bool, rem: asyncio.Semaphore):
+    tools = TraagTools(gedeeld=gedeeld, rem=rem)
     reviewer = TraagReviewer(tools)
     monkeys.update({
         (service, "LiveResearchTools"): lambda: tools,
@@ -223,27 +260,34 @@ def _patch(monkeys, gedeeld: bool, hergebruik: bool):
 
 
 async def _meet(label: str, gedeeld: bool, parallel: int, hergebruik: bool,
-                aantal: int = AANTAL, herhalingen: int = 2) -> dict:
+                aantal: int = AANTAL, herhalingen: int = 2,
+                rem: int | None = None) -> dict:
     """De snelste van een paar pogingen. Eén meting op een laptop zegt weinig:
     achtergrondwerk maakt het verschil tussen twee identieke runs groter dan
     het verschil dat we willen zien."""
     beste = None
     for _ in range(herhalingen):
-        poging = await _een_meting(label, gedeeld, parallel, hergebruik, aantal)
+        poging = await _een_meting(label, gedeeld, parallel, hergebruik, aantal,
+                                   rem=rem)
         if beste is None or poging["duur"] < beste["duur"]:
             beste = poging
     return beste
 
 
 async def _een_meting(label: str, gedeeld: bool, parallel: int, hergebruik: bool,
-                      aantal: int = AANTAL) -> dict:
+                      aantal: int = AANTAL, rem: int | None = None) -> dict:
     settings = get_settings()
     settings.provider_mode = "live"   # zodat seeds en de bronreview meedraaien
     settings.research_max_parallel_companies = parallel
+    # None = de rem zoals de app hem afleidt (per organisatie maal het aantal
+    # organisaties). Een getal zet hem vast, en dat is hoe je het oude gedrag
+    # terugkrijgt: één procesbrede semafoor die niet meegroeit.
+    remgrootte = settings.crawl4ai_max_parallel if rem is None else rem
 
     origineel: dict = {}
     monkeys: dict = {}
-    tools, reviewer = _patch(monkeys, gedeeld, hergebruik)
+    tools, reviewer = _patch(monkeys, gedeeld, hergebruik,
+                             asyncio.Semaphore(remgrootte))
     for (module, attribuut), waarde in monkeys.items():
         origineel[(module, attribuut)] = getattr(module, attribuut)
         setattr(module, attribuut, waarde)
@@ -266,35 +310,64 @@ async def _een_meting(label: str, gedeeld: bool, parallel: int, hergebruik: bool
     return {
         "label": label, "duur": duur, "gelezen": tools.gelezen,
         "gezocht": tools.gezocht, "reviews": reviewer.reviews,
+        "rem": remgrootte, "gerenderd": tools.gerenderd,
+        "remwacht": tools.remwacht,
     }
 
 
 async def main() -> int:
     Base.metadata.create_all(bind=engine)
-    print(f"\n{AANTAL} vestigingen per lijst · wachttijden gedeeld door {SCHAAL}\n")
+    print()
+    print(f"{AANTAL} vestigingen per lijst · wachttijden gedeeld door {SCHAAL}")
+    print()
 
-    kop = f"{'scenario':<46} {'duur':>8} {'gelezen':>8} {'reviews':>8}"
+    kop = (f"{'scenario':<42} {'rem':>4} {'duur':>8} {'gelezen':>8} "
+           f"{'wachten':>9}")
     metingen: list[tuple[str, dict]] = []
+
+    def _regel(label: str, meting: dict) -> None:
+        print(f"{label:<42} {meting['rem']:>4} {meting['duur']:>7.1f}s "
+              f"{meting['gelezen']:>8} {meting['remwacht']:>8.1f}s")
 
     print("== losse organisaties (niets te delen) ==")
     print(kop)
-    for label, parallel in (("serieel (oud)", 1), ("parallel x4 (nieuw)", 4)):
-        meting = await _meet(f"los-{parallel}", False, parallel, True)
-        metingen.append((f"los/{label}", meting))
-        print(f"{label:<46} {meting['duur']:>7.1f}s {meting['gelezen']:>8} "
-              f"{meting['reviews']:>8}")
-
-    print("\n== één organisatie, veel vestigingen (vorm van Zorggroep) ==")
-    print(kop)
-    for label, parallel, hergebruik in (
-        ("serieel, alles herlezen (oud)", 1, False),
-        ("parallel x4, alles herlezen", 4, False),
-        ("parallel x4 + hergebruik (nieuw)", 4, True),
+    for label, parallel, rem in (
+        ("serieel (oud)", 1, None),
+        ("parallel x4, rem bleef op 3", 4, 3),
+        ("parallel x4, rem 12 (nieuw)", 4, None),
     ):
-        meting = await _meet(f"gedeeld-{parallel}-{hergebruik}", True, parallel, hergebruik)
+        meting = await _meet(f"los-{parallel}-{rem}", False, parallel, True,
+                             rem=rem)
+        metingen.append((f"los/{label}", meting))
+        _regel(label, meting)
+
+    print()
+    print("== één organisatie, veel vestigingen (vorm van Zorggroep) ==")
+    print(kop)
+    for label, parallel, hergebruik, rem in (
+        ("serieel, alles herlezen (oud)", 1, False, None),
+        ("parallel x4, alles herlezen, rem 3", 4, False, 3),
+        ("parallel x4 + hergebruik, rem bleef op 3", 4, True, 3),
+        ("parallel x4 + hergebruik, rem 12 (nieuw)", 4, True, None),
+    ):
+        meting = await _meet(f"gedeeld-{parallel}-{hergebruik}-{rem}", True,
+                             parallel, hergebruik, rem=rem)
         metingen.append((f"gedeeld/{label}", meting))
-        print(f"{label:<46} {meting['duur']:>7.1f}s {meting['gelezen']:>8} "
-              f"{meting['reviews']:>8}")
+        _regel(label, meting)
+
+    print()
+    print("== waar vlakt de rem af? (parallel x4, één organisatie) ==")
+    print(f"{'rem':<20} {'duur':>9} {'gerenderd':>10} {'wachten':>9}")
+    for omschrijving, rem in (
+        ("3 (oud, vast)", 3),
+        ("6", 6),
+        ("12 (per org 3)", 12),
+        ("24 (per org 6)", 24),
+        ("onbegrensd", 10_000),
+    ):
+        meting = await _meet(f"rem-{rem}", True, 4, True, rem=rem)
+        print(f"{omschrijving:<20} {meting['duur']:>8.1f}s "
+              f"{meting['gerenderd']:>10} {meting['remwacht']:>8.1f}s")
 
     print()
     print("== schaalt het mee? (één organisatie, alles naast elkaar) ==")
@@ -307,21 +380,29 @@ async def main() -> int:
     def _van(sleutel: str) -> dict:
         return next(m for naam, m in metingen if naam.startswith(sleutel))
 
-    los_oud, los_nieuw = _van("los/serieel"), _van("los/parallel")
+    los_oud = _van("los/serieel")
+    los_klem = _van("los/parallel x4, rem bleef")
+    los_nieuw = _van("los/parallel x4, rem 12")
     ged_oud = _van("gedeeld/serieel")
     ged_parallel = _van("gedeeld/parallel x4, alles")
-    ged_nieuw = _van("gedeeld/parallel x4 + herg")
+    ged_klem = _van("gedeeld/parallel x4 + hergebruik, rem bleef")
+    ged_nieuw = _van("gedeeld/parallel x4 + hergebruik, rem 12")
 
-    print("\n== winst ==")
+    print()
+    print("== winst ==")
     print(f"losse organisaties:        {los_oud['duur'] / los_nieuw['duur']:.1f}x sneller")
     print(f"veel vestigingen, totaal:  {ged_oud['duur'] / ged_nieuw['duur']:.1f}x sneller")
     print(f"  waarvan parallel:        {ged_oud['duur'] / ged_parallel['duur']:.1f}x")
-    print(f"  waarvan hergebruik:      {ged_parallel['duur'] / ged_nieuw['duur']:.1f}x")
+    print(f"  waarvan hergebruik:      {ged_parallel['duur'] / ged_klem['duur']:.1f}x")
+    print(f"  waarvan de rem mee:      {ged_klem['duur'] / ged_nieuw['duur']:.1f}x")
     print(f"documenten gelezen:        {ged_parallel['gelezen']} -> "
           f"{ged_nieuw['gelezen']} "
           f"({1 - ged_nieuw['gelezen'] / ged_parallel['gelezen']:.0%} minder)")
+    print()
+    print("== wat een vaste rem kost ==")
+    print(f"losse organisaties:        {los_klem['duur'] / los_nieuw['duur']:.1f}x trager")
+    print(f"veel vestigingen:          {ged_klem['duur'] / ged_nieuw['duur']:.1f}x trager")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))
