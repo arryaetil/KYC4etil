@@ -1817,3 +1817,42 @@ def test_run_monitoring_watchlist_slaat_actuele_organisaties_over(monkeypatch):
         db.query(Batch).delete()
         db.commit()
         db.close()
+
+
+def test_verslagjaar_uit_de_url_gaat_voor_op_de_pdf_omslag():
+    """De kaart en het dashboard mogen niet twee jaartallen over één bron noemen.
+
+    Stichting Envida stond op de watchlist van 17-09-2026 als "verslag 2025",
+    terwijl de bron `...Gestempelde jaarrekening Envida 2024 definitief.pdf`
+    heet en het citaat "eind 2024" zegt: de omslag van een jaarrekening draagt
+    ook de stempel van het jaar erná. Gilde Opleidingen stond zo op 2025 met
+    een document uit 2019. Zulke organisaties gelden als klaar en worden door
+    elke volgende ronde overgeslagen.
+    """
+    finding = AgentFinding(
+        wp_gevonden=3737, context=None, zekerheid="hoog", reden=None,
+        bron_url=(
+            "https://www.envida.nl/sites/default/files/2025-05/"
+            "Gestempelde%20jaarrekening%20Envida%202024%20definitief.pdf"
+        ),
+        bron_type="jaarverslag",
+        raw={"verslagjaar": 2025},
+    )
+
+    assert monitoring_module._verslagjaar_van(finding) == 2024
+
+
+def test_pdf_omslag_telt_wel_als_de_url_geen_jaartal_heeft():
+    """In 4 van de 7 afwijkingen wist alleen de PDF-tekst het."""
+    finding = AgentFinding(
+        wp_gevonden=None, context=None, zekerheid="laag", reden=None,
+        bron_url="https://www.anwb.nl/over-anwb/jaarverslag.pdf",
+        bron_type="jaarverslag",
+        raw={"verslagjaar": 2025},
+    )
+
+    assert monitoring_module._verslagjaar_van(finding) == 2025
+
+
+def test_zonder_bron_geen_verslagjaar():
+    assert monitoring_module._verslagjaar_van(None) is None

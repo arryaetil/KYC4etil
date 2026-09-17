@@ -387,3 +387,82 @@ def test_zonder_documentopslag_geen_halve_kaart(client, vestiging, monkeypatch):
     )
 
     assert response.status_code == 503
+
+
+def test_overzichtspagina_wordt_doorgelopen_naar_de_pdf(client, db_session, vestiging, monkeypatch):
+    """Een downloadcentrum is niet het verslag; er wordt alleen naar gelinkt.
+
+    Gemeten op de 72 bronnen van 17-09-2026: 28 waren zo'n pagina en geen
+    daarvan leverde een cijfer op. Eén stap doorlopen scheelt de onderzoeker
+    die klik én levert bewijs dat op de juiste pagina kan openen.
+    """
+    gescrapet = []
+
+    async def nep_scrape(pagina_url, zoekjaar):
+        gescrapet.append((pagina_url, zoekjaar))
+        return "https://koraal.nl/jaarverslag-2025.pdf"
+
+    async def nep_lees_bron(context, url, titel=None, route="document"):
+        assert url == "https://koraal.nl/jaarverslag-2025.pdf"
+        return _uitgelezen_document(url)
+
+    monkeypatch.setattr(
+        "app.providers.jaarverslag_zoeken._scrape_pdf_van_pagina", nep_scrape,
+    )
+    monkeypatch.setattr("app.routers.monitoring.lees_bron", nep_lees_bron)
+
+    response = client.post(
+        "/monitoring/companies/company-1/jaarverslag-link",
+        json={"url": "https://koraal.nl/publicaties"},
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["bron"]["url"] == "https://koraal.nl/jaarverslag-2025.pdf"
+    assert body["doorverwezen_van"] == "https://koraal.nl/publicaties"
+    # Nieuwste jaar eerst, net als de zoekmodule.
+    assert gescrapet[0][1] == 2025
+
+
+def test_een_pdf_wordt_niet_doorgelopen(client, vestiging, monkeypatch):
+    """Wie al een PDF aanlevert heeft de bron zelf gevonden."""
+    async def nooit(pagina_url, zoekjaar):
+        raise AssertionError("er mocht niet gescrapet worden")
+
+    async def nep_lees_bron(context, url, titel=None, route="document"):
+        return _uitgelezen_document(url)
+
+    monkeypatch.setattr(
+        "app.providers.jaarverslag_zoeken._scrape_pdf_van_pagina", nooit,
+    )
+    monkeypatch.setattr("app.routers.monitoring.lees_bron", nep_lees_bron)
+
+    response = client.post(
+        "/monitoring/companies/company-1/jaarverslag-link",
+        json={"url": "https://koraal.nl/jaarverslag-2025.pdf"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["doorverwezen_van"] is None
+
+
+def test_url_bepaalt_het_verslagjaar_niet_de_aanleveraar(client, db_session, vestiging, monkeypatch):
+    """Stichting Envida stond op "verslag 2025" met de jaarrekening 2024."""
+    async def nep_lees_bron(context, url, titel=None, route="document"):
+        return _uitgelezen_document(url)
+
+    monkeypatch.setattr("app.routers.monitoring.lees_bron", nep_lees_bron)
+
+    response = client.post(
+        "/monitoring/companies/company-1/jaarverslag-link",
+        json={
+            "url": "https://envida.nl/files/2025-05/jaarrekening%20Envida%202024.pdf",
+            "verslagjaar": 2025,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["bron"]["verslagjaar"] == 2024
+    status = db_session.query(JaarverslagMonitoring).filter_by(
+        company_id="company-1").one()
+    assert status.laatste_verslagjaar == 2024

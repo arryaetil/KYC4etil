@@ -1,6 +1,7 @@
 """Dashboard-niveau jaarverslag-monitoring: werkt altijd op de ene actieve
 watchlist (Batch.is_monitoringlijst=True), zonder batch_id in de URL."""
 import asyncio
+import logging
 from collections import Counter
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -20,7 +21,7 @@ from ..pipeline.identity_scope import heuristic_scope_class
 from ..pipeline.monitoring import (
     bepaal_over_te_slaan_companies, run_monitoring_watchlist_background,
 )
-from ..providers import jaarverslag as jaarverslag_provider
+from ..providers import fetch, jaarverslag as jaarverslag_provider, jaarverslag_zoeken
 from ..research.losse_bron import (
     context_van_company, gevraagd_jaar_van, lees_bron, maak_kandidaat,
 )
@@ -426,6 +427,29 @@ def _werk_baseline_bij(
     status_rij.laatst_gecontroleerd_op = _nu()
 
 
+def _zoekjaren(gevraagd_jaar: int | None) -> tuple[int, ...]:
+    """Nieuwste eerst, net als de zoekmodule: het doeljaar en twee jaar terug."""
+    if gevraagd_jaar is None:
+        return ()
+    return (gevraagd_jaar, gevraagd_jaar - 1, gevraagd_jaar - 2)
+
+
+async def _veilig_scrape(pagina_url: str, zoekjaar: int) -> str | None:
+    """Zoek het jaarverslag-PDF op deze pagina; een mislukking is geen fout.
+
+    Lukt het niet, dan blijft de aangeleverde pagina gewoon de bron. Dat is
+    minder dan een PDF, maar het is wat de aanleveraar heeft gegeven.
+    """
+    try:
+        return await jaarverslag_zoeken._scrape_pdf_van_pagina(pagina_url, zoekjaar)
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "geen PDF te vinden op %s (%s: %s)",
+            pagina_url, type(exc).__name__, str(exc)[:200],
+        )
+        return None
+
+
 class JaarverslagLink(BaseModel):
     url: HttpUrl
     verslagjaar: int | None = Field(default=None, ge=1990, le=2100)
@@ -453,7 +477,22 @@ async def koppel_jaarverslag_link(
         raise HTTPException(404, "organisatie niet gevonden")
 
     url = str(body.url)
-    context = context_van_company(company, gevraagd_jaar_van(company))
+    gevraagd_jaar = gevraagd_jaar_van(company)
+    doorverwezen_van = None
+    # Een downloadcentrum, een publicatieoverzicht of een raadsportaal is niet
+    # het verslag — er wordt alleen naar gelinkt, en er valt dus geen getal uit
+    # te lezen. Gemeten op de 72 bronnen van 17-09-2026: 28 waren zo'n pagina,
+    # en geen daarvan leverde een cijfer op. Eén stap doorlopen naar de PDF
+    # scheelt de onderzoeker precies die klik, en levert bovendien een bewijs
+    # dat op de juiste pagina kan openen.
+    if not fetch._is_pdf_url(url):
+        for zoekjaar in _zoekjaren(gevraagd_jaar):
+            gevonden = await _veilig_scrape(url, zoekjaar)
+            if gevonden:
+                doorverwezen_van, url = url, gevonden
+                break
+
+    context = context_van_company(company, gevraagd_jaar)
     try:
         document = await asyncio.wait_for(
             lees_bron(context, url, body.titel),
@@ -469,8 +508,13 @@ async def koppel_jaarverslag_link(
     # Wat de aanleveraar zegt dat het is: een jaarverslag. `inspect` leidt
     # brontype af uit de route en het domein, en zou een verslag dat als
     # webpagina is gepubliceerd anders als gewone website wegzetten.
+    # De URL gaat voor op wat de aanleveraar zegt: een bestandsnaam noemt het
+    # verslagjaar achteraan, en een opgegeven jaartal is een aanname over een
+    # document dat we inmiddels zelf hebben gelezen. Zie
+    # `pipeline/monitoring.py::_verslagjaar_van` — dezelfde regel, dezelfde
+    # reden (Stichting Envida stond op 2025 met de jaarrekening 2024).
     jaar_van_verslag = (
-        body.verslagjaar or document.verslagjaar or jaar_uit_url(url)
+        jaar_uit_url(url) or document.verslagjaar or body.verslagjaar
     )
     document = replace(
         document,
@@ -495,6 +539,9 @@ async def koppel_jaarverslag_link(
 
     return {
         "bron": _candidate_dict(kandidaat),
+        # De kaart wijst nu naar een ander adres dan er is ingevuld; dat hoort
+        # de aanleveraar te zien, anders lijkt het alsof zijn link is genegeerd.
+        "doorverwezen_van": doorverwezen_van,
         "melding": (
             None if kandidaat.wp_gevonden is not None
             else "Het verslag is gevonden en doorzocht, maar er kwam geen "

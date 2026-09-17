@@ -84,6 +84,31 @@ def _mag_ouder_verslag_bewaren(document: SourceDocument) -> bool:
     )
 
 
+def _verslagjaar_van(finding) -> int | None:
+    """Over welk jaar gaat deze vondst? Eén berekening, voor de kaart én het dashboard.
+
+    Dit werd twee keer bepaald met een andere voorkeur: de monitoringstatus nam
+    eerst het jaartal dat uit de PDF-omslag was gelezen, de bronkaart alleen dat
+    uit de URL. Waar die uiteenliepen zag de reviewer twee waarheden over
+    hetzelfde document. Gemeten op de watchlist van 17-09-2026: 7 van de 143
+    organisaties met een bronkaart, waarvan 3 met een aantoonbaar verkeerd jaar
+    op het dashboard. Stichting Envida stond op "verslag 2025" terwijl de bron
+    `...Gestempelde jaarrekening Envida 2024 definitief.pdf` heet en het citaat
+    "eind 2024" zegt; Gilde Opleidingen stond op 2025 met een document uit 2019.
+    Erger dan een verkeerd getal op het scherm: zo'n organisatie geldt als klaar
+    en wordt door elke volgende ronde overgeslagen.
+
+    De URL gaat voor. Een bestandsnaam noemt het verslagjaar achteraan
+    (`jaar_uit_url` leest hem daarop), terwijl de omslag van een jaarrekening
+    ook de datum van vaststelling of de stempel van het jaar erná draagt — en
+    precies daar ging het mis. Staat er geen jaartal in de URL, dan is de
+    PDF-tekst de enige die het weet; in 4 van de 7 gevallen was dat zo.
+    """
+    if finding is None or not finding.bron_url:
+        return None
+    return _documentjaar(finding.bron_url) or (finding.raw or {}).get("verslagjaar")
+
+
 def _is_digimv_archiefdocument(document: SourceDocument) -> bool:
     return document.research_route == "digimv"
 
@@ -334,7 +359,7 @@ def _sla_moderne_bron_op(
             brontype="jaarverslag",
             documenttype="jaarverslag",
             gevraagd_jaar=gevraagd_jaar,
-            verslagjaar=_documentjaar(finding.bron_url),
+            verslagjaar=_verslagjaar_van(finding),
             informatie_peilmoment=finding.peilmoment,
             wp_gevonden=finding.wp_gevonden,
             eenheid=(
@@ -690,12 +715,7 @@ async def check_company_jaarverslag(db: Session, company: Company, jaar: int) ->
         status.laatste_verslagjaar
         or _documentjaar(te_valideren_url)
     )
-    gevonden_jaar = (
-        (finding.raw or {}).get("verslagjaar")
-        or _documentjaar(finding.bron_url)
-        if finding and finding.bron_url
-        else None
-    )
+    gevonden_jaar = _verslagjaar_van(finding)
 
     # DigiMV hangt ná de jaarverslag-agent en niet ernaast: het is een
     # aanvulling voor wanneer de gewone route geen verslag over het doeljaar
