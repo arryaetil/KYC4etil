@@ -52,6 +52,34 @@ WP_GEZOCHT_NIETS_GEVONDEN = "gezocht_niets_gevonden"
 WP_GEVONDEN = "gevonden"
 
 
+# Zo lang als de kolom `bron_kandidaten.informatie_peilmoment` toestaat. Het
+# veld is bedoeld voor een korte datumaanduiding zoals de tekst die noemt
+# ("1 oktober 2025", "eind 2024"); daar past het ruim in.
+PEILMOMENT_MAX = 20
+
+
+def kort_peilmoment(waarde: str | None) -> str | None:
+    """Houd het peilmoment binnen de breedte van zijn kolom.
+
+    Het model houdt zich niet altijd aan "een datum of jaar zoals in de tekst"
+    en schrijft er soms een halve zin omheen. Dat kwam er als een harde
+    databasefout uit — `value too long for type character varying(20)` — en
+    die nam de hele bron mee, inclusief het WP-getal dat er wél uit was
+    gelezen. Eén te spraakzaam veld mag geen bronkaart kosten.
+
+    Afknippen op een woordgrens: de datum staat vooraan, dus wat overblijft is
+    het stuk dat telt, en het leest niet als een afgebroken woord.
+    """
+    if waarde is None:
+        return None
+    tekst = " ".join(str(waarde).split())
+    if len(tekst) <= PEILMOMENT_MAX:
+        return tekst or None
+    afgekapt = tekst[:PEILMOMENT_MAX]
+    spatie = afgekapt.rfind(" ")
+    return (afgekapt[:spatie] if spatie > 0 else afgekapt).strip() or None
+
+
 @dataclass(frozen=True)
 class SourceDocument:
     naam: str
@@ -76,6 +104,16 @@ class SourceDocument:
     # "nog niet uitgelezen" een eerlijke mededeling in plaats van een aanname.
     wp_extractie_gedaan: bool = False
     raw_data: dict | None = None
+
+    def __post_init__(self) -> None:
+        # Hier en niet bij elke opslag: elke bron die in de database belandt —
+        # batchresearch, monitoring, een aangedragen bron — komt langs dit
+        # document. Eén plek, dus geen route die het per ongeluk overslaat.
+        object.__setattr__(
+            self,
+            "informatie_peilmoment",
+            kort_peilmoment(self.informatie_peilmoment),
+        )
 
 
 @dataclass

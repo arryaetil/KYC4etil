@@ -199,6 +199,39 @@ def test_naamheuristiek_op_een_bestandsnaam_zegt_niet_ander_bedrijf():
     assert ranked.validaties["aangedragen_identificatie"]["heuristiek"] == "mismatch"
 
 
+def test_een_spraakzaam_peilmoment_kost_geen_bronkaart():
+    """Eén te lang veld mag de hele bron niet meenemen.
+
+    De kolom is twintig tekens, bedoeld voor "1 oktober 2025". Het model
+    schrijft er soms een halve zin omheen, en dat kwam er als harde
+    databasefout uit (`value too long for type character varying(20)`) — mét
+    het WP-getal dat er wél uit gelezen was. Gemeten op Trespa International,
+    17-09-2026.
+    """
+    from app.research.validation import PEILMOMENT_MAX
+
+    document = SourceDocument(
+        naam="Trespa International B.V.",
+        company_website_url=None,
+        url="https://voorbeeld.nl/jaarverslag.pdf",
+        informatie_peilmoment="gemiddeld aantal fte over het boekjaar 2025",
+    )
+
+    assert len(document.informatie_peilmoment) <= PEILMOMENT_MAX
+    # Op een woordgrens, niet middenin een woord.
+    assert not document.informatie_peilmoment.endswith(" ")
+    assert document.informatie_peilmoment == "gemiddeld aantal"
+
+    # Wat er gewoon in past blijft ongemoeid, en leeg blijft leeg.
+    assert SourceDocument(
+        naam="X", company_website_url=None, url="https://x.nl",
+        informatie_peilmoment="1 oktober 2025",
+    ).informatie_peilmoment == "1 oktober 2025"
+    assert SourceDocument(
+        naam="X", company_website_url=None, url="https://x.nl",
+    ).informatie_peilmoment is None
+
+
 def _jaarverslag_pdf(tekst: str) -> bytes:
     doc = fitz.open()
     pagina = doc.new_page()
