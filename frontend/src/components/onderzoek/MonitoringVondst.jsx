@@ -258,18 +258,6 @@ export function MonitoringVondst({
         </p>
       )}
 
-      {/* Buiten `toonVondst`: ook als het gevonden verslag hieronder al als
-          bronkaart staat, kan het het verkeerde zijn en wil de reviewer het
-          juiste kunnen aanleveren. */}
-      {api ? (
-        <JaarverslagUploaden
-          api={api}
-          companyId={company.company_id}
-          doeljaar={company.doeljaar}
-          onGeupload={onGeupload}
-        />
-      ) : null}
-
       {/* Alleen de status. Hier stonden twee zinnen bij: dat er sinds de vorige
           ronde een recenter verslag was, en dat monitoring bronnen vindt maar
           niet kiest. Het eerste zegt iets over de vórige ronde en niet over dit
@@ -278,6 +266,20 @@ export function MonitoringVondst({
       <p className="mt-3 text-xs text-mist-50">
         Status: {status.label}.
       </p>
+
+      {/* Onderaan, en niet bovenaan. Hierboven staat wát er gevonden is; een
+          uploadknop dáárvoor leest als de eerste stap terwijl het de laatste
+          is — je levert pas zelf iets aan als je hebt gezien dat het ontbreekt
+          of niet klopt. Buiten `toonVondst`, want ook een verslag dat al als
+          bronkaart staat kan het verkeerde zijn. */}
+      {api ? (
+        <JaarverslagUploaden
+          api={api}
+          companyId={company.company_id}
+          doeljaar={company.doeljaar}
+          onGeupload={onGeupload}
+        />
+      ) : null}
     </section>
   );
 }
