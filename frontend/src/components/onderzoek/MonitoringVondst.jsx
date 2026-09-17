@@ -1,5 +1,5 @@
 import {useRef, useState} from "react";
-import {Eye, FileUp} from "lucide-react";
+import {Eye, FileUp, Link as LinkIcon} from "lucide-react";
 import {classNames, formatMoment} from "../../lib/format.js";
 import {
   bewijsRelatie, monitoringStatus, peilmomentRelatie,
@@ -62,25 +62,44 @@ function JaarverslagUploaden({api, companyId, doeljaar, onGeupload}) {
   const [bezig, setBezig] = useState(false);
   const [melding, setMelding] = useState("");
   const [fout, setFout] = useState("");
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [link, setLink] = useState("");
 
-  async function upload(event) {
-    const bestand = event.target.files?.[0];
-    if (!bestand) return;
+  /** Eén afhandeling voor beide manieren van aanleveren. */
+  async function lever(actie) {
     setBezig(true);
     setMelding("");
     setFout("");
     try {
-      // Het jaartal uit de bestandsnaam is vaak goed, maar niet altijd; de
-      // backend valt daarop terug als we niets meegeven. Het doeljaar hier
-      // opdringen zou een bewering zijn die we niet kunnen waarmaken.
-      const uitkomst = await api.uploadJaarverslag(companyId, bestand);
+      const uitkomst = await actie();
       setMelding(uitkomst?.melding || "Het jaarverslag is uitgelezen.");
       onGeupload?.();
+      return true;
     } catch (err) {
       setFout(err.message);
+      return false;
     } finally {
       setBezig(false);
-      event.target.value = "";
+    }
+  }
+
+  async function upload(event) {
+    const bestand = event.target.files?.[0];
+    if (!bestand) return;
+    // Het jaartal uit de bestandsnaam is vaak goed, maar niet altijd; de
+    // backend valt daarop terug als we niets meegeven. Het doeljaar hier
+    // opdringen zou een bewering zijn die we niet kunnen waarmaken.
+    await lever(() => api.uploadJaarverslag(companyId, bestand));
+    event.target.value = "";
+  }
+
+  async function koppelLink(event) {
+    event.preventDefault();
+    if (bezig) return;
+    const gelukt = await lever(() => api.koppelJaarverslagLink(companyId, link));
+    if (gelukt) {
+      setLink("");
+      setLinkOpen(false);
     }
   }
 
@@ -93,19 +112,54 @@ function JaarverslagUploaden({api, companyId, doeljaar, onGeupload}) {
         className="hidden"
         onChange={upload}
       />
-      <button
-        type="button"
-        onClick={() => bestandRef.current?.click()}
-        disabled={bezig}
-        className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-sm text-ink transition hover:bg-panel disabled:opacity-50"
-      >
-        <FileUp size={14} />
-        {bezig ? "Uitlezen…" : "Jaarverslag uploaden"}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => bestandRef.current?.click()}
+          disabled={bezig}
+          className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-sm text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          <FileUp size={14} />
+          {bezig ? "Uitlezen…" : "Jaarverslag uploaden"}
+        </button>
+        {/* De meeste verslagen staan gewoon online; dan is downloaden en weer
+            uploaden een omweg. */}
+        <button
+          type="button"
+          onClick={() => setLinkOpen((open) => !open)}
+          disabled={bezig}
+          className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-mist-65 transition hover:text-ink disabled:opacity-50"
+        >
+          <LinkIcon size={14} />Link naar verslag
+        </button>
+      </div>
+
+      {linkOpen ? (
+        <form onSubmit={koppelLink} className="mt-2 flex gap-2">
+          <input
+            type="url"
+            required
+            value={link}
+            onChange={(event) => setLink(event.target.value)}
+            placeholder="https://organisatie.nl/jaarverslag-2025.pdf"
+            aria-label="Link naar het jaarverslag"
+            className="focus-ring h-9 flex-1 rounded-md border border-line px-2 text-sm"
+          />
+          <button
+            type="submit"
+            disabled={bezig}
+            className="focus-ring rounded-md bg-ink px-3 text-sm text-white transition hover:opacity-90 disabled:opacity-50"
+          >
+            {bezig ? "Uitlezen…" : "Koppelen"}
+          </button>
+        </form>
+      ) : null}
+
       <p className="mt-1.5 text-xs text-mist-65">
-        Een PDF die de monitoring niet vond
-        {doeljaar ? `, bij voorkeur het verslag over ${doeljaar}` : ""}. Het
-        wordt bewaard, doorzocht op een WP-getal en als bronkaart toegevoegd.
+        Een verslag dat de monitoring niet vond
+        {doeljaar ? `, bij voorkeur dat over ${doeljaar}` : ""}. Het wordt
+        doorzocht op een WP-getal en komt als bronkaart op de stapel — nog te
+        beoordelen, niet al gekozen.
       </p>
       {melding ? <p className="mt-1 text-xs text-mist-85">{melding}</p> : null}
       {fout ? <p className="mt-1 text-xs text-fout">{fout}</p> : null}

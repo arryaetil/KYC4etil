@@ -102,6 +102,13 @@ export function createApi(token, onUnauthorized) {
         method: "POST", body,
       });
     },
+    // Hetzelfde, maar het verslag staat al online. Verreweg de meeste
+    // jaarverslagen staan gewoon op de site van de organisatie; dan is een
+    // link aanleveren eenvoudiger dan downloaden en weer uploaden.
+    koppelJaarverslagLink: (companyId, url, verslagjaar) => request(
+      `/monitoring/companies/${companyId}/jaarverslag-link`,
+      {method: "POST", json: {url, verslagjaar: verslagjaar || null}},
+    ),
     startResearch: (companyId, gevraagdJaar) => request(`/research/companies/${companyId}/run`, {
       method: "POST",
       json: {gevraagd_jaar: gevraagdJaar},

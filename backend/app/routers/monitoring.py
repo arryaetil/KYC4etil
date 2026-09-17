@@ -1,13 +1,17 @@
 """Dashboard-niveau jaarverslag-monitoring: werkt altijd op de ene actieve
 watchlist (Batch.is_monitoringlijst=True), zonder batch_id in de URL."""
+import asyncio
 from collections import Counter
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from .. import documenten
+from ..config import get_settings
 from ..database import get_db
 from ..models import (
     Batch, BronKandidaat, Company, JaarverslagMonitoring, PipelineRun,
@@ -17,7 +21,9 @@ from ..pipeline.monitoring import (
     bepaal_over_te_slaan_companies, run_monitoring_watchlist_background,
 )
 from ..providers import jaarverslag as jaarverslag_provider
-from ..research.losse_bron import gevraagd_jaar_van, maak_kandidaat
+from ..research.losse_bron import (
+    context_van_company, gevraagd_jaar_van, lees_bron, maak_kandidaat,
+)
 from ..research.urls import canonicaliseer_url, jaar_uit_url
 from ..research.validation import SourceDocument
 from .research import _candidate_dict
@@ -374,24 +380,7 @@ async def upload_jaarverslag(
         }],
     )
 
-    status_rij = (
-        db.query(JaarverslagMonitoring).filter_by(company_id=company.id)
-        .one_or_none()
-    )
-    if status_rij is None:
-        status_rij = JaarverslagMonitoring(company_id=company.id)
-        db.add(status_rij)
-    # Alleen vooruit. Een reviewer die het verslag over 2023 aanlevert mag de
-    # baseline niet terugzetten als de monitoring 2025 al heeft; een jaartal
-    # dat we niet kennen verdringt een bekend jaartal evenmin.
-    bestaand = status_rij.laatste_verslagjaar
-    if not status_rij.laatste_bron_url or (
-        jaar_van_verslag is not None
-        and (bestaand is None or jaar_van_verslag >= bestaand)
-    ):
-        status_rij.laatste_bron_url = url
-        status_rij.laatste_verslagjaar = jaar_van_verslag or bestaand
-    status_rij.laatst_gecontroleerd_op = _nu()
+    _werk_baseline_bij(db, company, url, jaar_van_verslag)
     db.commit()
 
     return {
@@ -401,6 +390,114 @@ async def upload_jaarverslag(
         "melding": (
             None if kandidaat.wp_gevonden is not None
             else "Het verslag is opgeslagen en doorzocht, maar er kwam geen "
+                 "WP-getal uit. Open het bewijs om zelf te kijken."
+        ),
+    }
+
+
+def _werk_baseline_bij(
+    db: Session,
+    company: Company,
+    url: str,
+    verslagjaar: int | None,
+) -> None:
+    """Zet dit verslag als de bekende bron van deze organisatie — als het nieuwer is.
+
+    Alleen vooruit. Wie het verslag over 2023 aanlevert mag de baseline niet
+    terugzetten als de monitoring 2025 al heeft, en een jaartal dat we niet
+    kennen verdringt een bekend jaartal evenmin. Zonder deze stap blijft de
+    organisatie in het dashboard op "niet gevonden" staan terwijl het verslag
+    er ligt.
+    """
+    status_rij = (
+        db.query(JaarverslagMonitoring).filter_by(company_id=company.id)
+        .one_or_none()
+    )
+    if status_rij is None:
+        status_rij = JaarverslagMonitoring(company_id=company.id)
+        db.add(status_rij)
+    bestaand = status_rij.laatste_verslagjaar
+    if not status_rij.laatste_bron_url or (
+        verslagjaar is not None
+        and (bestaand is None or verslagjaar >= bestaand)
+    ):
+        status_rij.laatste_bron_url = url
+        status_rij.laatste_verslagjaar = verslagjaar or bestaand
+    status_rij.laatst_gecontroleerd_op = _nu()
+
+
+class JaarverslagLink(BaseModel):
+    url: HttpUrl
+    verslagjaar: int | None = Field(default=None, ge=1990, le=2100)
+    titel: str | None = Field(default=None, max_length=500)
+
+
+@router.post("/companies/{company_id}/jaarverslag-link", status_code=201)
+async def koppel_jaarverslag_link(
+    company_id: str,
+    body: JaarverslagLink,
+    db: Session = Depends(get_db),
+):
+    """Hetzelfde als een upload, maar het verslag staat al online.
+
+    Verreweg de meeste jaarverslagen staan gewoon op de site van de
+    organisatie; alleen de agent vond ze niet. Dan is een link aanleveren
+    eenvoudiger dan eerst downloaden en weer uploaden, en het document blijft
+    op zijn eigen plek staan.
+
+    De bron wordt opgehaald en uitgelezen zoals elke andere bron, en komt als
+    `voorgesteld` op de stapel: aanleveren is niet hetzelfde als beoordelen.
+    """
+    company = db.get(Company, company_id)
+    if company is None:
+        raise HTTPException(404, "organisatie niet gevonden")
+
+    url = str(body.url)
+    context = context_van_company(company, gevraagd_jaar_van(company))
+    try:
+        document = await asyncio.wait_for(
+            lees_bron(context, url, body.titel),
+            timeout=get_settings().losse_bron_timeout_seconds,
+        )
+    except TimeoutError:
+        raise HTTPException(504, "de bron reageerde te traag") from None
+    if document is None:
+        raise HTTPException(
+            422, "de bron kon niet worden opgehaald of bevatte geen leesbare tekst",
+        )
+
+    # Wat de aanleveraar zegt dat het is: een jaarverslag. `inspect` leidt
+    # brontype af uit de route en het domein, en zou een verslag dat als
+    # webpagina is gepubliceerd anders als gewone website wegzetten.
+    jaar_van_verslag = (
+        body.verslagjaar or document.verslagjaar or jaar_uit_url(url)
+    )
+    document = replace(
+        document,
+        brontype="jaarverslag",
+        documenttype="jaarverslag",
+        verslagjaar=jaar_van_verslag,
+    )
+    kandidaat = maak_kandidaat(
+        db,
+        company,
+        document,
+        doel="door de reviewer aangedragen jaarverslag",
+        onderzoekspaden=[{
+            "route": "aangedragen",
+            "reden": "jaarverslag aangeleverd als link",
+            "status": "afgerond",
+            "aantal_bronnen": 1,
+        }],
+    )
+    _werk_baseline_bij(db, company, url, jaar_van_verslag)
+    db.commit()
+
+    return {
+        "bron": _candidate_dict(kandidaat),
+        "melding": (
+            None if kandidaat.wp_gevonden is not None
+            else "Het verslag is gevonden en doorzocht, maar er kwam geen "
                  "WP-getal uit. Open het bewijs om zelf te kijken."
         ),
     }

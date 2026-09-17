@@ -279,6 +279,57 @@ def test_ouder_geupload_verslag_verdringt_een_nieuwere_baseline_niet(
         company_id="company-1").count() == 1
 
 
+def test_jaarverslag_als_link_aanleveren(client, db_session, vestiging, monkeypatch):
+    """De meeste verslagen staan gewoon online; dan hoeft niemand te downloaden.
+
+    Zelfde behandeling als een upload: ophalen, uitlezen, een bronkaart, en de
+    organisatie staat niet langer op "niet gevonden".
+    """
+    async def nep_lees_bron(context, url, titel=None, route="document"):
+        return _uitgelezen_document(url)
+
+    monkeypatch.setattr("app.routers.monitoring.lees_bron", nep_lees_bron)
+
+    response = client.post(
+        "/monitoring/companies/company-1/jaarverslag-link",
+        json={"url": "https://koraal.nl/jaarverslag-2025.pdf", "verslagjaar": 2025},
+    )
+
+    assert response.status_code == 201, response.text
+    bron = response.json()["bron"]
+    assert bron["wp_gevonden"] == 2400
+    assert bron["verslagjaar"] == 2025
+    # Aanleveren is niet beoordelen: de kaart wacht op de reviewer.
+    assert bron["status"] == "voorgesteld"
+    assert bron["review_reason_code"] is None
+
+    status = db_session.query(JaarverslagMonitoring).filter_by(
+        company_id="company-1").one()
+    assert status.laatste_bron_url == "https://koraal.nl/jaarverslag-2025.pdf"
+    assert status.laatste_verslagjaar == 2025
+
+
+def test_onbereikbare_link_levert_geen_lege_kaart(client, db_session, vestiging, monkeypatch):
+    """Anders dan bij een upload is er hier niets om te bewaren.
+
+    Een link die niets oplevert is geen bron; dan liever een duidelijke fout
+    dan een kaart die naar een dood adres wijst.
+    """
+    async def geen_document(context, url, titel=None, route="document"):
+        return None
+
+    monkeypatch.setattr("app.routers.monitoring.lees_bron", geen_document)
+
+    response = client.post(
+        "/monitoring/companies/company-1/jaarverslag-link",
+        json={"url": "https://koraal.nl/weg.pdf"},
+    )
+
+    assert response.status_code == 422
+    assert db_session.query(BronKandidaat).filter_by(
+        company_id="company-1").count() == 0
+
+
 def test_alleen_pdf(client, vestiging, opslag):
     response = client.post(
         "/monitoring/companies/company-1/jaarverslag",
