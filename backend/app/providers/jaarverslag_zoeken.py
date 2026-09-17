@@ -71,14 +71,29 @@ def _lijkt_jaarverslag(
         "jaarstukken",
         "programmarekening",
         "programmaverantwoording",
+        # Hetzelfde document, andere naam op de omslag. Deze lijst bepaalt wat
+        # er überhaupt opgehaald wordt, dus een organisatie die haar verslag
+        # "jaarbeeld" noemt was onvindbaar — hoe goed de zoekopdracht ook was.
+        # Gemeten op de 77 vindplaatsen van 17-09-2026 die de monitoring niet
+        # had gevonden: AZL en NLW (jaarbeeld), Veiligheidsregio Zuid-Limburg
+        # (jaarbericht), de Belastingdienst (jaarrapportage) en De Rooyse
+        # Wissel (jaarmagazine) vielen alle vijf hier af.
+        "jaarbeeld",
+        "jaarbericht",
+        "jaarrapportage",
+        "jaarmagazine",
         "annual report",
-        "annual-report",
         "integrated report",
+        "integrated annual",
     )
     jaren = _verslagjaren_uit(tekst)
     if jaren and zoekjaar not in jaren:
         return False
-    return any(marker in lowered for marker in markers)
+    # Tegen de genormaliseerde tekst, net als de deelrapportcheck hierboven:
+    # `Annual-Report`, `Annual_Report` en `Annual Report` zijn hetzelfde woord.
+    # Voorheen stond alleen "annual-report" er los bij en viel de underscore-
+    # schrijfwijze eruit — precies de spelling van SPIE's verslag.
+    return any(marker in genormaliseerd for marker in markers)
 
 
 def _verslagjaar_uit_pdftekst(tekst: str, jaar: int) -> int | None:

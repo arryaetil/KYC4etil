@@ -94,18 +94,65 @@ def _deterministische_wp_uit_pdf(
     return None
 
 
-def _vind_paginanummer(context: str | None, pagina_teksten: list[tuple[int, str]]) -> int | None:
-    """Zoekt op welke PDF-pagina de door de LLM geciteerde context daadwerkelijk
-    staat, zodat de bron direct op de juiste pagina geopend kan worden."""
-    if not context:
+def _plat(tekst: str) -> str:
+    """Eén spatie tussen de woorden, alles klein. Zo is een citaat te
+    vergelijken met paginatekst waarin de PDF-extractie anders afbreekt."""
+    return " ".join(tekst.split()).lower()
+
+
+def _pagina_met_getal(
+    aantal: int | None,
+    pagina_teksten: list[tuple[int, str]],
+) -> int | None:
+    """De pagina waar dit aantal náást een personeelswoord staat.
+
+    Nodig omdat een citaat uit een tabel geen zin is: het model zet de cellen
+    achter elkaar ("Aantal medewerkers 4.444 2025 aantal medewerkers; 4.266 op
+    locatie; 178 staf"), en die volgorde staat zo nergens op de pagina. Zoeken
+    op het getal zelf werkt daar wel — met een personeelswoord ernaast, want
+    een getal als 4.444 kan ook een bedrag of een paginaverwijzing zijn.
+    """
+    if aantal is None:
         return None
-    fragment = context.strip()[:80].lower()
-    if not fragment:
-        return None
+    schrijfwijzen = {str(aantal), f"{aantal:,}".replace(",", "."), f"{aantal:,}"}
     for paginanummer, tekst in pagina_teksten:
-        if fragment in tekst.lower():
+        plat = _plat(tekst)
+        if not any(woord in plat for woord in _WP_TREFWOORDEN):
+            continue
+        if any(vorm in plat for vorm in schrijfwijzen):
             return paginanummer
     return None
+
+
+def _vind_paginanummer(
+    context: str | None,
+    pagina_teksten: list[tuple[int, str]],
+    aantal: int | None = None,
+) -> int | None:
+    """Op welke PDF-pagina staat het bewijs, zodat de bron daar opent?
+
+    Dit vergeleek het citaat letterlijk met de paginatekst, inclusief alle
+    witruimte. Dat lukt bij een lopende zin en faalt bij alles wat uit een
+    tabel komt — gemeten op de 25 jaarverslagen met een getal van 17-09-2026
+    bleef er bij 16 geen paginanummer over, en die openden dus op pagina 1
+    terwijl het cijfer op pagina 51 stond.
+
+    Vandaar drie pogingen, van precies naar ruim: hetzelfde citaat met
+    genormaliseerde witruimte, een kortere kop daarvan, en als laatste het
+    gevonden getal naast een personeelswoord.
+    """
+    paginas = [(nummer, _plat(tekst)) for nummer, tekst in pagina_teksten]
+    fragment = _plat(context) if context else ""
+    # Niet korter dan dit: een handvol tekens komt op te veel pagina's voor, en
+    # een verkeerde pagina is misleidender dan geen.
+    for lengte in (80, 40):
+        kop = fragment[:lengte]
+        if len(kop) < 30:
+            break
+        for paginanummer, tekst in paginas:
+            if kop in tekst:
+                return paginanummer
+    return _pagina_met_getal(aantal, pagina_teksten)
 
 
 # Waarop een pagina wordt geselecteerd voordat de LLM hem leest. Deze lijst
@@ -277,7 +324,13 @@ async def lees_wp_uit_paginas(
         man=data.get("man"), vrouw=data.get("vrouw"),
         voltijd=data.get("voltijd"), deeltijd=data.get("deeltijd"),
         pct_op_locatie=llm._pct_op_locatie_fractie(pct),
-        bron_pagina=_vind_paginanummer(data.get("context"), relevant),
+        # `_als_aantal` en niet int(): het model geeft hier ook wel eens
+        # "1.204" of ruis terug, en dat mag hooguit het paginanummer kosten.
+        bron_pagina=_vind_paginanummer(
+            data.get("context"),
+            relevant,
+            wp_extractie._als_aantal(data.get("wp_gevonden")),
+        ),
         raw=data,
     )
 

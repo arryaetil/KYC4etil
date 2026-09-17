@@ -605,6 +605,50 @@ def test_vind_paginanummer_geeft_none_als_niet_gevonden():
     assert jaarverslag._vind_paginanummer("dit staat nergens in", [(1, "andere tekst")]) is None
 
 
+# Zoals PyMuPDF een tabel teruggeeft: kolommen onder elkaar, eigen witruimte.
+_TABELPAGINAS = [
+    (1, "Voorwoord van de bestuurder over het afgelopen jaar."),
+    (2, "Kerncijfers\n\nAantal medewerkers\n4.444\n2025\n\n4.266 op locatie\n178 staf"),
+    (3, "Financiele  paragraaf  met   veel    witruimte en 4.444 euro subsidie"),
+]
+
+
+def test_paginanummer_ondanks_afwijkende_witruimte():
+    """De PDF-extractie breekt regels anders af dan het model ze citeert."""
+    assert jaarverslag._vind_paginanummer(
+        "Financiele paragraaf met veel witruimte en 4.444 euro subsidie",
+        _TABELPAGINAS,
+    ) == 3
+
+
+def test_paginanummer_uit_een_tabelcitaat_via_het_getal():
+    """Een citaat uit een tabel is geen zin en staat zo nergens op de pagina.
+
+    Het model zet de cellen achter elkaar; die volgorde bestaat in het document
+    niet. Gemeten op de 25 jaarverslagen met een getal van 17-09-2026 bleef bij
+    16 daardoor geen paginanummer over, en die openden op pagina 1 terwijl het
+    cijfer verderop stond.
+    """
+    assert jaarverslag._vind_paginanummer(
+        "Aantal medewerkers 4.444 2025 aantal medewerkers; 4.266 op locatie; 178 staf",
+        _TABELPAGINAS,
+        4444,
+    ) == 2
+
+
+def test_getal_zonder_personeelswoord_wijst_geen_pagina_aan():
+    """4.444 kan ook een bedrag zijn; dan is pagina 1 eerlijker dan een gok."""
+    assert jaarverslag._vind_paginanummer(
+        None, [(1, "omzet 4.444 euro")], 4444,
+    ) is None
+
+
+def test_te_kort_citaat_raadt_niet():
+    """Een handvol tekens komt op te veel pagina's voor; een verkeerde pagina
+    is misleidender dan geen."""
+    assert jaarverslag._vind_paginanummer("4.444", _TABELPAGINAS) is None
+
+
 @pytest.mark.asyncio
 async def test_web_search_jaarverslag_wp_geeft_uitsplitsing_door(monkeypatch):
     class _FakeJaarverslagResponse:
