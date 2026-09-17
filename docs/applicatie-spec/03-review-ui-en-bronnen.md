@@ -50,6 +50,32 @@ reviewer ziet:
 - acties om een kandidaat te accepteren of af te wijzen;
 - een handmatige broninvoer als de agent geen geschikte bron vindt.
 
+### Bronnen die de reviewer zelf aandraagt
+
+De agent vindt niet alles. Op de watchlist van 17-09-2026 stond 110 van de 205
+organisaties op “niet gevonden”, terwijl een reviewer het verslag soms gewoon
+heeft. Daarvoor zijn er twee ingangen, allebei op vestigingsniveau:
+
+- **Bron toevoegen** (`POST /research/companies/{id}/manual-source`) — een URL.
+- **Jaarverslag uploaden** (`POST /monitoring/companies/{id}/jaarverslag`) — een
+  PDF, die op een Railway-volume wordt bewaard en onder een intern adres
+  (`upload.kyc4etil.intern/...`) als bron wordt vastgelegd. Dat adres bestaat
+  niet op internet; `bron-pdf` serveert uitsluitend onze eigen kopie.
+
+Allebei leggen ze de bron niet alleen vast maar lézen hem ook: dezelfde
+ophaal- en extractiestap als een gevonden bron, gevolgd door dezelfde validatie
+en weging (`research/losse_bron.py`). Er komt dus een volwaardige bronkaart uit,
+met WP-getal, citaat en paginanummer.
+
+Eén verschil met het zoeken: wat `valideer_bron` hard zou afwijzen wordt hier
+een voorbehoud. Een bron die de reviewer bewust aandraagt hoort niet
+stilzwijgend te verdwijnen — dan klikt iemand op toevoegen en gebeurt er
+zichtbaar niets. Een afwijkend verslagjaar wordt `afwijkend_verslagjaar`, en
+“verkeerde organisatie” (bij een upload vaak een oordeel over een bestandsnaam)
+wordt `possible_match` in plaats van `mismatch`, met de heuristiek bewaard in
+`validaties`. Dezelfde afweging als bij een DigiMV-archiefdocument, om dezelfde
+reden.
+
 De interface is bewust beslissinggericht. De organisatiepopulatie kan worden
 gefilterd op **Actie nodig** of **Bron gevonden**; de reviewer hoeft daardoor
 niet eerst alle zoekresultaten door te lopen. Een researchrun stelt alleen
@@ -133,6 +159,6 @@ handmatig doorbladeren van vaak tientallen pagina's tellende jaarverslagen.
 | `chat_admin.py` | Chat-templates beheren, chat-sessies per batch, sessie-antwoorden doorvoeren naar het register. |
 | `chat.py` | De publieke, token-based chatflow voor het benaderde bedrijf zelf (niet ingelogd). |
 | `jaarverslagen.py` | Los jaarverslag uploaden/chatten/WP opslaan, buiten de batchpipeline om. |
-| `monitoring.py` | Doorlopende jaarverslag-monitoring ophalen/draaien. |
-| `research.py` | Autonome researchrun starten/pollen, top-3 ophalen en reviewerbeslissingen of handmatige bronnen vastleggen. |
+| `monitoring.py` | Doorlopende jaarverslag-monitoring ophalen/draaien, en een jaarverslag dat de reviewer zelf uploadt uitlezen en als bronkaart vastleggen. De statusrespons zegt vooraf hoeveel organisaties een ronde zou overslaan. |
+| `research.py` | Autonome researchrun starten/pollen, top-3 ophalen, reviewerbeslissingen vastleggen en een aangedragen bron-URL ophalen en uitlezen. |
 | `review.py` | Candidate goedkeuren/corrigeren/naar bellijst zetten, bulk-goedkeuren van alle 🟢-candidates, bellijst-CRUD en doorvoeren, Excel-exports. |

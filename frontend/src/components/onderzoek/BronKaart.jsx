@@ -46,9 +46,15 @@ function Kaartrij({label, waarde}) {
   );
 }
 
+// Het adres van een geüpload document; zie `app/documenten.py`. Het bestaat
+// niet op internet en zegt de reviewer dus niets — waar het vandaan komt is
+// hier niet een domein maar een mens.
+const UPLOAD_HOST = "upload.kyc4etil.intern";
+
 function herkomst(url) {
   try {
-    return new URL(url).hostname.replace(/^www\./, "");
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    return host === UPLOAD_HOST ? "zelf geüpload" : host;
   } catch {
     return url;
   }

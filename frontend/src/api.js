@@ -91,6 +91,17 @@ export function createApi(token, onUnauthorized) {
     runBatch: (id) => request(`/batches/${id}/run`, {method: "POST"}),
     monitoringStatus: () => request("/monitoring"),
     monitorRun: () => request("/monitoring/run", {method: "POST"}),
+    // Een jaarverslag dat de monitoring niet vond, door de reviewer
+    // aangeleverd. De backend bewaart het, leest er een WP-getal uit en maakt
+    // er een gewone bronkaart van.
+    uploadJaarverslag: (companyId, file, verslagjaar) => {
+      const body = new FormData();
+      body.append("file", file);
+      if (verslagjaar) body.append("verslagjaar", String(verslagjaar));
+      return request(`/monitoring/companies/${companyId}/jaarverslag`, {
+        method: "POST", body,
+      });
+    },
     startResearch: (companyId, gevraagdJaar) => request(`/research/companies/${companyId}/run`, {
       method: "POST",
       json: {gevraagd_jaar: gevraagdJaar},

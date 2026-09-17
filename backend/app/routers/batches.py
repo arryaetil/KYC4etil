@@ -540,6 +540,12 @@ def get_batch(batch_id: str, db: Session = Depends(get_db)):
         "status": batch.status, "totaal": batch.totaal,
         "verwerkt": batch.verwerkt, "workflow": "autonome_bronnenresearch",
         "research": research,
+        # Dezelfde regel als de run zelf, en als het lijstoverzicht: wie al een
+        # afgerond onderzoek heeft wordt overgeslagen. Het scherm dat één lijst
+        # toont had dit getal niet en kon de kostenindicatie dus niet noemen.
+        "nog_te_onderzoeken": len(
+            companies_zonder_afgeronde_research(db, batch.id),
+        ),
         "created_at": batch.created_at.isoformat() + "Z" if batch.created_at else None,
         "completed_at": (
             batch.completed_at.isoformat() + "Z" if batch.completed_at else None

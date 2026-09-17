@@ -119,6 +119,9 @@ export function KandidatenPaneel({
   const [bezig, setBezig] = useState(false);
   const [handmatigOpen, setHandmatigOpen] = useState(false);
   const [handmatigUrl, setHandmatigUrl] = useState("");
+  // Wat het uitlezen van een aangedragen bron opleverde als het níets
+  // opleverde. Geen fout — de bron staat er — maar wel iets om te melden.
+  const [handmatigMelding, setHandmatigMelding] = useState("");
   const [beoordelen, setBeoordelen] = useState(null);
   const [bronrol, setBronrol] = useState("accepteren");
   const [wpOordeel, setWpOordeel] = useState("correct");
@@ -224,10 +227,19 @@ export function KandidatenPaneel({
     if (bezig) return;
     setBezig(true);
     setError("");
+    setHandmatigMelding("");
     try {
-      await api.addManualResearchSource(company.company_id, {url: handmatigUrl});
+      // De backend haalt de bron meteen op en leest er een WP-getal uit, dus
+      // dit duurt seconden en niet milliseconden. Vandaar "Uitlezen…" op de
+      // knop: anders lijkt het scherm te hangen.
+      const uitkomst = await api.addManualResearchSource(company.company_id, {
+        url: handmatigUrl,
+      });
       setHandmatigUrl("");
       setHandmatigOpen(false);
+      // Alleen gevuld als het lezen niets opleverde. De bron staat er dan wel,
+      // en dat verschil hoort de reviewer te zien.
+      setHandmatigMelding(uitkomst?.melding || "");
       await laadKandidaten();
       onGewijzigd?.();
     } catch (err) {
@@ -379,24 +391,38 @@ export function KandidatenPaneel({
       </div>
 
       {handmatigOpen ? (
-        <form onSubmit={voegHandmatigToe} className="mt-3 flex gap-2">
-          <input
-            type="url"
-            required
-            value={handmatigUrl}
-            onChange={(event) => setHandmatigUrl(event.target.value)}
-            placeholder="https://organisatie.nl/over-ons"
-            aria-label="Bron-URL"
-            className="focus-ring h-9 flex-1 rounded-md border border-line px-2 text-sm"
-          />
-          <button
-            type="submit"
-            disabled={bezig}
-            className="focus-ring rounded-md bg-ink px-3 text-sm text-white transition hover:opacity-90 disabled:opacity-50"
-          >
-            {bezig ? "Bezig…" : "Toevoegen"}
-          </button>
+        <form onSubmit={voegHandmatigToe} className="mt-3">
+          <div className="flex gap-2">
+            <input
+              type="url"
+              required
+              value={handmatigUrl}
+              onChange={(event) => setHandmatigUrl(event.target.value)}
+              placeholder="https://organisatie.nl/jaarverslag-2025.pdf"
+              aria-label="Bron-URL"
+              className="focus-ring h-9 flex-1 rounded-md border border-line px-2 text-sm"
+            />
+            <button
+              type="submit"
+              disabled={bezig}
+              className="focus-ring rounded-md bg-ink px-3 text-sm text-white transition hover:opacity-90 disabled:opacity-50"
+            >
+              {bezig ? "Uitlezen…" : "Toevoegen en uitlezen"}
+            </button>
+          </div>
+          {/* Zeggen wat er gebeurt. Deze knop legde eerder alleen de URL vast;
+              nu wordt het document opgehaald en gelezen, en dat duurt even. */}
+          <p className="mt-1.5 text-xs text-mist-65">
+            De bron wordt opgehaald en doorzocht op een WP-getal, alleen voor
+            deze vestiging. Dat duurt een paar seconden.
+          </p>
         </form>
+      ) : null}
+
+      {handmatigMelding ? (
+        <p className="mt-2 text-xs text-aandacht">
+          {handmatigMelding}
+        </p>
       ) : null}
 
       {beoordelen ? (

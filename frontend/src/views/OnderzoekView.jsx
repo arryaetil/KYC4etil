@@ -1,6 +1,8 @@
 import {useEffect, useState} from "react";
-import {ChevronLeft} from "lucide-react";
+import {ChevronLeft, Play, Square} from "lucide-react";
 import {Alert} from "../components/Alert.jsx";
+import {IconButton} from "../components/IconButton.jsx";
+import {researchBevestiging} from "../lib/researchCost.js";
 import {BatchesView} from "./BatchesView.jsx";
 import {MappenView} from "./MappenView.jsx";
 import {OrganisatieLijst} from "../components/onderzoek/OrganisatieLijst.jsx";
@@ -22,6 +24,10 @@ export function OnderzoekView({api}) {
   const [geselecteerdId, setGeselecteerdId] = useState(null);
   const [geselecteerdeBron, setGeselecteerdeBron] = useState(null);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  // Zelfde bron als in het lijstoverzicht: het bedrag per organisatie komt uit
+  // de vorige runs, niet uit een getal in deze code.
+  const [kostenband, setKostenband] = useState(null);
 
   async function load(id) {
     const [batchData, companyData] = await Promise.all([
@@ -39,6 +45,11 @@ export function OnderzoekView({api}) {
     setGeselecteerdeBron(null);
     load(batchId).catch((err) => setError(err.message));
   }, [batchId]);
+
+  useEffect(() => {
+    // Mislukt dit, dan valt de bevestiging terug op de gemeten standaardband.
+    api.kostenindicatie().then(setKostenband).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!batchId || batch?.status !== "running") return undefined;
@@ -72,6 +83,30 @@ export function OnderzoekView({api}) {
   const geselecteerd = companies.find(
     (company) => company.company_id === geselecteerdId,
   );
+  const loopt = batch?.status === "running";
+
+  async function voerUit(actie) {
+    setBusy(true);
+    setError("");
+    try {
+      await actie();
+      await load(batchId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Dezelfde bevestiging als in het lijstoverzicht, met hetzelfde aantal:
+      een herstart slaat over wat al onderzocht is. */
+  function startOnderzoek() {
+    const teDoen = batch?.nog_te_onderzoeken ?? batch?.totaal ?? 0;
+    if (!window.confirm(researchBevestiging(teDoen, kostenband, batch?.totaal))) {
+      return;
+    }
+    voerUit(() => api.runBatch(batchId));
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -85,6 +120,31 @@ export function OnderzoekView({api}) {
         </button>
         <span className="text-sm font-medium text-ink">{batch?.naam}</span>
         <span className="text-xs text-mist-50">{batch?.jaar}</span>
+        {/* De onderzoeksknop stond alleen in het lijstoverzicht. Wie een lijst
+            openhad en wilde onderzoeken moest eerst terug, en kwam daarna weer
+            binnen zonder selectie. Hier staat dezelfde actie op dezelfde lijst. */}
+        <span className="ml-auto text-xs tabular-nums text-mist-50">
+          {batch?.verwerkt || 0} / {batch?.totaal || 0} onderzocht
+        </span>
+        {loopt ? (
+          <IconButton
+            icon={Square}
+            variant="quiet"
+            disabled={busy}
+            onClick={() => voerUit(() => api.cancelBatch(batchId))}
+          >
+            Stoppen
+          </IconButton>
+        ) : (
+          <IconButton
+            icon={Play}
+            variant="quiet"
+            disabled={busy}
+            onClick={startOnderzoek}
+          >
+            Onderzoeken
+          </IconButton>
+        )}
       </div>
 
       {error ? <div className="px-4 pt-4"><Alert message={error} /></div> : null}

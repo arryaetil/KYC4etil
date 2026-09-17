@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     openai_prijs_in_cent_per_1k: float = 0.02
     openai_prijs_out_cent_per_1k: float = 0.12
     research_company_timeout_seconds: int = 300
+    # Eén aangedragen bron uitlezen gebeurt terwijl de reviewer staat te
+    # wachten, niet in de achtergrond. Ruim genoeg voor het downloaden van
+    # een jaarverslag van tientallen megabytes plus één modelaanroep, en
+    # kort genoeg om niet als een vastloper te voelen.
+    losse_bron_timeout_seconds: int = 90
     # Hoeveel organisaties tegelijk. Stond vast op één: de lijst was precies zo
     # lang als de som van haar runs — gemeten op productie 100% bezetting, geen
     # dode tijd ertussen, dus 108 vestigingen betekende 6 uur 19. De rem zat er

@@ -46,6 +46,10 @@ export function MonitoringView({api}) {
   const [melding, setMelding] = useState("");
   const [getoondeBronUrls, setGetoondeBronUrls] = useState([]);
   const [bronnenGeladen, setBronnenGeladen] = useState(false);
+  // Loopt op zodra er iets aan de bronnen van de gekozen organisatie verandert
+  // buiten het bronnenpaneel om (een geüpload jaarverslag). Zit in de sleutel
+  // van dat paneel, zodat het zijn kandidaten opnieuw ophaalt.
+  const [herlaadSleutel, setHerlaadSleutel] = useState(0);
   const fileRef = useRef(null);
 
   async function load() {
@@ -196,13 +200,29 @@ export function MonitoringView({api}) {
         >
           Lijst uploaden
         </IconButton>
+        {/* Het aantal erbij, vóór het klikken. De ronde slaat organisaties met
+            het verslag over het doeljaar én een beoordeelbare bronkaart over —
+            dat deed ze al, maar dat stond pas in de bevestiging áchteraf, en
+            wie 205 organisaties in de lijst ziet gaat ervan uit dat hij er 205
+            gaat doorzoeken. */}
         <IconButton
           icon={RefreshCw}
           variant="quiet"
           onClick={nuControleren}
           disabled={busy}
+          title={
+            status.overgeslagen_actueel
+              ? `${status.overgeslagen_actueel} overgeslagen: het verslag over `
+                + `${status.doeljaar} is binnen en al beoordeelbaar.`
+              : undefined
+          }
         >
-          {busy ? "Bezig…" : "Nu controleren"}
+          {busy
+            ? "Bezig…"
+            : status.te_controleren != null
+              && status.te_controleren !== status.totaal
+              ? `Nu controleren (${status.te_controleren} van ${status.totaal})`
+              : "Nu controleren"}
         </IconButton>
       </div>
 
@@ -251,9 +271,19 @@ export function MonitoringView({api}) {
                 onSelecteerBron={(candidate) => bekijkBewijs(candidate, setGeselecteerdeBron)}
                 getoondeBronUrls={getoondeBronUrls}
                 bronnenGeladen={bronnenGeladen}
+                api={api}
+                onGeupload={() => {
+                  // Het bronnenpaneel hieronder laadt zijn kandidaten één keer,
+                  // bij het kiezen van een organisatie. Zonder deze sleutel zou
+                  // de zojuist aangemaakte bronkaart pas verschijnen na een
+                  // wissel naar een andere organisatie en terug.
+                  setBronnenGeladen(false);
+                  setHerlaadSleutel((vorige) => vorige + 1);
+                  load().catch(() => {});
+                }}
               />
               <KandidatenPaneel
-                key={geselecteerd.company_id}
+                key={`${geselecteerd.company_id}-${herlaadSleutel}`}
                 api={api}
                 company={geselecteerd}
                 batchJaar={batch.jaar}

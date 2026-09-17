@@ -4,6 +4,7 @@ Deze module regisseert de andere twee (`jaarverslag_zoeken`,
 `jaarverslag_validatie`) en leest het WP-getal uit de PDF. Een afgewezen bron
 wordt uitgesloten zodat een retry een ánder zoekresultaat probeert in plaats
 van dezelfde fout opnieuw te maken."""
+import logging
 import re
 from typing import TypedDict
 
@@ -192,8 +193,6 @@ async def _relevante_bronpaginas(bron_url: str) -> list[tuple[int | None, str]]:
         )
         return [(None, tekst)] if heeft_trefwoord else []
 
-    import fitz  # PyMuPDF
-
     async with httpx.AsyncClient(
         timeout=60,
         follow_redirects=True,
@@ -205,16 +204,82 @@ async def _relevante_bronpaginas(bron_url: str) -> list[tuple[int | None, str]]:
     # hier niets extra's en zorgt dat het bewijs blijft bestaan als de
     # organisatie de PDF vervangt of weghaalt.
     documenten.bewaar(bron_url, response.content)
-    document = fitz.open(stream=response.content, filetype="pdf")
+    return relevante_pdf_paginas(response.content)
+
+
+def relevante_pdf_paginas(inhoud: bytes) -> list[tuple[int | None, str]]:
+    """De pagina's uit een PDF waar personeel in voorkomt, met hun nummer.
+
+    Staat los van het ophalen, want niet elke PDF komt van een URL: een reviewer
+    die een jaarverslag uploadt levert de bytes rechtstreeks aan, en die horen
+    precies zo gelezen te worden als een gevonden document. Twee keer dezelfde
+    paginakeuze naast elkaar zou stilzwijgend uiteen gaan lopen.
+    """
+    import fitz  # PyMuPDF
+
+    document = fitz.open(stream=inhoud, filetype="pdf")
     # Eerst uitpakken, dan filteren. Stond dit in één comprehension, dan riep
     # de conditie get_text() nog een keer aan naast de tuple: bij een verslag
     # van 109 pagina's 218 extracties in plaats van 109.
     paginas = [(index + 1, pagina.get_text()) for index, pagina in enumerate(document)]
+    document.close()
     return [
         (nummer, tekst)
         for nummer, tekst in paginas
         if any(woord in tekst.lower() for woord in _WP_TREFWOORDEN)
     ]
+
+
+async def lees_wp_uit_paginas(
+    naam: str,
+    bron_url: str,
+    relevant: list[tuple[int | None, str]],
+) -> AgentFinding | None:
+    """Van paginatekst naar een WP-bevinding.
+
+    Dit was de tweede helft van `run_met_bron`, die eerst zelf ophaalde. Een
+    geüpload jaarverslag heeft die eerste helft niet nodig — de bytes zijn er
+    al — en hoort toch precies dezelfde lezing te krijgen, inclusief de
+    deterministische terugval en het paginanummer bij het citaat.
+    """
+    if not relevant:
+        return None
+    # Alleen naar het model gaat een selectie; de deterministische terugval
+    # leest gewoon alles, want die kost niets en heeft geen last van lange
+    # documenten.
+    voor_model = kies_paginas_voor_model(relevant)
+    try:
+        data = await llm._llm_extract(
+            naam, None, "\n\n".join(tekst for _, tekst in voor_model),
+        )
+    except Exception as exc:
+        # Een model dat er niet is mag de deterministische terugval hieronder
+        # niet overslaan. Die kost niets en vindt de expliciete headcountzinnen
+        # ook zonder model; de fout ging eerst omhoog en nam die kans mee.
+        logging.getLogger(__name__).warning(
+            "WP-extractie zonder model voor %s (%s: %s)",
+            bron_url, type(exc).__name__, str(exc)[:200],
+        )
+        data = None
+    if not data or not data.get("wp_gevonden"):
+        data = _deterministische_wp_uit_pdf(relevant)
+        if data is None:
+            return None
+    pct = data.get("pct_op_locatie")
+    return AgentFinding(
+        wp_gevonden=data["wp_gevonden"], context=data.get("context"),
+        zekerheid=data.get("zekerheid", "laag"), reden=data.get("reden"),
+        bron_url=bron_url, bron_type="jaarverslag",
+        is_limburg_specifiek=data.get("is_limburg_specifiek"),
+        is_fte=data.get("is_fte", False), peilmoment=data.get("peilmoment"),
+        eigen_personeel=data.get("eigen_personeel"), uitzend=data.get("uitzend"),
+        detachering=data.get("detachering"), wsw=data.get("wsw"),
+        man=data.get("man"), vrouw=data.get("vrouw"),
+        voltijd=data.get("voltijd"), deeltijd=data.get("deeltijd"),
+        pct_op_locatie=llm._pct_op_locatie_fractie(pct),
+        bron_pagina=_vind_paginanummer(data.get("context"), relevant),
+        raw=data,
+    )
 
 
 class JaarverslagResearchState(TypedDict, total=False):
@@ -542,32 +607,6 @@ class LiveJaarverslagAgent:
 
     async def run_met_bron(self, naam: str, bron_url: str) -> AgentFinding | None:
         """Lees het WP-getal uit een jaarverslag, of dat nu een PDF is of een site."""
-        relevant = await _relevante_bronpaginas(bron_url)
-        if not relevant:
-            return None
-        # Alleen naar het model gaat een selectie; de deterministische
-        # terugval leest gewoon alles, want die kost niets en heeft geen last
-        # van lange documenten.
-        voor_model = kies_paginas_voor_model(relevant)
-        data = await llm._llm_extract(
-            naam, None, "\n\n".join(tekst for _, tekst in voor_model),
-        )
-        if not data or not data.get("wp_gevonden"):
-            data = _deterministische_wp_uit_pdf(relevant)
-            if data is None:
-                return None
-        pct = data.get("pct_op_locatie")
-        return AgentFinding(
-            wp_gevonden=data["wp_gevonden"], context=data.get("context"),
-            zekerheid=data.get("zekerheid", "laag"), reden=data.get("reden"),
-            bron_url=bron_url, bron_type="jaarverslag",
-            is_limburg_specifiek=data.get("is_limburg_specifiek"),
-            is_fte=data.get("is_fte", False), peilmoment=data.get("peilmoment"),
-            eigen_personeel=data.get("eigen_personeel"), uitzend=data.get("uitzend"),
-            detachering=data.get("detachering"), wsw=data.get("wsw"),
-            man=data.get("man"), vrouw=data.get("vrouw"),
-            voltijd=data.get("voltijd"), deeltijd=data.get("deeltijd"),
-            pct_op_locatie=llm._pct_op_locatie_fractie(pct),
-            bron_pagina=_vind_paginanummer(data.get("context"), relevant),
-            raw=data,
+        return await lees_wp_uit_paginas(
+            naam, bron_url, await _relevante_bronpaginas(bron_url),
         )

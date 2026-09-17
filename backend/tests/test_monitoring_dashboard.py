@@ -27,6 +27,7 @@ def test_monitoring_status_zonder_watchlist_geeft_lege_staat(client):
         "batch": None, "doeljaar": None, "totaal": 0, "gecontroleerd": 0,
         "bronnen_gevonden": 0, "bronnen_ontbreken": 0,
         "actueel": 0, "verouderd": 0, "ontbreekt": 0, "jaren_verdeling": [],
+        "overgeslagen_actueel": 0, "te_controleren": 0,
         "nieuwe_bevindingen": 0, "fouten": 0, "companies": [],
     }
 
@@ -477,6 +478,29 @@ def test_monitoring_run_slaat_organisaties_met_het_doeljaar_over(
     assert data["overgeslagen_actueel"] == 1
     assert data["aantal_companies"] == 2
     assert gestart == [(None, 0, False)]
+
+
+def test_status_zegt_vooraf_hoeveel_er_te_controleren_valt(client, db_session):
+    """Hetzelfde getal als de ronde zelf, maar dan vóór het klikken.
+
+    De skip bestond al, maar was pas te lezen in de bevestiging ná het starten.
+    Wie 205 organisaties in de lijst ziet staan gaat er redelijkerwijs van uit
+    dat "Nu controleren" er 205 gaat doorzoeken.
+    """
+    _watchlist_met_verslagjaren(
+        client, db_session, "vooraf-tellen", 2026, {
+            "Actueel": ("https://x.test/jaarverslag-2025.pdf", 2025),
+            "Ouder": ("https://x.test/jaarverslag-2023.pdf", 2023),
+            "Niets": ("", None),
+        },
+        met_bronkaart={"Actueel"},
+    )
+
+    data = client.get("/monitoring").json()
+
+    assert data["totaal"] == 3
+    assert data["overgeslagen_actueel"] == 1
+    assert data["te_controleren"] == 2
 
 
 def test_actueel_verslag_zonder_bronkaart_wordt_niet_overgeslagen(

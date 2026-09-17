@@ -1,4 +1,5 @@
 """API voor autonome bronvinding en menselijke bronreview."""
+import asyncio
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -16,9 +17,17 @@ from ..models import (
     BronKandidaat, Company, JaarverslagMonitoring, Opmerking, ResearchRun,
     User,
 )
+from ..config import get_settings
+from ..research.losse_bron import (
+    context_van_company, gevraagd_jaar_van, lees_bron, vul_kandidaat,
+    weeg_reviewersbron,
+)
 from ..research.service import maak_research_run, run_research_run
 from ..providers.live import USER_AGENT
 from ..research.urls import canonicaliseer_url, jaar_uit_url
+from ..research.usage import (
+    get_cost_summary, get_usage_totals, start_usage_tracking,
+)
 
 router = APIRouter(
     prefix="/research",
@@ -82,6 +91,11 @@ class ManualSourceBody(BaseModel):
     url: HttpUrl
     titel: str | None = Field(default=None, max_length=500)
     reden: str | None = Field(default=None, max_length=2000)
+    # Standaard aan: een bron toevoegen zonder hem te lezen levert een kaart op
+    # zonder WP-getal, zonder citaat en zonder paginanummer, en dat is precies
+    # wat deze knop waardeloos maakte. Uit kan, voor wie alleen wil vastleggen
+    # dat hij deze bron heeft gebruikt.
+    uitlezen: bool = True
 
 
 def _candidate_dict(
@@ -589,16 +603,69 @@ def review_candidate(
     return _candidate_dict(candidate)
 
 
+async def _lees_aangedragen_bron(
+    db: Session,
+    company: Company,
+    candidate: BronKandidaat,
+    run: ResearchRun,
+) -> str | None:
+    """Lees de zojuist toegevoegde bron uit en zet het resultaat op de kaart.
+
+    Geeft een melding terug als er niets uit kwam, of None als het gelukt is.
+    Mislukken is geen fout van de reviewer en mag het toevoegen dus ook niet
+    ongedaan maken: de kaart blijft staan, met de reden erbij.
+    """
+    start_usage_tracking()
+    context = context_van_company(company, gevraagd_jaar_van(company))
+    try:
+        document = await asyncio.wait_for(
+            lees_bron(context, candidate.url, candidate.titel),
+            timeout=get_settings().losse_bron_timeout_seconds,
+        )
+    except TimeoutError:
+        document = None
+        melding = "De bron reageerde te traag; hij staat er wel, maar is niet uitgelezen."
+    else:
+        melding = (
+            None if document is not None
+            else "De bron kon niet worden opgehaald of bevatte geen leesbare tekst."
+        )
+
+    run.gevraagd_jaar = context.gevraagd_jaar
+    tokens_in, tokens_out = get_usage_totals()
+    run.tokens_in = tokens_in
+    run.tokens_out = tokens_out
+    run.kosten_cents = get_cost_summary()["totaal_cents"]
+
+    if document is None:
+        run.resultaat_status = "niet_gevonden"
+        return melding
+
+    ranked = weeg_reviewersbron(document)
+    if ranked is None:
+        return "De bron is opgehaald maar leverde geen beoordeelbaar bewijs op."
+    vul_kandidaat(candidate, ranked)
+    return None
+
+
 @router.post(
     "/companies/{company_id}/manual-source",
     status_code=status.HTTP_201_CREATED,
 )
-def add_manual_source(
+async def add_manual_source(
     company_id: str,
     body: ManualSourceBody,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Een bron die de reviewer zelf aandraagt, uitgelezen als elke andere bron.
+
+    Tot nu toe legde dit endpoint alleen de URL vast. De kaart die eruit kwam
+    zei "Gekozen" en verder niets: geen aantal, geen citaat, geen pagina — de
+    reviewer moest het document alsnog zelf openen en zelf tellen. Sinds deze
+    wijziging gaat de bron door dezelfde lezing en weging als een gevonden
+    bron, zodat er een volwaardige bronkaart staat.
+    """
     company = db.get(Company, company_id)
     if company is None:
         raise HTTPException(404, "company niet gevonden")
@@ -634,8 +701,19 @@ def add_manual_source(
     # Een eigen bron toevoegen ís de keuze maken. Stond er al een gekozen bron,
     # dan wordt dat het alternatief — anders zeggen er twee kaarten "Gekozen".
     _zet_andere_keuzes_op_alternatief(db, candidate)
+
+    melding = None
+    if body.uitlezen:
+        melding = await _lees_aangedragen_bron(db, company, candidate, run)
     db.commit()
-    return {"candidate_id": candidate.id, "run_id": run.id}
+    return {
+        "candidate_id": candidate.id,
+        "run_id": run.id,
+        "bron": _candidate_dict(candidate),
+        # Leeg als het lezen lukte. Het scherm toont dit als toelichting bij de
+        # kaart, niet als foutmelding: de bron staat er hoe dan ook.
+        "melding": melding,
+    }
 
 
 # Maximale omvang van een doorgegeven brondocument. Jaarverslagen zijn zelden
@@ -691,6 +769,16 @@ async def bron_pdf(
             content=bewaard,
             media_type="application/pdf",
             headers={"Content-Disposition": "inline"},
+        )
+
+    # Een geüpload document bestaat alleen bij ons. Het draagt een adres omdat
+    # een bronkaart er een nodig heeft, maar dat adres staat niet op internet —
+    # het alsnog proberen op te halen levert een DNS-fout op die als "bron niet
+    # bereikbaar" leest, terwijl het echte probleem is dat onze kopie weg is.
+    if documenten.is_upload_url(url):
+        raise HTTPException(
+            404,
+            "het geüploade document is niet meer beschikbaar; upload het opnieuw",
         )
 
     client = httpx.AsyncClient(timeout=60, follow_redirects=True)

@@ -1,4 +1,5 @@
-import {Eye} from "lucide-react";
+import {useRef, useState} from "react";
+import {Eye, FileUp} from "lucide-react";
 import {classNames, formatMoment} from "../../lib/format.js";
 import {
   bewijsRelatie, monitoringStatus, peilmomentRelatie,
@@ -47,9 +48,75 @@ function zelfdeBron(a, b) {
   return Boolean(a) && kaal(a) === kaal(b);
 }
 
+/**
+ * Zelf een jaarverslag aanleveren dat de monitoring niet heeft gevonden.
+ *
+ * Op de watchlist van 17-09-2026 staan 110 van de 205 organisaties op "niet
+ * gevonden" — Koraal Groep bijvoorbeeld — terwijl de reviewer het verslag
+ * gewoon op zijn schijf heeft staan. Er was geen manier om dat de werkbank in
+ * te krijgen. Het geüploade document krijgt dezelfde lezing als een gevonden
+ * verslag, dus er komt een gewone bronkaart uit.
+ */
+function JaarverslagUploaden({api, companyId, doeljaar, onGeupload}) {
+  const bestandRef = useRef(null);
+  const [bezig, setBezig] = useState(false);
+  const [melding, setMelding] = useState("");
+  const [fout, setFout] = useState("");
+
+  async function upload(event) {
+    const bestand = event.target.files?.[0];
+    if (!bestand) return;
+    setBezig(true);
+    setMelding("");
+    setFout("");
+    try {
+      // Het jaartal uit de bestandsnaam is vaak goed, maar niet altijd; de
+      // backend valt daarop terug als we niets meegeven. Het doeljaar hier
+      // opdringen zou een bewering zijn die we niet kunnen waarmaken.
+      const uitkomst = await api.uploadJaarverslag(companyId, bestand);
+      setMelding(uitkomst?.melding || "Het jaarverslag is uitgelezen.");
+      onGeupload?.();
+    } catch (err) {
+      setFout(err.message);
+    } finally {
+      setBezig(false);
+      event.target.value = "";
+    }
+  }
+
+  return (
+    <div className="mt-3">
+      <input
+        ref={bestandRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        className="hidden"
+        onChange={upload}
+      />
+      <button
+        type="button"
+        onClick={() => bestandRef.current?.click()}
+        disabled={bezig}
+        className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-sm text-ink transition hover:bg-panel disabled:opacity-50"
+      >
+        <FileUp size={14} />
+        {bezig ? "Uitlezen…" : "Jaarverslag uploaden"}
+      </button>
+      <p className="mt-1.5 text-xs text-mist-65">
+        Een PDF die de monitoring niet vond
+        {doeljaar ? `, bij voorkeur het verslag over ${doeljaar}` : ""}. Het
+        wordt bewaard, doorzocht op een WP-getal en als bronkaart toegevoegd.
+      </p>
+      {melding ? <p className="mt-1 text-xs text-mist-85">{melding}</p> : null}
+      {fout ? <p className="mt-1 text-xs text-fout">{fout}</p> : null}
+    </div>
+  );
+}
+
 export function MonitoringVondst({
   company, geselecteerdeBronId, onSelecteerBron,
   getoondeBronUrls = [], bronnenGeladen = false,
+  api, onGeupload,
 }) {
   const status = monitoringStatus(company);
   const bron = alsBewijsBron(company);
@@ -136,6 +203,18 @@ export function MonitoringVondst({
             : "Deze organisatie is nog niet gecontroleerd."}
         </p>
       )}
+
+      {/* Buiten `toonVondst`: ook als het gevonden verslag hieronder al als
+          bronkaart staat, kan het het verkeerde zijn en wil de reviewer het
+          juiste kunnen aanleveren. */}
+      {api ? (
+        <JaarverslagUploaden
+          api={api}
+          companyId={company.company_id}
+          doeljaar={company.doeljaar}
+          onGeupload={onGeupload}
+        />
+      ) : null}
 
       {/* Alleen de status. Hier stonden twee zinnen bij: dat er sinds de vorige
           ronde een recenter verslag was, en dat monitoring bronnen vindt maar

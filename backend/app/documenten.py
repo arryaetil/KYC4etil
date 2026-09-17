@@ -28,6 +28,32 @@ logger = logging.getLogger(__name__)
 MAX_DOCUMENT_BYTES = 60 * 1024 * 1024
 
 
+# Het domein waaronder een door de reviewer geüpload document leeft. Het
+# bestaat niet op internet, en dat is precies de bedoeling: een bronkaart heeft
+# een URL nodig (de viewer, de ontdubbeling en de bewaarsleutel hangen eraan),
+# maar dit document komt niet van het open web en mag daar dus ook nooit
+# worden opgehaald. `routers/research.py::bron_pdf` weigert het op te halen en
+# serveert uitsluitend onze eigen kopie.
+UPLOAD_HOST = "upload.kyc4etil.intern"
+
+
+def upload_url(company_id: str, inhoud: bytes) -> str:
+    """Het adres waaronder een geüpload document bij deze vestiging hoort.
+
+    De sleutel is de inhoud, niet de bestandsnaam: dezelfde PDF twee keer
+    uploaden levert dan hetzelfde document op in plaats van een tweede kaart
+    voor hetzelfde verslag. `.pdf` aan het eind omdat de bewijsviewer daaraan
+    ziet dat hij het document ingesloten kan tonen.
+    """
+    sleutel = hashlib.sha256(inhoud).hexdigest()[:32]
+    return f"https://{UPLOAD_HOST}/{company_id}/{sleutel}.pdf"
+
+
+def is_upload_url(url: str | None) -> bool:
+    """Is dit een document dat hier is geüpload in plaats van gevonden?"""
+    return (url or "").lower().startswith(f"https://{UPLOAD_HOST}/")
+
+
 def opslagmap() -> Path | None:
     """De map waar documenten staan, of None als opslag uit staat.
 
