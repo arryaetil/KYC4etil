@@ -20,6 +20,7 @@ from ..models import (
 from ..pipeline.identity_scope import heuristic_scope_class
 from ..pipeline.monitoring import (
     bepaal_over_te_slaan_companies, run_monitoring_watchlist_background,
+    verslagjaar_uit_url,
 )
 from ..providers import fetch, jaarverslag as jaarverslag_provider, jaarverslag_zoeken
 from ..research.losse_bron import (
@@ -514,7 +515,9 @@ async def koppel_jaarverslag_link(
     # `pipeline/monitoring.py::_verslagjaar_van` — dezelfde regel, dezelfde
     # reden (Stichting Envida stond op 2025 met de jaarrekening 2024).
     jaar_van_verslag = (
-        jaar_uit_url(url) or document.verslagjaar or body.verslagjaar
+        verslagjaar_uit_url(url, gevraagd_jaar)
+        or document.verslagjaar
+        or body.verslagjaar
     )
     document = replace(
         document,

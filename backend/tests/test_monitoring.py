@@ -1856,3 +1856,25 @@ def test_pdf_omslag_telt_wel_als_de_url_geen_jaartal_heeft():
 
 def test_zonder_bron_geen_verslagjaar():
     assert monitoring_module._verslagjaar_van(None) is None
+
+
+def test_publicatiejaar_in_de_url_telt_niet_als_verslagjaar():
+    """Een verslag over een jaar dat nog loopt bestaat niet.
+
+    `jaar_uit_url` pakt het laatste jaartal, want een bestandsnaam zet de
+    publicatiedatum vooraan en het verslagjaar achteraan. Staat er maar één
+    jaartal in en is dat het jaar van publiceren, dan leest `.../2026/06/...`
+    als verslag 2026. Op de watchlist van 18-09-2026 stonden UPS, Arriva en
+    Welzijnsgroep Parkstad zo op een jaar in de toekomst.
+    """
+    finding = AgentFinding(
+        wp_gevonden=None, context=None, zekerheid="laag", reden=None,
+        bron_url="https://arriva.nl/media/2026/06/mvo-verslag.pdf",
+        bron_type="jaarverslag",
+        raw={"verslagjaar": 2025},
+    )
+
+    # Zonder doeljaar geen bovengrens; mét doeljaar valt 2026 af.
+    assert monitoring_module.verslagjaar_uit_url(finding.bron_url, None) == 2026
+    assert monitoring_module.verslagjaar_uit_url(finding.bron_url, 2025) is None
+    assert monitoring_module._verslagjaar_van(finding, 2025) == 2025
